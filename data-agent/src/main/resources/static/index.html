@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Agent - 企业级数据分析平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loading-spinner {
+            border: 3px solid #e5e7eb; border-top: 3px solid #2563eb;
+            border-radius: 50%; width: 20px; height: 20px;
+            animation: spin 1s linear infinite; display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: translateY(0) } }
+        .msg-user { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+        .msg-assistant { background: #f8fafc; border: 1px solid #e2e8f0; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .msg-assistant .markdown-body { font-size: 14px; line-height: 1.7; word-wrap: break-word; }
+        .msg-assistant .markdown-body h1, .msg-assistant .markdown-body h2, .msg-assistant .markdown-body h3 { font-weight: 600; margin-top: 12px; margin-bottom: 6px; }
+        .msg-assistant .markdown-body h1 { font-size: 1.25em; }
+        .msg-assistant .markdown-body h2 { font-size: 1.15em; }
+        .msg-assistant .markdown-body h3 { font-size: 1.05em; }
+        .msg-assistant .markdown-body p { margin: 6px 0; }
+        .msg-assistant .markdown-body ul, .msg-assistant .markdown-body ol { margin: 6px 0; padding-left: 20px; }
+        .msg-assistant .markdown-body li { margin: 3px 0; }
+        .msg-assistant .markdown-body pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; margin: 8px 0; }
+        .msg-assistant .markdown-body code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #e11d48; }
+        .msg-assistant .markdown-body pre code { background: none; padding: 0; color: inherit; }
+        .msg-assistant .markdown-body blockquote { border-left: 3px solid #3b82f6; padding-left: 12px; margin: 8px 0; color: #64748b; }
+        .msg-assistant .markdown-body table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+        .msg-assistant .markdown-body th, .msg-assistant .markdown-body td { border: 1px solid #e2e8f0; padding: 6px 10px; text-align: left; font-size: 13px; }
+        .msg-assistant .markdown-body th { background: #f8fafc; font-weight: 600; }
+        .msg-assistant .markdown-body hr { border: none; border-top: 1px solid #e2e8f0; margin: 12px 0; }
+        .msg-assistant .markdown-body strong { font-weight: 600; }
+        .thinking-step { border-left: 3px solid #8b5cf6; padding: 6px 12px; margin: 4px 0; font-size: 12px; color: #6b7280; background: #faf5ff; border-radius: 0 6px 6px 0; }
+        .thinking-step.tool-call { border-left-color: #f59e0b; background: #fffbeb; }
+        .thinking-step.answer { border-left-color: #10b981; background: #ecfdf5; }
+        .thinking-step.error { border-left-color: #ef4444; background: #fef2f2; }
+        .thinking-toggle { cursor: pointer; user-select: none; }
+        .thinking-toggle:hover { opacity: 0.8; }
+    </style>
+</head>
+
+<body class="bg-gray-50 h-screen flex flex-col">
+
+    <!-- 登录页 -->
+    <div id="login-page" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md fade-in">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
+                    <i data-lucide="brain" class="w-8 h-8 text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900">Data Agent</h1>
+                <p class="text-gray-500 mt-1">AI 数据分析智能体</p>
+            </div>
+            <div id="login-tabs" class="flex mb-6 bg-gray-100 rounded-lg p-1">
+                <button onclick="switchLoginTab('login')" id="tab-login" class="flex-1 py-2 text-sm font-medium rounded-md bg-white shadow text-blue-600">登录</button>
+                <button onclick="switchLoginTab('register')" id="tab-register" class="flex-1 py-2 text-sm font-medium rounded-md text-gray-500">注册</button>
+            </div>
+            <div id="login-form">
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">用户名</label><input type="text" id="login-username" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="请输入用户名"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">密码</label><input type="password" id="login-password" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="请输入密码" onkeydown="if(event.key==='Enter')doLogin()"></div>
+                    <button onclick="doLogin()" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">登录</button>
+                </div>
+            </div>
+            <div id="register-form" class="hidden">
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">用户名</label><input type="text" id="reg-username" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="请输入用户名"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">密码</label><input type="password" id="reg-password" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="至少6位"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">昵称</label><input type="text" id="reg-nickname" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="显示名称"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">租户ID (可选)</label><input type="text" id="reg-tenant" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="留空则使用默认租户"></div>
+                    <button onclick="doRegister()" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">注册</button>
+                </div>
+            </div>
+            <div id="auth-message" class="mt-4 text-center text-sm hidden"></div>
+        </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="main-app" class="hidden h-screen flex flex-col">
+        <nav class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
+                    <i data-lucide="brain" class="w-4 h-4 text-white"></i>
+                </div>
+                <span class="font-bold text-gray-900">Data Agent</span>
+                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full" id="tenant-badge">默认租户</span>
+            </div>
+            <div class="flex items-center space-x-1">
+                <button onclick="showPanel('chat')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-chat"><i data-lucide="message-square" class="w-4 h-4 inline"></i> 对话</button>
+                <button onclick="showPanel('knowledge')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-knowledge"><i data-lucide="book-open" class="w-4 h-4 inline"></i> 知识库</button>
+                <button onclick="showPanel('models')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-models"><i data-lucide="cpu" class="w-4 h-4 inline"></i> 模型</button>
+                <button onclick="showPanel('skills')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-skills"><i data-lucide="zap" class="w-4 h-4 inline"></i> 技能</button>
+                <button onclick="showPanel('files')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-files"><i data-lucide="file-text" class="w-4 h-4 inline"></i> 文件</button>
+                <button onclick="showPanel('stats')" class="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition" id="btn-stats"><i data-lucide="bar-chart-3" class="w-4 h-4 inline"></i> 统计</button>
+                <div class="border-l border-gray-200 h-6 mx-2"></div>
+                <span class="text-sm text-gray-600" id="user-display"></span>
+                <button onclick="doLogout()" class="text-sm text-red-500 hover:text-red-700 transition">退出</button>
+            </div>
+        </nav>
+
+        <div class="flex-1 overflow-hidden">
+            <!-- 对话面板 -->
+            <div id="panel-chat" class="h-full flex flex-col">
+                <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chat-messages">
+                    <div class="text-center text-gray-400 py-20">
+                        <i data-lucide="brain" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                        <p class="text-lg font-medium">Data Agent 智能体</p>
+                        <p class="text-sm mt-1">支持数据分析、文件解析、知识问答</p>
+                        <div class="flex justify-center gap-2 mt-4">
+                            <span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">ReAct 推理</span>
+                            <span class="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">多工具调用</span>
+                            <span class="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full">知识检索</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="border-t border-gray-200 bg-white p-4">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="flex items-center space-x-2 mb-2">
+                            <select id="select-model" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500"><option value="">默认模型</option></select>
+                            <select id="select-skill" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500"><option value="">自动匹配技能</option></select>
+                            <input type="file" id="file-input" class="hidden" onchange="handleFileUpload(this)">
+                            <button onclick="document.getElementById('file-input').click()" class="text-sm text-gray-500 hover:text-blue-600 transition px-2 py-1.5 rounded-lg hover:bg-gray-100" aria-label="上传文件"><i data-lucide="paperclip" class="w-4 h-4 inline"></i></button>
+                            <span id="file-badge" class="text-xs text-blue-600 hidden"></span>
+                            <button onclick="newSession()" class="text-sm text-gray-500 hover:text-blue-600 transition px-2 py-1.5 rounded-lg hover:bg-gray-100 ml-auto" aria-label="新对话"><i data-lucide="plus" class="w-4 h-4 inline"></i> 新对话</button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="text" id="chat-input" class="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="输入问题，支持数据分析、知识问答、文件解析..." onkeydown="if(event.key==='Enter')sendMessage()">
+                            <button onclick="sendMessage()" id="send-btn" class="bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition text-sm font-medium min-w-[60px]">发送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 知识库面板 -->
+            <div id="panel-knowledge" class="h-full overflow-y-auto p-6 hidden">
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-900">知识库管理</h2>
+                            <p class="text-sm text-gray-500 mt-1">上传文档构建专属知识库，Agent 会自动检索相关知识</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="openAddTextKnowledgeDialog()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm">+ 添加文本</button>
+                            <button onclick="document.getElementById('knowledge-upload-input').click()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm">+ 上传文档</button>
+                            <input type="file" id="knowledge-upload-input" class="hidden" onchange="uploadKnowledge(this)" accept=".pdf,.txt,.csv,.md,.json,.xlsx,.xls,.xml,.log">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" id="knowledge-stats">
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">知识文档</p><p class="text-2xl font-bold text-gray-900 mt-1" id="k-stat-count">0</p></div>
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">向量片段</p><p class="text-2xl font-bold text-gray-900 mt-1" id="k-stat-chunks">0</p></div>
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">存储后端</p><p class="text-2xl font-bold text-gray-900 mt-1" id="k-stat-backend">-</p></div>
+                    </div>
+                    <div id="knowledge-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- 模型管理面板 -->
+            <div id="panel-models" class="h-full overflow-y-auto p-6 hidden">
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">模型管理</h2>
+                        <button onclick="openModelDialog()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm">+ 添加模型</button>
+                    </div>
+                    <div id="model-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- 技能管理面板 -->
+            <div id="panel-skills" class="h-full overflow-y-auto p-6 hidden">
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">技能管理</h2>
+                        <button onclick="openSkillDialog()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm">+ 创建技能</button>
+                    </div>
+                    <div id="skill-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- 文件管理面板 -->
+            <div id="panel-files" class="h-full overflow-y-auto p-6 hidden">
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">文件管理</h2>
+                        <button onclick="document.getElementById('file-upload-input').click()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm">+ 上传文件</button>
+                        <input type="file" id="file-upload-input" class="hidden" onchange="uploadFileToServer(this)" accept=".xlsx,.xls,.pdf,.csv,.txt">
+                    </div>
+                    <div id="file-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- 统计面板 -->
+            <div id="panel-stats" class="h-full overflow-y-auto p-6 hidden">
+                <div class="max-w-4xl mx-auto">
+                    <h2 class="text-xl font-bold text-gray-900 mb-6">Token 使用统计</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">租户总消耗</p><p class="text-2xl font-bold text-gray-900 mt-1" id="stat-tenant-total">-</p></div>
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">个人总消耗</p><p class="text-2xl font-bold text-gray-900 mt-1" id="stat-user-total">-</p></div>
+                        <div class="bg-white rounded-xl border p-4"><p class="text-sm text-gray-500">活跃会话</p><p class="text-2xl font-bold text-gray-900 mt-1" id="stat-sessions">-</p></div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white rounded-xl border p-4"><h3 class="text-sm font-medium text-gray-700 mb-2">按模型分布</h3><div id="chart-model" style="height:250px"></div></div>
+                        <div class="bg-white rounded-xl border p-4"><h3 class="text-sm font-medium text-gray-700 mb-2">按技能分布</h3><div id="chart-skill" style="height:250px"></div></div>
+                    </div>
+                    <div class="bg-white rounded-xl border p-4 mt-4">
+                        <div class="flex items-center justify-between mb-3"><h3 class="text-sm font-medium text-gray-700">使用明细</h3><button onclick="loadUsageRecords(0)" class="text-xs text-blue-600 hover:text-blue-800">刷新</button></div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead><tr class="border-b text-gray-500 text-left"><th class="pb-2 pr-3 font-medium">时间</th><th class="pb-2 pr-3 font-medium">用户</th><th class="pb-2 pr-3 font-medium">模型</th><th class="pb-2 pr-3 font-medium">技能</th><th class="pb-2 pr-3 font-medium text-right">输入</th><th class="pb-2 pr-3 font-medium text-right">输出</th><th class="pb-2 font-medium text-right">合计</th></tr></thead>
+                                <tbody id="usage-records-body"><tr><td colspan="7" class="py-4 text-center text-gray-400">暂无数据</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div id="usage-pagination" class="flex items-center justify-between mt-3 text-xs text-gray-500 hidden">
+                            <span id="usage-page-info"></span>
+                            <div class="flex gap-2">
+                                <button onclick="loadUsageRecords(currentPage-1)" id="btn-prev-page" class="px-2 py-1 rounded border hover:bg-gray-50 disabled:opacity-30">上一页</button>
+                                <button onclick="loadUsageRecords(currentPage+1)" id="btn-next-page" class="px-2 py-1 rounded border hover:bg-gray-50 disabled:opacity-30">下一页</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模型对话框 -->
+    <div id="model-dialog" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md fade-in">
+            <h3 class="text-lg font-bold mb-4" id="model-dialog-title">添加模型</h3>
+            <div class="space-y-3">
+                <input type="text" id="mdl-name" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="模型名称">
+                <input type="text" id="mdl-provider" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="提供商 (openai/deepseek/zhipu)">
+                <input type="text" id="mdl-apikey" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="API Key">
+                <input type="text" id="mdl-baseurl" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Base URL">
+                <input type="text" id="mdl-modelname" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="模型标识 (如 gpt-4, deepseek-chat)">
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="number" step="0.1" id="mdl-temp" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Temperature" value="0.7">
+                    <input type="number" id="mdl-maxtokens" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Max Tokens" value="4096">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="closeModelDialog()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">取消</button>
+                <button onclick="saveModel()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 技能对话框 -->
+    <div id="skill-dialog" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md fade-in">
+            <h3 class="text-lg font-bold mb-4">创建技能</h3>
+            <div class="space-y-3">
+                <input type="text" id="sk-name" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="技能名称">
+                <input type="text" id="sk-desc" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="技能描述">
+                <input type="text" id="sk-keywords" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="关键词 (逗号分隔)">
+                <input type="text" id="sk-apiurl" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="外部API URL (可选)">
+                <textarea id="sk-prompt" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Prompt模板 (可用 {{query}} {{data}})"></textarea>
+                <textarea id="sk-steps" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" rows="2" placeholder='工作流步骤 (JSON数组，如 ["步骤1","步骤2"])'></textarea>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="generateSkill()" class="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700">AI自动生成</button>
+                <button onclick="closeSkillDialog()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">取消</button>
+                <button onclick="saveSkill()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 知识文本对话框 -->
+    <div id="text-knowledge-dialog" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg fade-in">
+            <h3 class="text-lg font-bold mb-4">添加文本知识</h3>
+            <div class="space-y-3">
+                <input type="text" id="tk-name" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="知识名称">
+                <input type="text" id="tk-desc" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="描述 (可选)">
+                <textarea id="tk-content" class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" rows="8" placeholder="粘贴或输入知识内容..."></textarea>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="closeTextKnowledgeDialog()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">取消</button>
+                <button onclick="saveTextKnowledge()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        let token = localStorage.getItem('accessToken') || '';
+        let refreshToken = localStorage.getItem('refreshToken') || '';
+        let userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        let sessionId = '';
+        let currentFileId = '';
+        let editingModelId = '';
+        let isProcessing = false;
+
+        function api(method, url, body) {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+            if (body) opts.body = JSON.stringify(body);
+            return fetch(API + url, opts).then(r => {
+                if (r.status === 401) { doLogout(); throw new Error('登录已过期'); }
+                return r.json();
+            });
+        }
+        function apiUpload(url, formData) {
+            const opts = { method: 'POST', headers: {} };
+            if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+            opts.body = formData;
+            return fetch(API + url, opts).then(r => r.json());
+        }
+
+        function switchLoginTab(tab) {
+            document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
+            document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
+            document.getElementById('tab-login').className = tab === 'login' ? 'flex-1 py-2 text-sm font-medium rounded-md bg-white shadow text-blue-600' : 'flex-1 py-2 text-sm font-medium rounded-md text-gray-500';
+            document.getElementById('tab-register').className = tab === 'register' ? 'flex-1 py-2 text-sm font-medium rounded-md bg-white shadow text-blue-600' : 'flex-1 py-2 text-sm font-medium rounded-md text-gray-500';
+        }
+        function showAuthMsg(msg, isError) {
+            const el = document.getElementById('auth-message');
+            el.textContent = msg;
+            el.className = 'mt-4 text-center text-sm ' + (isError ? 'text-red-500' : 'text-green-600');
+            el.classList.remove('hidden');
+        }
+
+        async function doLogin() {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            if (!username || !password) return showAuthMsg('请输入用户名和密码', true);
+            try {
+                const res = await api('POST', '/api/auth/login', { username, password });
+                if (res.success) {
+                    token = res.accessToken; refreshToken = res.refreshToken;
+                    userInfo = { userId: res.userId, username: res.username, nickname: res.nickname, tenantId: res.tenantId, roles: res.roles };
+                    localStorage.setItem('accessToken', token); localStorage.setItem('refreshToken', refreshToken); localStorage.setItem('userInfo', JSON.stringify(userInfo));
+                    enterApp();
+                } else { showAuthMsg(res.message || '登录失败', true); }
+            } catch (e) { showAuthMsg('网络错误', true); }
+        }
+        async function doRegister() {
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const nickname = document.getElementById('reg-nickname').value.trim();
+            const tenantId = document.getElementById('reg-tenant').value.trim();
+            if (!username || !password) return showAuthMsg('请输入用户名和密码', true);
+            try {
+                const res = await api('POST', '/api/auth/register', { username, password, nickname, tenantId });
+                if (res.success) { showAuthMsg('注册成功，请登录', false); switchLoginTab('login'); document.getElementById('login-username').value = username; }
+                else { showAuthMsg(res.message || '注册失败', true); }
+            } catch (e) { showAuthMsg('网络错误', true); }
+        }
+        function doLogout() {
+            token = ''; refreshToken = '';
+            localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken'); localStorage.removeItem('userInfo');
+            document.getElementById('main-app').classList.add('hidden');
+            document.getElementById('login-page').classList.remove('hidden');
+        }
+
+        function enterApp() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            document.getElementById('user-display').textContent = userInfo.nickname || userInfo.username;
+            document.getElementById('tenant-badge').textContent = userInfo.tenantId || '默认租户';
+            createSession();
+            loadModels(); loadSkills(); loadFiles();
+            showPanel('chat');
+        }
+
+        async function createSession() {
+            try { const res = await api('POST', '/agent/analysis/session', {}); if (res.success) sessionId = res.sessionId; } catch (e) { }
+        }
+        async function newSession() {
+            await createSession();
+            document.getElementById('chat-messages').innerHTML = `<div class="text-center text-gray-400 py-20">
+                <i data-lucide="brain" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                <p class="text-lg font-medium">Data Agent 智能体</p>
+                <p class="text-sm mt-1">支持数据分析、文件解析、知识问答</p>
+                <div class="flex justify-center gap-2 mt-4">
+                    <span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">ReAct 推理</span>
+                    <span class="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">多工具调用</span>
+                    <span class="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full">知识检索</span>
+                </div></div>`;
+            lucide.createIcons();
+        }
+
+        function showPanel(name) {
+            ['chat', 'knowledge', 'models', 'skills', 'files', 'stats'].forEach(p => {
+                document.getElementById('panel-' + p).classList.toggle('hidden', p !== name);
+                document.getElementById('btn-' + p).classList.toggle('bg-blue-50', p === name);
+                document.getElementById('btn-' + p).classList.toggle('text-blue-600', p === name);
+            });
+            if (name === 'models') loadModels();
+            if (name === 'skills') loadSkills();
+            if (name === 'files') loadFiles();
+            if (name === 'stats') loadStats();
+            if (name === 'knowledge') loadKnowledge();
+        }
+
+        // ---- 知识库 ----
+        async function loadKnowledge() {
+            try {
+                const [listRes, statsRes] = await Promise.all([api('GET', '/api/knowledge/list'), api('GET', '/api/knowledge/stats')]);
+                if (statsRes.success) {
+                    document.getElementById('k-stat-count').textContent = statsRes.knowledgeCount || 0;
+                    document.getElementById('k-stat-chunks').textContent = statsRes.vectorStoreCount || 0;
+                    document.getElementById('k-stat-backend').textContent = statsRes.usingMilvus ? 'Milvus' : '内存';
+                }
+                if (listRes.success) {
+                    const list = listRes.knowledge || [];
+                    document.getElementById('knowledge-list').innerHTML = list.length === 0
+                        ? '<p class="text-gray-400 text-center py-10">暂无知识文档，点击上方按钮添加</p>'
+                        : list.map(k => `<div class="bg-white rounded-xl border p-4 flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="font-medium text-gray-900">${escapeHtml(k.name)} <span class="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded ml-1">${k.sourceType}</span></div>
+                                <div class="text-sm text-gray-500 mt-1">${escapeHtml(k.description || '')} <span class="text-xs text-gray-400 ml-2">${k.chunkCount}片段 | ${(k.contentLength/1024).toFixed(1)}KB</span></div>
+                            </div>
+                            <button onclick="deleteKnowledge('${k.knowledgeId}')" class="text-gray-400 hover:text-red-600 ml-3" aria-label="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>`).join('');
+                    lucide.createIcons();
+                }
+            } catch (e) { }
+        }
+        async function uploadKnowledge(input) {
+            if (!input.files[0]) return;
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            try {
+                const res = await apiUpload('/api/knowledge/upload', formData);
+                if (res.success) { loadKnowledge(); alert('知识文档已上传并索引: ' + res.name); }
+                else { alert(res.message || '上传失败'); }
+            } catch (e) { alert('上传失败'); }
+            input.value = '';
+        }
+        async function deleteKnowledge(id) { if (confirm('确认删除此知识条目？')) { await api('DELETE', '/api/knowledge/delete/' + id); loadKnowledge(); } }
+        function openAddTextKnowledgeDialog() { ['tk-name','tk-desc','tk-content'].forEach(id => document.getElementById(id).value = ''); document.getElementById('text-knowledge-dialog').classList.remove('hidden'); }
+        function closeTextKnowledgeDialog() { document.getElementById('text-knowledge-dialog').classList.add('hidden'); }
+        async function saveTextKnowledge() {
+            const name = document.getElementById('tk-name').value.trim();
+            const content = document.getElementById('tk-content').value.trim();
+            const description = document.getElementById('tk-desc').value.trim();
+            if (!content) { alert('请输入知识内容'); return; }
+            try {
+                const res = await api('POST', '/api/knowledge/add-text', { name, content, description });
+                if (res.success) { closeTextKnowledgeDialog(); loadKnowledge(); alert('文本知识已添加'); }
+                else { alert(res.message || '添加失败'); }
+            } catch (e) { alert('添加失败'); }
+        }
+
+        // ---- 模型 / 技能 / 文件 ----
+        async function loadModels() {
+            try {
+                const res = await api('GET', '/api/models/list');
+                if (res.success) {
+                    const list = res.models || [];
+                    document.getElementById('model-list').innerHTML = list.map(m => `<div class="bg-white rounded-xl border p-4 flex items-center justify-between ${m.isDefault ? 'ring-2 ring-blue-200' : ''}">
+                        <div><div class="font-medium text-gray-900">${m.name} ${m.isDefault ? '<span class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">默认</span>' : ''} <span class="text-xs text-gray-400">${m.provider || ''}</span></div><div class="text-sm text-gray-500">${m.modelName || ''} | ${m.baseUrl || ''}</div></div>
+                        <div class="flex items-center space-x-2"><button onclick="toggleModel('${m.modelId}')" class="px-3 py-1 text-xs rounded-full ${m.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}">${m.enabled ? '已启用' : '已禁用'}</button>${!m.isDefault ? `<button onclick="editModel('${m.modelId}')" class="text-gray-400 hover:text-blue-600"><i data-lucide="pencil" class="w-4 h-4"></i></button><button onclick="deleteModel('${m.modelId}')" class="text-gray-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}</div></div>`).join('');
+                    const sel = document.getElementById('select-model');
+                    sel.innerHTML = '<option value="">默认模型</option>' + list.filter(m => m.enabled).map(m => `<option value="${m.modelId}">${m.name}</option>`).join('');
+                    lucide.createIcons();
+                }
+            } catch (e) { }
+        }
+        async function loadSkills() {
+            try {
+                const res = await api('GET', '/api/skills/list');
+                if (res.success) {
+                    const list = res.skills || [];
+                    document.getElementById('skill-list').innerHTML = list.map(s => `<div class="bg-white rounded-xl border p-4 flex items-center justify-between ${s.isDefault ? 'ring-2 ring-blue-200' : ''}">
+                        <div><div class="font-medium text-gray-900">${s.name} ${s.isDefault ? '<span class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">默认</span>' : ''} <span class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">v${s.version || '1.0'}</span></div><div class="text-sm text-gray-500">${s.description || ''}</div></div>
+                        <div class="flex items-center space-x-2"><button onclick="toggleSkill('${s.skillId}')" class="px-3 py-1 text-xs rounded-full ${s.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}">${s.enabled ? '已启用' : '已禁用'}</button>${!s.isDefault ? `<button onclick="deleteSkill('${s.skillId}')" class="text-gray-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}</div></div>`).join('');
+                    const sel = document.getElementById('select-skill');
+                    sel.innerHTML = '<option value="">自由对话</option>' + list.filter(s => s.enabled).map(s => `<option value="${s.skillId}">${s.name}</option>`).join('');
+                    lucide.createIcons();
+                }
+            } catch (e) { }
+        }
+        async function loadFiles() {
+            try {
+                const res = await api('GET', '/api/files/list');
+                if (res.success) {
+                    const list = res.files || [];
+                    document.getElementById('file-list').innerHTML = list.length === 0 ? '<p class="text-gray-400 text-center py-10">暂无文件</p>' : list.map(f => `<div class="bg-white rounded-xl border p-4 flex items-center justify-between"><div><div class="font-medium text-gray-900">${f.filename}</div><div class="text-sm text-gray-500">${f.contentType || ''} | ${(f.size / 1024).toFixed(1)}KB</div></div><button onclick="deleteFile('${f.fileId}')" class="text-gray-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div>`).join('');
+                    lucide.createIcons();
+                }
+            } catch (e) { }
+        }
+        async function loadStats() {
+            try {
+                const [tenantRes, userRes] = await Promise.all([api('GET', '/api/token/tenant-summary'), api('GET', '/api/token/user-summary')]);
+                document.getElementById('stat-tenant-total').textContent = (tenantRes.totalTokens || 0).toLocaleString();
+                document.getElementById('stat-user-total').textContent = (userRes.totalTokens || 0).toLocaleString();
+                document.getElementById('stat-sessions').textContent = '1';
+                if (tenantRes.byModel && tenantRes.byModel.length > 0) { const c = echarts.init(document.getElementById('chart-model')); c.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: ['40%', '70%'], data: tenantRes.byModel.map(m => ({ name: m[0] || 'unknown', value: m[1] })) }] }); }
+                if (tenantRes.bySkill && tenantRes.bySkill.length > 0) { const c = echarts.init(document.getElementById('chart-skill')); c.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: ['40%', '70%'], data: tenantRes.bySkill.map(s => ({ name: s[0] || 'unknown', value: s[1] })) }] }); }
+                loadUsageRecords(0);
+            } catch (e) { }
+        }
+
+        let currentPage = 0;
+        async function loadUsageRecords(page) {
+            try {
+                const res = await api('GET', `/api/token/usage-records?page=${page}&size=15`);
+                const tbody = document.getElementById('usage-records-body');
+                if (!res.records || res.records.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-gray-400">暂无数据</td></tr>'; document.getElementById('usage-pagination').classList.add('hidden'); return; }
+                tbody.innerHTML = res.records.map(r => { const time = r.createdAt ? new Date(r.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'; return `<tr class="border-b border-gray-50 hover:bg-gray-50"><td class="py-2 pr-3 text-gray-600 whitespace-nowrap">${time}</td><td class="py-2 pr-3">${r.userId || '-'}</td><td class="py-2 pr-3"><span class="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">${r.modelName || '-'}</span></td><td class="py-2 pr-3"><span class="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs">${r.skillName || '-'}</span></td><td class="py-2 pr-3 text-right text-gray-500">${r.promptTokens || 0}</td><td class="py-2 pr-3 text-right text-gray-500">${r.completionTokens || 0}</td><td class="py-2 text-right font-medium">${r.totalTokens || 0}</td></tr>`; }).join('');
+                currentPage = res.currentPage; const totalPages = res.totalPages;
+                const p = document.getElementById('usage-pagination'); p.classList.remove('hidden');
+                document.getElementById('usage-page-info').textContent = `第 ${currentPage + 1} / ${totalPages} 页，共 ${res.totalElements} 条`;
+                document.getElementById('btn-prev-page').disabled = currentPage <= 0;
+                document.getElementById('btn-next-page').disabled = currentPage >= totalPages - 1;
+            } catch (e) { }
+        }
+
+        // ---- 对话 ----
+        async function sendMessage() {
+            if (isProcessing) return;
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            isProcessing = true;
+            document.getElementById('send-btn').textContent = '思考中';
+            document.getElementById('send-btn').disabled = true;
+
+            appendMessage('user', text);
+            const modelId = document.getElementById('select-model').value;
+            const skillId = document.getElementById('select-skill').value;
+            const body = { question: text, sessionId };
+            if (modelId) body.modelId = modelId;
+            if (skillId) body.skillId = skillId;
+            if (currentFileId) { body.fileId = currentFileId; currentFileId = ''; document.getElementById('file-badge').classList.add('hidden'); }
+
+            const loadingId = appendMessage('assistant', '<div class="flex items-center gap-2"><span class="loading-spinner"></span><span class="text-gray-500">Agent 正在思考...</span></div>');
+
+            try {
+                const res = await api('POST', '/agent/analysis/analyze', body);
+                const el = document.getElementById(loadingId);
+                if (res.success) {
+                    let html = '';
+                    if (res.thinkingSteps && res.thinkingSteps.length > 0) {
+                        html += renderThinkingSteps(res.thinkingSteps);
+                    }
+                    html += formatResponse(res.result);
+                    el.innerHTML = html;
+                    if (res.sessionId) sessionId = res.sessionId;
+                } else {
+                    el.innerHTML = '<span class="text-red-500">错误: ' + (res.error || '未知错误') + '</span>';
+                }
+            } catch (e) {
+                const el = document.getElementById(loadingId);
+                el.innerHTML = '<span class="text-red-500">请求失败: ' + e.message + '</span>';
+            }
+            isProcessing = false;
+            document.getElementById('send-btn').textContent = '发送';
+            document.getElementById('send-btn').disabled = false;
+            scrollChat();
+        }
+
+        function renderThinkingSteps(steps) {
+            if (!steps || steps.length === 0) return '';
+            const id = 'thinking-' + Date.now();
+            let html = `<div class="mb-3">
+                <div class="thinking-toggle flex items-center gap-1 text-xs text-purple-600 mb-1" onclick="toggleThinking('${id}')">
+                    <i data-lucide="brain" class="w-3 h-3"></i>
+                    <span>思维链 (${steps.length}步)</span>
+                    <i data-lucide="chevron-down" class="w-3 h-3" id="${id}-icon"></i>
+                </div>
+                <div id="${id}" class="space-y-1">`;
+            for (const step of steps) {
+                const typeClass = step.type === 'tool_call' ? 'tool-call' : (step.type === 'answer' ? 'answer' : (step.type === 'error' ? 'error' : ''));
+                const icon = step.type === 'tool_call' ? '🔧' : (step.type === 'thinking' ? '💭' : (step.type === 'answer' ? '✅' : (step.type === 'error' ? '❌' : '📋')));
+                let content = `${icon} `;
+                if (step.type === 'tool_call') {
+                    content += `调用 <strong>${escapeHtml(step.toolName || '')}</strong>`;
+                    if (step.toolResult) content += `<br><span class="text-gray-400 text-xs">${escapeHtml(step.toolResult)}</span>`;
+                } else {
+                    content += escapeHtml(step.content || '');
+                }
+                html += `<div class="thinking-step ${typeClass}">${content}</div>`;
+            }
+            html += '</div></div>';
+            return html;
+        }
+
+        function toggleThinking(id) {
+            const el = document.getElementById(id);
+            const icon = document.getElementById(id + '-icon');
+            if (el.style.display === 'none') { el.style.display = ''; icon.style.transform = ''; }
+            else { el.style.display = 'none'; icon.style.transform = 'rotate(-90deg)'; }
+        }
+
+        function appendMessage(role, content) {
+            const container = document.getElementById('chat-messages');
+            if (container.querySelector('.text-center')) container.innerHTML = '';
+            const id = 'msg-' + Date.now() + Math.random().toString(36).substr(2, 4);
+            const div = document.createElement('div');
+            div.className = 'fade-in max-w-3xl mx-auto';
+            if (role === 'user') {
+                div.classList.add('flex', 'justify-end');
+                div.innerHTML = `<div class="msg-user text-white rounded-2xl px-4 py-3 max-w-[80%] text-sm leading-relaxed">${escapeHtml(content)}</div>`;
+            } else {
+                div.innerHTML = `<div id="${id}" class="msg-assistant text-gray-800 rounded-2xl px-4 py-3 text-sm leading-relaxed">${content}</div>`;
+            }
+            container.appendChild(div);
+            scrollChat();
+            setTimeout(() => lucide.createIcons(), 100);
+            return id;
+        }
+
+        function formatResponse(text) {
+            if (!text) return '';
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({ breaks: true, gfm: true, sanitize: false });
+                return '<div class="markdown-body">' + marked.parse(text) + '</div>';
+            }
+            return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        }
+        function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+        function scrollChat() { const el = document.getElementById('chat-messages'); el.scrollTop = el.scrollHeight; }
+
+        async function handleFileUpload(input) {
+            if (!input.files[0]) return;
+            const formData = new FormData(); formData.append('file', input.files[0]);
+            try { const res = await apiUpload('/api/files/upload', formData); if (res.success) { currentFileId = res.fileId; const badge = document.getElementById('file-badge'); badge.textContent = res.filename; badge.classList.remove('hidden'); } } catch (e) { }
+            input.value = '';
+        }
+        async function uploadFileToServer(input) {
+            if (!input.files[0]) return;
+            const formData = new FormData(); formData.append('file', input.files[0]);
+            try { await apiUpload('/api/files/upload', formData); loadFiles(); } catch (e) { }
+            input.value = '';
+        }
+
+        function openModelDialog() { editingModelId = ''; document.getElementById('model-dialog-title').textContent = '添加模型'; ['mdl-name','mdl-provider','mdl-apikey','mdl-baseurl','mdl-modelname'].forEach(id => document.getElementById(id).value = ''); document.getElementById('mdl-temp').value = '0.7'; document.getElementById('mdl-maxtokens').value = '4096'; document.getElementById('model-dialog').classList.remove('hidden'); }
+        function closeModelDialog() { document.getElementById('model-dialog').classList.add('hidden'); }
+        async function editModel(modelId) {
+            try { const res = await api('GET', '/api/models/get/' + modelId); if (res.success && res.model) { editingModelId = modelId; document.getElementById('model-dialog-title').textContent = '编辑模型'; const m = res.model; document.getElementById('mdl-name').value = m.name || ''; document.getElementById('mdl-provider').value = m.provider || ''; document.getElementById('mdl-apikey').value = m.apiKey || ''; document.getElementById('mdl-baseurl').value = m.baseUrl || ''; document.getElementById('mdl-modelname').value = m.modelName || ''; document.getElementById('mdl-temp').value = m.temperature || '0.7'; document.getElementById('mdl-maxtokens').value = m.maxTokens || '4096'; document.getElementById('model-dialog').classList.remove('hidden'); } } catch (e) { }
+        }
+        async function saveModel() {
+            const body = { name: document.getElementById('mdl-name').value.trim(), provider: document.getElementById('mdl-provider').value.trim(), apiKey: document.getElementById('mdl-apikey').value.trim(), baseUrl: document.getElementById('mdl-baseurl').value.trim(), modelName: document.getElementById('mdl-modelname').value.trim(), temperature: parseFloat(document.getElementById('mdl-temp').value) || 0.7, maxTokens: parseInt(document.getElementById('mdl-maxtokens').value) || 4096 };
+            try { if (editingModelId) { await api('PUT', '/api/models/update/' + editingModelId, body); } else { await api('POST', '/api/models/add', body); } closeModelDialog(); loadModels(); } catch (e) { }
+        }
+        async function toggleModel(modelId) { await api('PUT', '/api/models/toggle/' + modelId, {}); loadModels(); }
+        async function deleteModel(modelId) { if (confirm('确认删除?')) { await api('DELETE', '/api/models/delete/' + modelId); loadModels(); } }
+
+        function openSkillDialog() { ['sk-name','sk-desc','sk-keywords','sk-apiurl','sk-prompt','sk-steps'].forEach(id => document.getElementById(id).value = ''); document.getElementById('skill-dialog').classList.remove('hidden'); }
+        function closeSkillDialog() { document.getElementById('skill-dialog').classList.add('hidden'); }
+        async function saveSkill() {
+            const body = { name: document.getElementById('sk-name').value.trim(), description: document.getElementById('sk-desc').value.trim(), keywords: document.getElementById('sk-keywords').value.trim(), apiUrl: document.getElementById('sk-apiurl').value.trim(), promptTemplate: document.getElementById('sk-prompt').value.trim(), steps: document.getElementById('sk-steps').value.trim() };
+            try { await api('POST', '/api/skills/create', body); closeSkillDialog(); loadSkills(); } catch (e) { }
+        }
+        async function generateSkill() {
+            const desc = document.getElementById('sk-desc').value.trim() || document.getElementById('sk-name').value.trim();
+            if (!desc) { alert('请先输入技能名称或描述'); return; }
+            const btn = event.target; btn.disabled = true; btn.textContent = '生成中...';
+            try {
+                const res = await api('POST', '/api/skills/generate', { data: '', description: desc });
+                if (res.success) { document.getElementById('sk-name').value = res.name || ''; document.getElementById('sk-desc').value = res.description || ''; document.getElementById('sk-keywords').value = res.keywords || ''; document.getElementById('sk-prompt').value = res.promptTemplate || ''; document.getElementById('sk-steps').value = res.steps || ''; alert('AI已生成Skill配置，请检查后点击"创建"保存'); }
+                else { alert(res.message || '生成失败'); }
+            } catch (e) { alert('生成失败: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = 'AI自动生成'; }
+        }
+        async function toggleSkill(skillId) { await api('PUT', '/api/skills/toggle/' + skillId, {}); loadSkills(); }
+        async function deleteSkill(skillId) { if (confirm('确认删除?')) { await api('DELETE', '/api/skills/delete/' + skillId); loadSkills(); } }
+        async function deleteFile(fileId) { if (confirm('确认删除?')) { await api('DELETE', '/api/files/delete/' + fileId); loadFiles(); } }
+
+        if (token) { enterApp(); }
+        lucide.createIcons();
+    </script>
+</body>
+</html>

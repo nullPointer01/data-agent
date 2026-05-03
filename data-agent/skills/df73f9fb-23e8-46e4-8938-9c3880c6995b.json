@@ -1,0 +1,12 @@
+{
+  "skillId" : "df73f9fb-23e8-46e4-8938-9c3880c6995b",
+  "createTime" : 1775806090767,
+  "name" : "test-skill",
+  "description" : "测试skill持久化",
+  "config" : {
+    "name" : "test-skill",
+    "description" : "测试skill持久化",
+    "keywords" : [ "测试", "test" ]
+  },
+  "status" : true
+}

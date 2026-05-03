@@ -1,0 +1,53 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: zym190457
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+langchain4j:
+  open-ai:
+    api-key: sk-9WCzXvJ38nS2qLcFU8BYdMXvgR3ijlLzWoOEu7WNRjqrHUCg
+    model-name: qwen-plus
+    base-url: http://openai.vip.elong.com/v1
+    temperature: 0.7
+    timeout: 30000
+
+milvus:
+  host: localhost
+  port: 19530
+  collection-name: data_agent_vectors
+  dimension: 384
+  index-type: IVF_FLAT
+  metric-type: COSINE
+
+jwt:
+  secret: data-agent-enterprise-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm
+  access-token-validity-ms: 7200000
+  refresh-token-validity-ms: 604800000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: data-agent
+
+logging:
+  level:
+    com.ai: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

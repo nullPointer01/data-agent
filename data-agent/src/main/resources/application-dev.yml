@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/agent_db;AUTO_SERVER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+langchain4j:
+  open-ai:
+    api-key: sk-9WCzXvJ38nS2qLcFU8BYdMXvgR3ijlLzWoOEu7WNRjqrHUCg
+    model-name: qwen-plus
+    base-url: http://openai.vip.elong.com/v1
+    temperature: 0.7
+    timeout: 30000
+
+jwt:
+  secret: data-agent-enterprise-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm
+  access-token-validity-ms: 7200000
+  refresh-token-validity-ms: 604800000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: data-agent
+
+logging:
+  level:
+    com.ai: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
