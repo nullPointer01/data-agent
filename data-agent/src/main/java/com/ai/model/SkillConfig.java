@@ -1,9 +1,22 @@
 package com.ai.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+
 import java.time.LocalDateTime;
 
+/**
+ * Tenant-scoped reusable skill configuration.
+ *
+ * @author data-agent
+ */
 @Entity
 @Table(name = "skill_config")
 public class SkillConfig {
@@ -49,15 +62,15 @@ public class SkillConfig {
     private String source = "manual";
 
     @Column(name = "feedback_count")
-    private int feedbackCount = 0;
+    private Integer feedbackCount = 0;
 
     @Column(name = "positive_count")
-    private int positiveCount = 0;
+    private Integer positiveCount = 0;
 
-    private boolean enabled = true;
+    private Boolean enabled = true;
 
     @Column(name = "is_default")
-    private boolean isDefault = false;
+    private Boolean isDefault = false;
 
     @Column(name = "tenant_id", length = 64)
     private String tenantId;
@@ -189,32 +202,40 @@ public class SkillConfig {
         this.source = source;
     }
 
-    public int getFeedbackCount() {
+    public Integer getFeedbackCount() {
         return feedbackCount;
     }
 
-    public void setFeedbackCount(int feedbackCount) {
+    public void setFeedbackCount(Integer feedbackCount) {
         this.feedbackCount = feedbackCount;
     }
 
-    public int getPositiveCount() {
+    public Integer getPositiveCount() {
         return positiveCount;
     }
 
-    public void setPositiveCount(int positiveCount) {
+    public void setPositiveCount(Integer positiveCount) {
         this.positiveCount = positiveCount;
     }
 
-    public boolean isEnabled() {
+    public Boolean getEnabled() {
         return enabled;
     }
 
-    public void setEnabled(boolean enabled) {
+    public boolean isEnabled() {
+        return enabled != null ? enabled : false;
+    }
+
+    public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
 
-    public boolean isDefault() {
+    public Boolean getIsDefault() {
         return isDefault;
+    }
+
+    public boolean isDefault() {
+        return isDefault != null ? isDefault : false;
     }
 
     @JsonProperty("isDefault")

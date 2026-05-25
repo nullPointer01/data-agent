@@ -1,6 +1,12 @@
 package com.ai.service;
-  
+
+import com.ai.event.ModelConfigChangeEvent;
 import com.ai.model.ModelConfig;
+import com.ai.modelconfig.dto.ModelConfigDetailResponse;
+import com.ai.modelconfig.dto.ModelConfigListResponse;
+import com.ai.modelconfig.dto.ModelConfigMutationResponse;
+import com.ai.modelconfig.dto.ModelConfigRequest;
+import com.ai.modelconfig.dto.ModelConfigResponse;
 import com.ai.repository.ModelConfigRepository;
 import com.ai.security.SecurityContextHelper;
 import org.slf4j.Logger;
@@ -8,14 +14,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
+/**
+ * Application service for tenant-scoped model configuration.
+ *
+ * @author data-agent
+ */
 @Service
 public class ModelConfigService {
 
-    private static final Logger log = LoggerFactory.getLogger(ModelConfigService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ModelConfigService.class);
+    private static final String DEFAULT_TENANT_ID = "default";
+    private static final String MASKED_SECRET_SHORT = "****";
+    private static final String MASKED_SECRET_LONG = "******";
 
     private final ModelConfigRepository modelConfigRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -29,114 +46,192 @@ public class ModelConfigService {
         this.securityContextHelper = securityContextHelper;
     }
 
-    @Transactional
-    public Map<String, Object> addModel(ModelConfig modelConfig) {
-        try {
-            modelConfig.setTenantId(securityContextHelper.getCurrentTenantId());
-            modelConfig.setCreatedBy(securityContextHelper.getCurrentUserId());
-            modelConfig.setEnabled(true);
-            modelConfigRepository.save(modelConfig);
-            log.info("Model added: {}, tenant: {}", modelConfig.getName(), modelConfig.getTenantId());
-            return Map.of("success", true, "modelId", modelConfig.getModelId(), "name", modelConfig.getName(),
-                    "message", "模型添加成功");
-        } catch (Exception e) {
-            log.error("Failed to add model", e);
-            return Map.of("success", false, "message", "模型添加失败: " + e.getMessage());
-        }
+    @Transactional(rollbackFor = Exception.class)
+    public ModelConfigMutationResponse addModel(ModelConfigRequest request) {
+        validate(request);
+        ModelConfig modelConfig = new ModelConfig();
+        modelConfig.setTenantId(securityContextHelper.getCurrentTenantId());
+        modelConfig.setCreatedBy(securityContextHelper.getCurrentUserId());
+        applyRequest(modelConfig, request, false);
+        modelConfigRepository.save(modelConfig);
+        enforceSingleDefault(modelConfig);
+        LOGGER.info("Model added: {}, tenant: {}", modelConfig.getName(), modelConfig.getTenantId());
+        return ModelConfigMutationResponse.created(modelConfig.getModelId(), modelConfig.getName());
     }
 
-    @Transactional
-    public Map<String, Object> updateModel(String modelId, ModelConfig updatedConfig) {
-        ModelConfig existing = findModelById(modelId);
+    @Transactional(rollbackFor = Exception.class)
+    public ModelConfigMutationResponse updateModel(String modelId, ModelConfigRequest request) {
+        ModelConfig existing = findMutableModelById(modelId);
         if (existing == null) {
-            return Map.of("success", false, "message", "模型不存在或无权限");
+            return ModelConfigMutationResponse.failure("模型不存在或无权限");
         }
 
-        if (updatedConfig.getName() != null)
-            existing.setName(updatedConfig.getName());
-        if (updatedConfig.getProvider() != null)
-            existing.setProvider(updatedConfig.getProvider());
-        if (updatedConfig.getApiKey() != null)
-            existing.setApiKey(updatedConfig.getApiKey());
-        if (updatedConfig.getBaseUrl() != null)
-            existing.setBaseUrl(updatedConfig.getBaseUrl());
-        if (updatedConfig.getModelName() != null)
-            existing.setModelName(updatedConfig.getModelName());
-        if (updatedConfig.getTemperature() != null)
-            existing.setTemperature(updatedConfig.getTemperature());
-        if (updatedConfig.getMaxTokens() != null)
-            existing.setMaxTokens(updatedConfig.getMaxTokens());
-
+        applyRequest(existing, request, true);
         modelConfigRepository.save(existing);
-        eventPublisher.publishEvent(new com.ai.event.ModelConfigChangeEvent(this, modelId,
-                com.ai.event.ModelConfigChangeEvent.ChangeType.UPDATED));
-        log.info("Model updated: {}", modelId);
-        return Map.of("success", true, "modelId", modelId, "message", "模型更新成功");
+        enforceSingleDefault(existing);
+        publishChange(modelId, ModelConfigChangeEvent.ChangeType.UPDATED);
+        LOGGER.info("Model updated: {}", modelId);
+        return ModelConfigMutationResponse.updated(modelId);
     }
 
-    @Transactional
-    public Map<String, Object> deleteModel(String modelId) {
-        ModelConfig existing = findModelById(modelId);
+    @Transactional(rollbackFor = Exception.class)
+    public ModelConfigMutationResponse deleteModel(String modelId) {
+        ModelConfig existing = findMutableModelById(modelId);
         if (existing == null) {
-            return Map.of("success", false, "message", "模型不存在或无权限");
+            return ModelConfigMutationResponse.failure("模型不存在或无权限");
         }
 
         modelConfigRepository.delete(existing);
-        eventPublisher.publishEvent(new com.ai.event.ModelConfigChangeEvent(this, modelId,
-                com.ai.event.ModelConfigChangeEvent.ChangeType.DELETED));
-        log.info("Model deleted: {}", modelId);
-        return Map.of("success", true, "message", "模型删除成功");
+        publishChange(modelId, ModelConfigChangeEvent.ChangeType.DELETED);
+        LOGGER.info("Model deleted: {}", modelId);
+        return ModelConfigMutationResponse.deleted();
     }
 
-    @Transactional
-    public Map<String, Object> toggleModel(String modelId) {
-        ModelConfig existing = findModelById(modelId);
+    @Transactional(rollbackFor = Exception.class)
+    public ModelConfigMutationResponse toggleModel(String modelId) {
+        ModelConfig existing = findMutableModelById(modelId);
         if (existing == null) {
-            return Map.of("success", false, "message", "模型不存在或无权限");
+            return ModelConfigMutationResponse.failure("模型不存在或无权限");
         }
 
         existing.setEnabled(!existing.isEnabled());
         modelConfigRepository.save(existing);
-        eventPublisher.publishEvent(new com.ai.event.ModelConfigChangeEvent(this, modelId,
-                com.ai.event.ModelConfigChangeEvent.ChangeType.TOGGLED));
-        return Map.of("success", true, "modelId", modelId, "enabled", existing.isEnabled(), "message", "模型状态更新成功");
+        publishChange(modelId, ModelConfigChangeEvent.ChangeType.TOGGLED);
+        return ModelConfigMutationResponse.toggled(modelId, existing.isEnabled());
     }
 
-    public Map<String, Object> listModels() {
+    @Transactional(readOnly = true)
+    public ModelConfigListResponse listModels() {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        List<ModelConfig> tenantModels = modelConfigRepository.findByTenantId(tenantId);
-        if (!tenantId.equals("default")) {
-            List<ModelConfig> defaultModels = modelConfigRepository.findByTenantId("default");
-            tenantModels.addAll(defaultModels);
+        List<ModelConfig> models = new ArrayList<>(modelConfigRepository.findByTenantId(tenantId));
+        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
+            models.addAll(modelConfigRepository.findByTenantId(DEFAULT_TENANT_ID));
         }
-        return Map.of("success", true, "models", tenantModels);
+        return new ModelConfigListResponse(true, models.stream()
+                .map(ModelConfigResponse::from)
+                .collect(Collectors.toList()));
     }
 
+    @Transactional(readOnly = true)
+    public ModelConfigDetailResponse getModelDetail(String modelId) {
+        ModelConfig config = getModel(modelId);
+        if (config == null) {
+            return ModelConfigDetailResponse.failure("模型不存在或无权限");
+        }
+        return ModelConfigDetailResponse.success(ModelConfigResponse.from(config));
+    }
+
+    @Transactional(readOnly = true)
     public ModelConfig getModel(String modelId) {
         return findModelById(modelId);
     }
 
+    @Transactional(readOnly = true)
     public ModelConfig getFirstEnabledModel(String tenantId) {
+        List<ModelConfig> defaults = modelConfigRepository.findByTenantIdAndEnabledTrueAndIsDefaultTrue(tenantId);
+        if (!defaults.isEmpty()) {
+            return defaults.get(0);
+        }
         List<ModelConfig> enabled = modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId);
         return enabled.isEmpty() ? null : enabled.get(0);
     }
 
+    @Transactional(readOnly = true)
     public List<ModelConfig> getEnabledModels(String tenantId) {
         return modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId);
     }
 
     private ModelConfig findModelById(String modelId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        var existingOpt = modelConfigRepository.findByModelIdAndTenantId(modelId, tenantId);
-        if (existingOpt.isPresent()) {
-            return existingOpt.get();
+        var existingOptional = modelConfigRepository.findByModelIdAndTenantId(modelId, tenantId);
+        if (existingOptional.isPresent()) {
+            return existingOptional.get();
         }
-        if (!tenantId.equals("default")) {
-            existingOpt = modelConfigRepository.findByModelIdAndTenantId(modelId, "default");
-            if (existingOpt.isPresent()) {
-                return existingOpt.get();
+        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
+            existingOptional = modelConfigRepository.findByModelIdAndTenantId(modelId, DEFAULT_TENANT_ID);
+            if (existingOptional.isPresent()) {
+                return existingOptional.get();
             }
         }
         return null;
+    }
+
+    private ModelConfig findMutableModelById(String modelId) {
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        return modelConfigRepository.findByModelIdAndTenantId(modelId, tenantId)
+                .orElse(null);
+    }
+
+    private void applyRequest(ModelConfig target, ModelConfigRequest request, boolean partialUpdate) {
+        applyRequiredFields(target, request, partialUpdate);
+        if (shouldUpdateSecret(request.apiKey())) {
+            target.setApiKey(request.apiKey().trim());
+        }
+        if (request.baseUrl() != null) {
+            target.setBaseUrl(trimToNull(request.baseUrl()));
+        }
+        if (request.modelName() != null) {
+            target.setModelName(trimToNull(request.modelName()));
+        }
+        if (request.temperature() != null) {
+            target.setTemperature(request.temperature());
+        }
+        if (request.maxTokens() != null) {
+            target.setMaxTokens(request.maxTokens());
+        }
+        if (request.enabled() != null) {
+            target.setEnabled(request.enabled());
+        } else if (!partialUpdate) {
+            target.setEnabled(true);
+        }
+        if (request.isDefault() != null) {
+            target.setDefault(request.isDefault());
+        }
+    }
+
+    private void applyRequiredFields(ModelConfig target, ModelConfigRequest request, boolean partialUpdate) {
+        if (StringUtils.hasText(request.name())) {
+            target.setName(request.name().trim());
+        } else if (!partialUpdate) {
+            target.setName(request.name());
+        }
+        if (StringUtils.hasText(request.provider())) {
+            target.setProvider(request.provider().trim());
+        } else if (!partialUpdate) {
+            target.setProvider(request.provider());
+        }
+    }
+
+    private void validate(ModelConfigRequest request) {
+        if (!StringUtils.hasText(request.name())) {
+            throw new IllegalArgumentException("模型名称不能为空");
+        }
+        if (!StringUtils.hasText(request.provider())) {
+            throw new IllegalArgumentException("模型供应商不能为空");
+        }
+    }
+
+    private boolean shouldUpdateSecret(String apiKey) {
+        return StringUtils.hasText(apiKey)
+                && !Objects.equals(apiKey, MASKED_SECRET_SHORT)
+                && !Objects.equals(apiKey, MASKED_SECRET_LONG);
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private void publishChange(String modelId, ModelConfigChangeEvent.ChangeType changeType) {
+        eventPublisher.publishEvent(new ModelConfigChangeEvent(this, modelId, changeType));
+    }
+
+    private void enforceSingleDefault(ModelConfig modelConfig) {
+        if (!modelConfig.isDefault()) {
+            return;
+        }
+        modelConfigRepository.clearOtherDefaults(modelConfig.getTenantId(), modelConfig.getModelId());
     }
 }

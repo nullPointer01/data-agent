@@ -1,70 +1,107 @@
 package com.ai.skill;
 
-import com.ai.mcp.MCPContextManager;
-import com.ai.mcp.MCPModelService;
+import com.ai.mcp.McpContextManager;
+import com.ai.mcp.McpModelService;
 import com.ai.service.VectorMemoryService;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
+import com.ai.vector.VectorDocumentTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * 运行时技能注册表，负责技能注册、检索和上下文执行。
+ *
+ * @author data-agent
+ */
 @Component
 public class SkillManager {
 
-    private static final Logger log = LoggerFactory.getLogger(SkillManager.class);
-    private static final double SEMANTIC_MATCH_THRESHOLD = 0.6;
+    private static final Logger LOGGER = LoggerFactory.getLogger(SkillManager.class);
+    private static final String DEFAULT_MODEL_ID = "default";
+    private static final String VECTOR_EMPTY_CONTENT = "";
+    private static final String COMMAND_PREFIX = "/";
+    private static final String COMMAND_SPLIT_DELIMITER = " ";
+    private static final int COMMAND_SPLIT_LIMIT = 2;
+    private static final int COMMAND_SKILL_NAME_START_INDEX = 1;
+    private static final String SKILL_NAME_REQUIRED_MESSAGE = "技能名称不能为空";
 
-    private final List<Skill> skills = Collections.synchronizedList(new ArrayList<>());
+    private final List<Skill> skills = new ArrayList<>();
     private final Map<String, Skill> skillByName = new ConcurrentHashMap<>();
+    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private volatile Skill defaultSkill;
-    private final MCPContextManager mcpContextManager;
-    private final MCPModelService mcpModelService;
+    private final McpContextManager mcpContextManager;
+    private final McpModelService mcpModelService;
     private final VectorMemoryService vectorMemoryService;
+    private final SkillMatcher skillMatcher;
 
-    public SkillManager(MCPContextManager mcpContextManager, MCPModelService mcpModelService,
-            VectorMemoryService vectorMemoryService) {
+    public SkillManager(McpContextManager mcpContextManager, McpModelService mcpModelService,
+            VectorMemoryService vectorMemoryService, SkillMatcher skillMatcher) {
         this.mcpContextManager = mcpContextManager;
         this.mcpModelService = mcpModelService;
         this.vectorMemoryService = vectorMemoryService;
+        this.skillMatcher = skillMatcher;
     }
 
     public void registerSkill(Skill skill) {
-        skills.add(skill);
-        skillByName.put(skill.getName().toLowerCase(), skill);
-        try {
-            vectorMemoryService.indexSkill(skill.getName(), skill.getDescription(), "");
-        } catch (Exception e) {
-            log.warn("Failed to index skill to vector memory: {}", skill.getName(), e);
+        registerSkill(skill, true);
+    }
+
+    public void registerSkillWithoutVectorRefresh(Skill skill) {
+        registerSkill(skill, false);
+    }
+
+    private void registerSkill(Skill skill, boolean refreshVectorIndex) {
+        upsertSkill(skill);
+        if (refreshVectorIndex) {
+            refreshSkillVectorIndex(skill, false);
         }
-        log.info("Skill registered: {}", skill.getName());
+        LOGGER.info("技能已注册: {}", skill.getName());
     }
 
     public void registerDefaultSkill(Skill skill) {
+        registerDefaultSkill(skill, true);
+    }
+
+    public void registerDefaultSkillWithoutVectorRefresh(Skill skill) {
+        registerDefaultSkill(skill, false);
+    }
+
+    private void registerDefaultSkill(Skill skill, boolean refreshVectorIndex) {
+        upsertSkill(skill);
         this.defaultSkill = skill;
-        skills.add(skill);
-        skillByName.put(skill.getName().toLowerCase(), skill);
-        try {
-            vectorMemoryService.indexSkill(skill.getName(), skill.getDescription(), "");
-        } catch (Exception e) {
-            log.warn("Failed to index default skill to vector memory: {}", skill.getName(), e);
+        if (refreshVectorIndex) {
+            refreshSkillVectorIndex(skill, true);
         }
-        log.info("Default skill registered: {}", skill.getName());
+        LOGGER.info("默认技能已注册: {}", skill.getName());
     }
 
     public void unregisterSkill(String name) {
-        skills.removeIf(s -> s.getName().equalsIgnoreCase(name));
-        skillByName.remove(name.toLowerCase());
-        if (defaultSkill != null && defaultSkill.getName().equalsIgnoreCase(name)) {
-            defaultSkill = null;
+        if (!hasText(name)) {
+            return;
+        }
+        String normalizedName = normalizeName(name);
+        rwLock.writeLock().lock();
+        try {
+            skills.removeIf(skill -> normalizedName.equals(normalizeName(skill.getName())));
+            skillByName.remove(normalizedName);
+            if (defaultSkill != null && normalizedName.equals(normalizeName(defaultSkill.getName()))) {
+                defaultSkill = null;
+            }
+        } finally {
+            rwLock.writeLock().unlock();
         }
         try {
-            vectorMemoryService.removeFromStore("skill", name);
+            vectorMemoryService.removeFromStore(VectorDocumentTypes.SKILL, name);
         } catch (Exception e) {
-            log.warn("Failed to remove skill from vector store: {}", name, e);
+            LOGGER.warn("技能向量索引删除失败: {}", name, e);
         }
     }
 
@@ -73,7 +110,12 @@ public class SkillManager {
     }
 
     public List<Skill> getAllSkills() {
-        return List.copyOf(skills);
+        rwLock.readLock().lock();
+        try {
+            return List.copyOf(skills);
+        } finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     public Skill findSkill(String query) {
@@ -82,114 +124,112 @@ public class SkillManager {
     }
 
     public SkillMatchResult findSkillWithScore(String query) {
-        SkillMatchResult bestMatch = null;
-        for (Skill skill : skills) {
-            if (skill.canHandle(query)) {
-                double score = calculateMatchScore(query, skill);
-                if (bestMatch == null || score > bestMatch.score) {
-                    bestMatch = new SkillMatchResult(skill, score);
-                }
-            }
+        if (!hasText(query)) {
+            return null;
         }
-
-        try {
-            List<EmbeddingMatch<TextSegment>> semanticMatches =
-                    vectorMemoryService.searchMatches(query, 3, SEMANTIC_MATCH_THRESHOLD);
-            for (EmbeddingMatch<TextSegment> match : semanticMatches) {
-                TextSegment segment = match.embedded();
-                String type = segment.metadata().getString("type");
-                if (!"skill".equals(type)) continue;
-                String skillText = segment.text();
-                for (Skill skill : skills) {
-                    if (skillText.contains("技能[" + skill.getName() + "]")) {
-                        double semanticScore = match.score() * 15;
-                        if (bestMatch == null || semanticScore > bestMatch.score) {
-                            bestMatch = new SkillMatchResult(skill, semanticScore);
-                        }
-                        break;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Semantic skill matching failed, using keyword only: {}", e.getMessage());
-        }
-
-        return bestMatch;
+        return skillMatcher.findBestMatch(query, getAllSkills());
     }
 
     public Skill findSkillByName(String name) {
-        if (name == null)
+        if (!hasText(name)) {
             return null;
-        Skill skill = skillByName.get(name.toLowerCase());
-        if (skill != null)
+        }
+        Skill skill = skillByName.get(normalizeName(name));
+        if (skill != null) {
             return skill;
-        for (Skill s : skills) {
-            if (s.getName().equalsIgnoreCase(name))
-                return s;
         }
-        return null;
-    }
-
-    private double calculateMatchScore(String query, Skill skill) {
-        double score = 0;
-        String lowerQuery = query.toLowerCase();
-        if (lowerQuery.contains(skill.getName().toLowerCase())) {
-            score += 10;
-        }
-        if (skill.canHandle(query)) {
-            score += 5;
-        }
-        if (skill.getDescription() != null) {
-            String[] descWords = skill.getDescription().toLowerCase().split("\\s+");
-            for (String word : descWords) {
-                if (lowerQuery.contains(word) && word.length() > 1) {
-                    score += 2;
-                }
+        for (Skill item : getAllSkills()) {
+            if (normalizeName(item.getName()).equals(normalizeName(name))) {
+                return item;
             }
         }
-        return score;
+        return null;
     }
 
     public String processWithSkill(String query, Object data) {
         Skill skill = findSkill(query);
-        if (skill == null)
+        if (skill == null) {
             skill = defaultSkill;
-        if (skill != null) {
-            String contextId = mcpContextManager.createContext(skill.getName(), "default");
-            try {
-                return skill.processWithContext(query, data, contextId, mcpModelService);
-            } finally {
-                mcpContextManager.destroyContext(contextId);
-            }
         }
-        return null;
+        return executeResolvedSkill(skill, query, data);
     }
 
     public String processWithSkillByName(String skillName, String query, Object data) {
         Skill skill = findSkillByName(skillName);
-        if (skill == null)
+        if (skill == null) {
             skill = defaultSkill;
-        if (skill != null) {
-            String contextId = mcpContextManager.createContext(skill.getName(), "default");
-            try {
-                return skill.processWithContext(query, data, contextId, mcpModelService);
-            } finally {
-                mcpContextManager.destroyContext(contextId);
-            }
         }
-        return null;
+        return executeResolvedSkill(skill, query, data);
     }
 
     public String processWithCommand(String command, Object data) {
-        if (command.startsWith("/")) {
-            String[] parts = command.split(" ", 2);
-            String skillName = parts[0].substring(1);
-            String actualQuery = parts.length > 1 ? parts[1] : "";
-            return processWithSkillByName(skillName, actualQuery, data);
+        if (!hasText(command) || !command.startsWith(COMMAND_PREFIX)) {
+            return null;
         }
-        return null;
+        String[] parts = command.split(COMMAND_SPLIT_DELIMITER, COMMAND_SPLIT_LIMIT);
+        String skillName = parts[0].substring(COMMAND_SKILL_NAME_START_INDEX);
+        if (!hasText(skillName)) {
+            return null;
+        }
+        String actualQuery = parts.length > 1 ? parts[1] : "";
+        return processWithSkillByName(skillName, actualQuery, data);
     }
 
+    private String normalizeName(String name) {
+        return name.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void upsertSkill(Skill skill) {
+        validateSkill(skill);
+        String normalizedName = normalizeName(skill.getName());
+        rwLock.writeLock().lock();
+        try {
+            skills.removeIf(item -> normalizedName.equals(normalizeName(item.getName())));
+            skills.add(skill);
+            skillByName.put(normalizedName, skill);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    private void validateSkill(Skill skill) {
+        if (skill == null || !hasText(skill.getName())) {
+            throw new IllegalArgumentException(SKILL_NAME_REQUIRED_MESSAGE);
+        }
+    }
+
+    private void refreshSkillVectorIndex(Skill skill, boolean defaultSkillRegistration) {
+        try {
+            vectorMemoryService.removeFromStore(VectorDocumentTypes.SKILL, skill.getName());
+            vectorMemoryService.indexSkill(skill.getName(), skill.getDescription(), VECTOR_EMPTY_CONTENT);
+        } catch (Exception e) {
+            if (defaultSkillRegistration) {
+                LOGGER.warn("默认技能向量索引刷新失败: {}", skill.getName(), e);
+            } else {
+                LOGGER.warn("技能向量索引刷新失败: {}", skill.getName(), e);
+            }
+        }
+    }
+
+    private String executeResolvedSkill(Skill skill, String query, Object data) {
+        if (skill == null) {
+            return null;
+        }
+        String contextId = mcpContextManager.createContext(skill.getName(), DEFAULT_MODEL_ID);
+        try {
+            return skill.processWithContext(query, data, contextId, mcpModelService);
+        } finally {
+            mcpContextManager.destroyContext(contextId);
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    /**
+     * 技能匹配结果和命中分数。
+     */
     public static class SkillMatchResult {
         public final Skill skill;
         public final double score;

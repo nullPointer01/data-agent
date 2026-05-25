@@ -2,13 +2,25 @@ package com.ai.event;
 
 import org.springframework.context.ApplicationEvent;
 
+/**
+ * Event published when a model configuration changes.
+ *
+ * @author data-agent
+ */
 public class ModelConfigChangeEvent extends ApplicationEvent {
 
     private final String modelId;
     private final ChangeType changeType;
 
     public enum ChangeType {
-        UPDATED, DELETED, TOGGLED
+        /** Model configuration was updated. */
+        UPDATED,
+
+        /** Model configuration was deleted. */
+        DELETED,
+
+        /** Model configuration enabled state changed. */
+        TOGGLED
     }
 
     public ModelConfigChangeEvent(Object source, String modelId, ChangeType changeType) {

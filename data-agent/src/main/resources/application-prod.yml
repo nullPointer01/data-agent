@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+
+langchain4j:
+  open-ai:
+    api-key: ${LANGCHAIN_API_KEY}
+    model-name: ${LANGCHAIN_MODEL_NAME}
+    base-url: ${LANGCHAIN_BASE_URL}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+milvus:
+  host: ${MILVUS_HOST}
+  port: ${MILVUS_PORT:19530}
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS}
+  encryption:
+    key: ${APP_ENCRYPTION_KEY}
+  rate-limit:
+    requests-per-minute: ${RATE_LIMIT_RPM:60}
+  token-quota:
+    daily-limit-per-user: ${TOKEN_QUOTA_DAILY:1000000}
+  security:
+    bootstrap-admin-users: ${BOOTSTRAP_ADMIN_USERS:}
+
+logging:
+  level:
+    com.ai: INFO
+    org.hibernate.SQL: WARN

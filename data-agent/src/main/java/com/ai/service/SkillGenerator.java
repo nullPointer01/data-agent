@@ -1,6 +1,10 @@
 package com.ai.service;
 
-import com.ai.mcp.MCPModelService;
+import com.ai.service.file.FileUploadedEvent;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ai.mcp.McpModelService;
 import com.ai.model.ConversationSession;
 import com.ai.model.SkillConfig;
 import com.ai.repository.SkillConfigRepository;
@@ -13,75 +17,96 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+/**
+ * Generates and optimizes reusable skills through the configured model service.
+ *
+ * @author data-agent
+ */
 @Service
 public class SkillGenerator {
 
-    private static final Logger log = LoggerFactory.getLogger(SkillGenerator.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(SkillGenerator.class);
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {
+    };
+    private static final String KEY_SUCCESS = "success";
+    private static final String KEY_MESSAGE = "message";
+    private static final String KEY_SKILL_ID = "skillId";
+    private static final String KEY_NAME = "name";
+    private static final String KEY_DESCRIPTION = "description";
+    private static final String KEY_PROMPT_TEMPLATE = "promptTemplate";
+    private static final String KEY_KEYWORDS = "keywords";
+    private static final String KEY_STEPS = "steps";
+    private static final String KEY_AUTO_ATTACH = "autoAttach";
+    private static final String SOURCE_DATA = "data";
+    private static final String SOURCE_CONVERSATION = "conversation";
+    private static final String AUTO_ATTACH_KEYWORD = "keyword";
+    private static final String DEFAULT_VERSION = "1.0";
+    private static final String DEFAULT_API_METHOD = "POST";
+    private static final String DEFAULT_PROMPT_TEMPLATE = "简洁回答: {{query}}";
+    private static final String DEFAULT_SKILL_NAME = "自动生成Skill";
+    private static final String EMPTY_VALUE = "";
+    private static final String ROLE_USER = "user";
+    private static final String MARKDOWN_FENCE = "```";
+    private static final int MAX_CONVERSATION_MESSAGES = 10;
+    private static final int MAX_MESSAGE_LENGTH = 300;
+    private static final int MAX_DATA_LENGTH = 2000;
+    private static final int LOG_PREVIEW_LENGTH = 200;
+    private static final int MIN_FEEDBACK_COUNT_FOR_OPTIMIZE = 5;
+    private static final double LOW_POSITIVE_RATE_THRESHOLD = 0.3D;
 
-    private final MCPModelService mcpModelService;
+    private final McpModelService mcpModelService;
     private final SkillConfigRepository skillConfigRepository;
     private final SkillServiceImpl skillService;
     private final SecurityContextHelper securityContextHelper;
     private final SessionManager sessionManager;
+    private final ObjectMapper objectMapper;
 
-    public SkillGenerator(MCPModelService mcpModelService,
+    public SkillGenerator(McpModelService mcpModelService,
                           SkillConfigRepository skillConfigRepository,
                           SkillServiceImpl skillService,
                           SecurityContextHelper securityContextHelper,
-                          SessionManager sessionManager) {
+                          SessionManager sessionManager,
+                          ObjectMapper objectMapper) {
         this.mcpModelService = mcpModelService;
         this.skillConfigRepository = skillConfigRepository;
         this.skillService = skillService;
         this.securityContextHelper = securityContextHelper;
         this.sessionManager = sessionManager;
+        this.objectMapper = objectMapper;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> generateFromData(String data, String dataDescription) {
         String prompt = buildDataGenerationPrompt(data, dataDescription);
         String aiResponse = mcpModelService.callModel(prompt);
 
         SkillConfig config = parseAiResponseToSkillConfig(aiResponse, dataDescription);
         if (config == null) {
-            return Map.of("success", false, "message", "AI无法生成有效的Skill配置");
+            return failure("AI无法生成有效的Skill配置");
         }
 
-        config.setSource("data");
-        config.setAutoAttach("keyword");
-        config.setTenantId(securityContextHelper.getCurrentTenantId());
-        config.setCreatedBy(securityContextHelper.getCurrentUserId());
-        skillConfigRepository.save(config);
-        skillService.registerToSkillManager(config);
+        persistGeneratedSkill(config, SOURCE_DATA);
 
-        log.info("Auto-generated skill from data: {}", config.getName());
-        return Map.of(
-                "success", true,
-                "skillId", config.getSkillId(),
-                "name", config.getName(),
-                "description", config.getDescription(),
-                "promptTemplate", config.getPromptTemplate(),
-                "keywords", config.getKeywords(),
-                "steps", config.getSteps() != null ? config.getSteps() : "",
-                "autoAttach", config.getAutoAttach() != null ? config.getAutoAttach() : "",
-                "message", "Skill自动生成成功");
+        LOGGER.info("Auto-generated skill from data: {}", config.getName());
+        return generatedResponse(config, "Skill自动生成成功", true);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> generateFromConversation(String sessionId) {
         ConversationSession session = sessionManager.getSession(sessionId);
         if (session == null || session.getHistory().isEmpty()) {
-            return Map.of("success", false, "message", "会话不存在或没有对话历史");
+            return failure("会话不存在或没有对话历史");
         }
 
         StringBuilder conversationText = new StringBuilder();
         List<ConversationSession.Message> history = session.getHistory();
-        int start = Math.max(0, history.size() - 10);
+        int start = Math.max(0, history.size() - MAX_CONVERSATION_MESSAGES);
         for (int i = start; i < history.size(); i++) {
-            ConversationSession.Message msg = history.get(i);
-            String role = msg.getRole().equals("user") ? "用户" : "助手";
-            String content = msg.getContent();
-            if (content.length() > 300) content = content.substring(0, 300) + "...";
+            ConversationSession.Message message = history.get(i);
+            String role = ROLE_USER.equals(message.getRole()) ? "用户" : "助手";
+            String content = truncate(message.getContent(), MAX_MESSAGE_LENGTH);
             conversationText.append(role).append(": ").append(content).append("\n\n");
         }
 
@@ -90,48 +115,39 @@ public class SkillGenerator {
 
         SkillConfig config = parseAiResponseToSkillConfig(aiResponse, "对话生成Skill");
         if (config == null) {
-            return Map.of("success", false, "message", "AI无法从对话中提取有效的Skill配置");
+            return failure("AI无法从对话中提取有效的Skill配置");
         }
 
-        config.setSource("conversation");
-        config.setAutoAttach("keyword");
-        config.setTenantId(securityContextHelper.getCurrentTenantId());
-        config.setCreatedBy(securityContextHelper.getCurrentUserId());
-        skillConfigRepository.save(config);
-        skillService.registerToSkillManager(config);
+        persistGeneratedSkill(config, SOURCE_CONVERSATION);
 
-        log.info("Generated skill from conversation: {}", config.getName());
-        return Map.of(
-                "success", true,
-                "skillId", config.getSkillId(),
-                "name", config.getName(),
-                "description", config.getDescription(),
-                "promptTemplate", config.getPromptTemplate(),
-                "keywords", config.getKeywords(),
-                "steps", config.getSteps() != null ? config.getSteps() : "",
-                "message", "从对话生成Skill成功");
+        LOGGER.info("Generated skill from conversation: {}", config.getName());
+        return generatedResponse(config, "从对话生成Skill成功", false);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> recordFeedback(String skillId, boolean positive) {
-        var opt = skillConfigRepository.findById(skillId);
-        if (opt.isEmpty()) {
-            return Map.of("success", false, "message", "Skill不存在");
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        Optional<SkillConfig> skillOptional = skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId);
+        if (skillOptional.isEmpty()) {
+            return failure("Skill不存在或无权限");
         }
 
-        SkillConfig config = opt.get();
-        config.setFeedbackCount(config.getFeedbackCount() + 1);
+        SkillConfig config = skillOptional.get();
+        int feedbackCount = nullToZero(config.getFeedbackCount()) + 1;
+        int positiveCount = nullToZero(config.getPositiveCount());
+        config.setFeedbackCount(feedbackCount);
         if (positive) {
-            config.setPositiveCount(config.getPositiveCount() + 1);
+            positiveCount++;
+            config.setPositiveCount(positiveCount);
         }
         skillConfigRepository.save(config);
 
-        if (config.getFeedbackCount() >= 5 && config.getPositiveCount() < config.getFeedbackCount() * 0.3) {
-            log.info("Skill {} has low positive rate, triggering auto-optimization", config.getName());
+        if (shouldOptimize(feedbackCount, positiveCount)) {
+            LOGGER.info("Skill {} has low positive rate, triggering auto-optimization", config.getName());
             optimizeSkill(config);
         }
 
-        return Map.of("success", true, "message", positive ? "感谢正面反馈" : "已记录反馈，Skill将自动优化");
+        return Map.of(KEY_SUCCESS, true, KEY_MESSAGE, positive ? "感谢正面反馈" : "已记录反馈，Skill将自动优化");
     }
 
     private void optimizeSkill(SkillConfig config) {
@@ -174,17 +190,17 @@ public class SkillGenerator {
                 config.setPositiveCount(0);
                 skillConfigRepository.save(config);
                 skillService.registerToSkillManager(config);
-                log.info("Skill auto-optimized: {}", config.getName());
+                LOGGER.info("Skill auto-optimized: {}", config.getName());
             }
         } catch (Exception e) {
-            log.warn("Failed to auto-optimize skill: {}", e.getMessage());
+            LOGGER.warn("Failed to auto-optimize skill: {}", e.getMessage());
         }
     }
 
     private String buildDataGenerationPrompt(String data, String dataDescription) {
         String truncatedData = data;
-        if (data != null && data.length() > 2000) {
-            truncatedData = data.substring(0, 2000) + "\n...[数据已截断]";
+        if (data != null && data.length() > MAX_DATA_LENGTH) {
+            truncatedData = data.substring(0, MAX_DATA_LENGTH) + "\n...[数据已截断]";
         }
 
         return """
@@ -243,52 +259,109 @@ public class SkillGenerator {
     }
 
     @EventListener
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void onFileUploaded(FileUploadedEvent event) {
         try {
             String description = "上传文件: " + event.getFilename();
-            log.info("Auto-generating skill for uploaded file: {}", event.getFilename());
+            LOGGER.info("Auto-generating skill for uploaded file: {}", event.getFilename());
             generateFromData(event.getContent(), description);
         } catch (Exception e) {
-            log.warn("Failed to auto-generate skill for file: {} - {}", event.getFilename(), e.getMessage());
+            LOGGER.warn("Failed to auto-generate skill for file: {} - {}", event.getFilename(), e.getMessage());
         }
     }
 
     private SkillConfig parseAiResponseToSkillConfig(String aiResponse, String dataDescription) {
         try {
             String json = aiResponse.trim();
-            log.info("AI response for skill generation (first 200 chars): {}", json.substring(0, Math.min(200, json.length())));
-            if (json.startsWith("```")) {
+            LOGGER.info("AI response for skill generation (first {} chars): {}", LOG_PREVIEW_LENGTH,
+                    truncate(json, LOG_PREVIEW_LENGTH));
+            if (json.startsWith(MARKDOWN_FENCE)) {
                 json = json.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "");
             }
 
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<String, Object> parsed = mapper.readValue(json,
-                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            Map<String, Object> parsed = objectMapper.readValue(json, MAP_TYPE_REFERENCE);
 
             SkillConfig config = new SkillConfig();
-            config.setName(String.valueOf(parsed.getOrDefault("name", dataDescription != null ? dataDescription : "自动生成Skill")));
-            config.setDescription(String.valueOf(parsed.getOrDefault("description", "")));
-            config.setPromptTemplate(String.valueOf(parsed.getOrDefault("promptTemplate", "简洁回答: {{query}}")));
-            config.setKeywords(String.valueOf(parsed.getOrDefault("keywords", "")));
+            config.setName(String.valueOf(parsed.getOrDefault(KEY_NAME,
+                    dataDescription != null ? dataDescription : DEFAULT_SKILL_NAME)));
+            config.setDescription(String.valueOf(parsed.getOrDefault(KEY_DESCRIPTION, EMPTY_VALUE)));
+            config.setPromptTemplate(String.valueOf(parsed.getOrDefault(KEY_PROMPT_TEMPLATE, DEFAULT_PROMPT_TEMPLATE)));
+            config.setKeywords(String.valueOf(parsed.getOrDefault(KEY_KEYWORDS, EMPTY_VALUE)));
 
-            Object stepsObj = parsed.get("steps");
+            Object stepsObj = parsed.get(KEY_STEPS);
             if (stepsObj != null) {
-                config.setSteps(mapper.writeValueAsString(stepsObj));
+                config.setSteps(objectMapper.writeValueAsString(stepsObj));
             } else {
-                config.setSteps("");
+                config.setSteps(EMPTY_VALUE);
             }
-            config.setVersion("1.0");
-            config.setApiUrl("");
-            config.setApiMethod("POST");
+            config.setVersion(DEFAULT_VERSION);
+            config.setApiUrl(EMPTY_VALUE);
+            config.setApiMethod(DEFAULT_API_METHOD);
             config.setEnabled(true);
             config.setDefault(false);
 
             return config;
         } catch (Exception e) {
-            log.warn("Failed to parse AI response as SkillConfig: {}", e.getMessage());
-            log.debug("AI response was: {}", aiResponse);
+            LOGGER.warn("Failed to parse AI response as SkillConfig: {}", e.getMessage());
+            LOGGER.debug("AI response was: {}", aiResponse);
             return null;
         }
+    }
+
+    private void persistGeneratedSkill(SkillConfig config, String source) {
+        config.setSource(source);
+        config.setAutoAttach(AUTO_ATTACH_KEYWORD);
+        config.setTenantId(securityContextHelper.getCurrentTenantId());
+        config.setCreatedBy(securityContextHelper.getCurrentUserId());
+        skillConfigRepository.save(config);
+        skillService.registerToSkillManager(config);
+    }
+
+    private Map<String, Object> generatedResponse(SkillConfig config, String message, boolean includeAutoAttach) {
+        if (includeAutoAttach) {
+            return Map.of(
+                    KEY_SUCCESS, true,
+                    KEY_SKILL_ID, config.getSkillId(),
+                    KEY_NAME, config.getName(),
+                    KEY_DESCRIPTION, config.getDescription(),
+                    KEY_PROMPT_TEMPLATE, config.getPromptTemplate(),
+                    KEY_KEYWORDS, config.getKeywords(),
+                    KEY_STEPS, nullToEmpty(config.getSteps()),
+                    KEY_AUTO_ATTACH, nullToEmpty(config.getAutoAttach()),
+                    KEY_MESSAGE, message);
+        }
+        return Map.of(
+                KEY_SUCCESS, true,
+                KEY_SKILL_ID, config.getSkillId(),
+                KEY_NAME, config.getName(),
+                KEY_DESCRIPTION, config.getDescription(),
+                KEY_PROMPT_TEMPLATE, config.getPromptTemplate(),
+                KEY_KEYWORDS, config.getKeywords(),
+                KEY_STEPS, nullToEmpty(config.getSteps()),
+                KEY_MESSAGE, message);
+    }
+
+    private Map<String, Object> failure(String message) {
+        return Map.of(KEY_SUCCESS, false, KEY_MESSAGE, message);
+    }
+
+    private boolean shouldOptimize(int feedbackCount, int positiveCount) {
+        return feedbackCount >= MIN_FEEDBACK_COUNT_FOR_OPTIMIZE
+                && positiveCount < feedbackCount * LOW_POSITIVE_RATE_THRESHOLD;
+    }
+
+    private int nullToZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? EMPTY_VALUE : value;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...";
     }
 }

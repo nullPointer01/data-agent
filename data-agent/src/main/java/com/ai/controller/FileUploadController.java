@@ -1,18 +1,31 @@
 package com.ai.controller;
 
-import com.ai.service.FileProcessingService;
+import com.ai.file.dto.FileListResponse;
+import com.ai.file.dto.FileMutationResponse;
+import com.ai.file.dto.FileResponse;
+import com.ai.service.file.FileProcessingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Map;
-
+/**
+ * REST API for uploaded files.
+ *
+ * @author data-agent
+ */
 @RestController
-@RequestMapping("/api/files")
+@RequestMapping("/api/v1/files")
 public class FileUploadController {
 
-    private static final Logger log = LoggerFactory.getLogger(FileUploadController.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileUploadController.class);
+
     private final FileProcessingService fileProcessingService;
 
     public FileUploadController(FileProcessingService fileProcessingService) {
@@ -20,18 +33,23 @@ public class FileUploadController {
     }
 
     @PostMapping("/upload")
-    public Map<String, Object> uploadFile(@RequestParam("file") MultipartFile file) {
-        log.info("File upload request: {}", file.getOriginalFilename());
+    public FileResponse uploadFile(@RequestParam("file") MultipartFile file) {
+        LOGGER.info("File upload request: {}", file.getOriginalFilename());
         return fileProcessingService.processFile(file);
     }
 
     @GetMapping("/list")
-    public Map<String, Object> listFiles() {
+    public FileListResponse listFiles() {
         return fileProcessingService.listFiles();
     }
 
+    @GetMapping("/{fileId}")
+    public FileResponse getFileInfo(@PathVariable String fileId) {
+        return fileProcessingService.getFileInfo(fileId);
+    }
+
     @DeleteMapping("/delete/{fileId}")
-    public Map<String, Object> deleteFile(@PathVariable String fileId) {
+    public FileMutationResponse deleteFile(@PathVariable String fileId) {
         return fileProcessingService.deleteFile(fileId);
     }
 }

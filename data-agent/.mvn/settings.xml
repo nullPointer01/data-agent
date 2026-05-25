@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  个人项目专用 Maven settings.xml
+  =================================================
+  - 与 ~/.m2/settings.xml(公司配置)完全隔离,互不影响
+  - 独立本地仓库 repo-personal,不污染公司项目缓存
+  - 默认走阿里云公网镜像 (注意: 公司 VPN 全流量代理时无法访问 maven.aliyun.com,
+    首次更新依赖请先断开 VPN)
+  - 一旦依赖下载到 repo-personal,后续编译/启动即使开着 VPN 也不再联网
+-->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
@@ -6,11 +15,13 @@
   <localRepository>/Users/zhangyuanming/Documents/enviroment/apache-maven-3.5.2/repo-personal</localRepository>
 
   <mirrors>
+    <!-- 把所有外部仓库的请求都重定向到阿里云镜像。mirrorOf=* 比 central 更彻底,
+         覆盖 spring-milestones 等非 Central 仓库 -->
     <mirror>
-      <id>aliyun</id>
-      <name>Aliyun Maven Mirror</name>
+      <id>aliyun-public</id>
+      <name>Aliyun Public Mirror</name>
       <url>https://maven.aliyun.com/repository/public</url>
-      <mirrorOf>central</mirrorOf>
+      <mirrorOf>*</mirrorOf>
     </mirror>
   </mirrors>
 
@@ -23,18 +34,39 @@
       </properties>
       <repositories>
         <repository>
-          <id>aliyun</id>
-          <name>Aliyun Repository</name>
+          <id>aliyun-central</id>
+          <name>Aliyun Central Repository</name>
+          <url>https://maven.aliyun.com/repository/central</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>aliyun-public</id>
+          <name>Aliyun Public Repository</name>
           <url>https://maven.aliyun.com/repository/public</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>aliyun-spring</id>
+          <name>Aliyun Spring Repository</name>
+          <url>https://maven.aliyun.com/repository/spring</url>
           <releases><enabled>true</enabled></releases>
           <snapshots><enabled>false</enabled></snapshots>
         </repository>
       </repositories>
       <pluginRepositories>
         <pluginRepository>
-          <id>aliyun-plugin</id>
-          <name>Aliyun Plugin Repository</name>
+          <id>aliyun-public-plugin</id>
+          <name>Aliyun Public Plugin Repository</name>
           <url>https://maven.aliyun.com/repository/public</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>aliyun-spring-plugin</id>
+          <name>Aliyun Spring Plugin Repository</name>
+          <url>https://maven.aliyun.com/repository/spring-plugin</url>
           <releases><enabled>true</enabled></releases>
           <snapshots><enabled>false</enabled></snapshots>
         </pluginRepository>

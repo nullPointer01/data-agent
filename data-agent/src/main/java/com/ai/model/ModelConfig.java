@@ -1,9 +1,24 @@
 package com.ai.model;
 
+import com.ai.util.EncryptedStringConverter;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+
 import java.time.LocalDateTime;
 
+/**
+ * Tenant-scoped large language model configuration.
+ *
+ * @author data-agent
+ */
 @Entity
 @Table(name = "model_config")
 public class ModelConfig {
@@ -19,6 +34,7 @@ public class ModelConfig {
     private String provider;
 
     @Column(name = "api_key", length = 512)
+    @Convert(converter = EncryptedStringConverter.class)
     private String apiKey;
 
     @Column(name = "base_url", length = 256)
