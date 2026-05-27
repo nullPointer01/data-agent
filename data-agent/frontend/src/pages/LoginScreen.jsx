@@ -26,11 +26,11 @@ export function LoginScreen({ api, onAuth, notice, setNotice }) {
   return (
     <div className="login-page">
       <form className="login-panel" onSubmit={submit}>
-        <div className="brand" style={{ border: 0, padding: 0 }}>
+        <div className="login-brand">
           <div className="brand-mark"><Brain size={20} /></div>
           <div>
-            <div style={{ color: '#0f172a', fontWeight: 800, fontSize: 20 }}>Data Agent</div>
-            <div style={{ color: '#64748b', fontSize: 13 }}>企业级数据分析智能体</div>
+            <div className="login-title">Data Agent</div>
+            <div className="login-subtitle">企业级数据分析智能体</div>
           </div>
         </div>
         <div className="tabs">
@@ -48,9 +48,9 @@ export function LoginScreen({ api, onAuth, notice, setNotice }) {
               <input className="input" placeholder="租户 ID，可选" value={form.tenantId} onChange={(event) => setForm({ ...form, tenantId: event.target.value })} />
             </>
           )}
-          {mode === 'bootstrap' && <div className="notice-text">仅系统没有任何管理员时可用；已有管理员后会自动拒绝。</div>}
+          {mode === 'bootstrap' && <div className="login-hint">仅系统没有任何管理员时可用；已有管理员后会自动拒绝。</div>}
           <button className="btn primary" type="submit">{mode === 'login' ? '登录' : mode === 'bootstrap' ? '创建首个管理员' : '创建普通账号'}</button>
-          {notice && <div style={{ color: '#b45309', fontSize: 13 }}>{notice}</div>}
+          {notice && <div className="login-notice">{notice}</div>}
         </div>
       </form>
     </div>

@@ -87,6 +87,7 @@ export default function App() {
   const visibleGroups = navGroups
     .map((group) => ({ ...group, items: group.admin && !admin ? [] : group.items }))
     .filter((group) => group.items.length > 0);
+  const activeItem = visibleGroups.flatMap((group) => group.items).find((item) => item.key === page);
 
   return (
     <>
@@ -116,14 +117,18 @@ export default function App() {
         </aside>
         <main className="main">
           <header className="topbar">
-            <div>
-              <strong>{user.nickname || user.username}</strong>
-              <span className="topbar-tenant">{user.tenantId || 'default'}</span>
-              {admin && <span className="badge amber">ADMIN</span>}
+            <div className="topbar-title">
+              <span>{activeItem?.label || '工作台'}</span>
+              <small>Data Agent 控制台</small>
             </div>
             <div className="toolbar">
               {notice && <span className="notice-text">{notice}</span>}
-              <button className="btn" onClick={logout}><LogOut size={16} />退出</button>
+              <div className="account-chip">
+                <strong>{user.nickname || user.username}</strong>
+                <span>{user.tenantId || 'default'}</span>
+                {admin && <span className="badge amber">ADMIN</span>}
+              </div>
+              <button className="btn ghost" onClick={logout}><LogOut size={16} />退出</button>
             </div>
           </header>
           <section className="content">
