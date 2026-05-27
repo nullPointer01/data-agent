@@ -4,6 +4,8 @@ import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.model.ConversationSession;
 import com.ai.service.SessionManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -80,29 +82,20 @@ public class ReActAgent {
     private final MemoryManager memoryManager;
     private final ReActMetadataBuilder metadataBuilder;
 
-    public ReActAgent(SessionManager sessionManager,
-            AgentToolInvoker toolInvoker,
-            ReActRequestContextBuilder requestContextBuilder,
-            AgentConversationRecorder conversationRecorder,
-            ReActStreamEventWriter streamEventWriter,
-            ReActLoopRunner loopRunner) {
-        this(sessionManager, toolInvoker, requestContextBuilder, conversationRecorder,
-                streamEventWriter, loopRunner, null, null, null, null, null, null, null);
-    }
-
+    @Autowired
     public ReActAgent(SessionManager sessionManager,
             AgentToolInvoker toolInvoker,
             ReActRequestContextBuilder requestContextBuilder,
             AgentConversationRecorder conversationRecorder,
             ReActStreamEventWriter streamEventWriter,
             ReActLoopRunner loopRunner,
-            ReActFastPathDecider fastPathDecider,
-            ReActFastAnswerService fastAnswerService,
-            TaskPlanner taskPlanner,
-            ParallelPlanExecutor parallelPlanExecutor,
-            AgentReasoningProperties reasoningProperties,
-            MemoryManager memoryManager,
-            ReActMetadataBuilder metadataBuilder) {
+            @Nullable ReActFastPathDecider fastPathDecider,
+            @Nullable ReActFastAnswerService fastAnswerService,
+            @Nullable TaskPlanner taskPlanner,
+            @Nullable ParallelPlanExecutor parallelPlanExecutor,
+            @Nullable AgentReasoningProperties reasoningProperties,
+            @Nullable MemoryManager memoryManager,
+            @Nullable ReActMetadataBuilder metadataBuilder) {
         this.sessionManager = sessionManager;
         this.toolInvoker = toolInvoker;
         this.requestContextBuilder = requestContextBuilder;

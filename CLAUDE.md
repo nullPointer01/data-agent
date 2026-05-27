@@ -1,117 +1,293 @@
-现在我已经充分了解了代码结构。让我向用户确认几个关键决策点，然后制定完整计划。
-
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
 
-## 项目简介
+## 项目定位
 
-Data Agent 是基于 Spring Boot 3.2 + LangChain4j 的数据分析智能体后端，实现 ReAct (Reason-Act) 循环，支持动态技能(Skill)、向量记忆、多模型路由、文件/知识库索引、JWT 多租户。
+Data Agent 是一个数据分析智能体系统，后端基于 Spring Boot 3.2、Spring Security、JPA、LangChain4j、Milvus，前端基于 React + Vite。当前代码已经不是单一 ReAct Demo，而是包含：
 
-源码位于 `data-agent/` 子目录（项目根有 `docker-compose.yml`，Maven 工程在子目录）。
+- 智能对话与 SSE 输出
+- ReAct 工具调用
+- Orchestrator 多专家编排
+- 自定义 Agent 配置
+- 动态 Skill
+- 文件解析与知识库
+- RAG 检索
+- 长短期记忆
+- 模型配置与 Kimi/OpenAI 兼容接入
+- RBAC、管理员申请、审计、质量反馈、执行追踪
+
+Maven 工程在 `data-agent/` 子目录。仓库根目录包含 `docker-compose.yml`，用于启动 Milvus、Redis、Elasticsearch 等本地依赖。
 
 ## 常用命令
 
-所有 Maven 命令都需要在 `data-agent/` 子目录下执行：
+所有 Maven 命令在 `data-agent/` 子目录执行：
 
 ```bash
 cd data-agent
 
-# 推荐启动方式：脚本会切换 JDK 17 + 阿里云镜像 + 独立本地仓库
-./mvnw17.sh spring-boot:run                  # 默认 profile (MySQL + Milvus)
-./mvnw17.sh spring-boot:run -Dspring-boot.run.profiles=dev   # H2 + 内存向量库
-
-# 普通 Maven（需要本机 JDK 17）
+# 后端启动，默认 local profile
 mvn spring-boot:run
-mvn -Dtest=ClassName#methodName test         # 跑单个测试
-mvn clean package                            # 打 fat jar 到 target/
 
-# 启动外部依赖（在仓库根目录）
-docker-compose up -d                          # etcd + minio + milvus + attu
+# 后端启动但跳过前端构建，适合日常 Java 调试
+mvn -Dfrontend.skip=true spring-boot:run
+
+# 指定端口启动
+mvn -Dfrontend.skip=true spring-boot:run \
+  -Dspring-boot.run.arguments='--server.port=18080'
+
+# 编译和测试
+mvn -Dfrontend.skip=true -DskipTests compile
+mvn -Dfrontend.skip=true test
+
+# 前端单独构建
+cd frontend
+npm run build
 ```
 
-应用监听 8080（Spring Boot 默认），Milvus 19530，Attu 控制台 8000。
+外部依赖在仓库根目录启动：
 
-**注意**：`mvnw17.sh` 写死了 `JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.0.9.jdk`，且依赖 `-s .mvn/settings.xml`（阿里云镜像 + 独立本地仓库）。在其他机器上需改路径或用普通 `mvn`。
-
-## Profile 与外部依赖
-
-- **默认 profile**（`application.yml`）：MySQL `data_agent` 库 + Milvus `localhost:19530`。库表通过 JPA `ddl-auto: update` 自动同步，完整脚本见 `data-agent/sql/init.sql`（8 张表 + 默认模型/技能种子数据）。
-- **dev profile**（`application-dev.yml`）：H2 文件库 `./data/agent_db`，自动开启 H2 console（`/h2-console`）。
-- **Milvus 不可用时自动回退**：`VectorMemoryService` 启动时 socket 探测 Milvus 端口，不可达则使用 `InMemoryEmbeddingStore`，持久化到 `data/vector-store/embeddings.json` + `registry.json`（每 60 秒 dirty 时落盘，`@PreDestroy` 强制落盘）。这意味着开发时不必启动 Docker 也能跑完整链路。
-
-`langchain4j.open-ai.*` 在两份 yml 中都硬编码了一个内网 OpenAI 兼容网关（`http://openai.vip.elong.com/v1`，模型 `qwen-plus`）——它是 `LangChain4jConfig` 注入的**默认 fallback 模型**，不是唯一模型（详见下文模型路由）。
-
-## 整体架构
-
-### 请求链路（`POST /agent/analysis/analyze`）
-
-```
-AnalysisController → DataAnalysisAgentImpl.analyze
-  ├─ request.isCommand() (问题以 "/" 开头)  → SkillManager.processWithCommand → 命中即返回，否则降级到 ReActAgent
-  ├─ request.hasSkill()  (指定 skillId)     → SkillManager.findSkillByName → DynamicSkill.processWithContext
-  └─ 默认                                     → ReActAgent.execute  (ReAct 循环)
+```bash
+docker-compose up -d
 ```
 
-`/analyze/stream` 走 SSE，先把 `analyze()` 的 `thinkingSteps` 一条条 emit，再 emit `result` 和 `done`，是同步执行后流式输出结果，而非真正的 token 流。
+项目使用标准 Maven 命令运行。请确保本机 Maven 可用，并且 `JAVA_HOME` 指向 JDK 17。
 
-### ReAct 循环（`agent/ReActAgent.java`）
+## 当前运行依赖
 
-- 不使用 LangChain4j 原生 ToolCall，而是**自实现文本协议**：在 system prompt 后追加工具列表，要求 LLM 用 `[CALL:工具名("参数1", "参数2")]` 调用，然后 `tryExecuteToolCall` 用正则提取并 dispatch 到 `AgentTools` 的 12 个 `@Tool` 方法。原因之一是要兼容 OpenAI 兼容网关（很多代理不支持 function calling）。
-- 最大 8 轮迭代（`MAX_ITERATIONS`）。每轮把 LLM 输出 + 工具结果追加到 `messages`，直到 LLM 不再返回 `[CALL:...]` 或工具结果命中 `isFinalAnswer` 关键词（如"不存在""没有可用的""需要用户输入"）。
-- `AgentTools` 的 12 个工具：`listAvailableSkills`、`useSkill`、`getFileContent`、`listFiles`、`getConversationHistory`、`askUserForInfo`、`searchMemory`、`calculate`（自实现 shunting-yard 表达式求值，**不**调用 LLM）、`getCurrentTime`、`analyzeFileData`、`searchKnowledge`、`getMemoryStats`。新增工具时需同时改：① `AgentTools` 加 `@Tool` 方法；② `ReActAgent.tryExecuteToolCall` 的 switch；③ `ReActAgent.buildToolSpecifications` 的 spec 列表。
+local profile 默认配置在 `data-agent/src/main/resources/application-local.yml`。
 
-### Skill 系统（`skill/` + `service/`）
+- MySQL 是业务主库，默认连接 `jdbc:mysql://localhost:3306/data_agent`，用户名 `root`。
+- Milvus 是强依赖，默认 `localhost:19530`，collection 为 `data_agent_vectors`。应用启动会校验 Milvus 可达；向量写入/检索使用懒加载的 embedding store，避免启动阶段被 collection load 卡住。
+- Redis 依赖存在，但 local profile 关闭 Redis repository 扫描；当前主链路不要求 Redis 必须先启动。
+- Elasticsearch 是 RAG 全文检索的可选 provider。默认 `RAG_FULL_TEXT_PROVIDER=jpa`，不需要 ES；切到 `elasticsearch` 时需要启动 ES。
+- 模型 API 需要在后台模型配置或环境变量中配置。local profile 里的默认 key 是占位值，只能用于启动，不能保证真实模型调用成功。
 
-- `Skill` 是接口，**唯一实现是 `DynamicSkill`** —— 一切技能都从 `skill_config` 表加载并实例化，没有硬编码的 Java 技能类。
-- 启动时 `DataInitializer` 把 `skill_config` 中 `enabled=true` 的记录注册到 `SkillManager`，默认技能调 `registerDefaultSkill`。
-- `SkillManager.findSkillWithScore` 同时做**关键词匹配**（`canHandle` + name/description）和**向量语义匹配**（查 vector store 中 `type=skill` 的条目，score × 15 作为加权）。
-- `DynamicSkill.buildPrompt` 支持 `{{query}}` / `{{data}}` 占位符，`steps` 字段（JSON 数组）会渲染为编号工作流，`apiUrl` 非空则先调外部 API 拿数据再喂给 LLM。
-- 新建技能两条路径：① `POST /api/skills/create` 直接传 config；② `POST /api/skills/generate` 让 AI 从样例数据/对话历史**自动生成** Skill 配置（`SkillGenerator`）。
+本地 MySQL 初始化：
 
-### 模型路由（`mcp/MCPModelService.java`）
+```bash
+mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
+```
 
-- `LangChain4jConfig` 注册一个 `defaultModel` Bean（从 yml 读配置）作为 fallback。
-- `MCPModelService.getModel(modelId)` 用 `ConcurrentHashMap` 缓存按模型 ID 构建的 `OpenAiChatModel`，支持 provider = `openai|qwen|deepseek|zhipu`（都走 OpenAI SDK，只是 baseUrl/apiKey/modelName 不同）。
-- 缓存失效靠 Spring 事件：`ModelConfigService` 在 add/update/toggle/delete 时发布 `ModelConfigChangeEvent`，`MCPModelService.onModelConfigChange` 监听并清缓存。**修改 ModelConfig 字段后必须保证事件被发布**，否则缓存的旧 model 不会刷新。
-- 每次模型调用都会写 `token_usage` 表（estimateTokens 是字符数 ÷ 4 的近似值），通过 `SecurityContextHelper` 自动注入当前用户/租户。
+## Profile 约定
 
-### 向量记忆（`service/VectorMemoryService.java`）
+- `local`：默认 profile，本地 MySQL + Milvus。适合 IDE 直接启动。
+- `dev`：共享开发环境，数据库、Redis、Milvus、JWT、模型等通过环境变量注入。
+- `prod`：生产环境，`JWT_SECRET`、`APP_ENCRYPTION_KEY`、数据库和模型凭据必须显式配置。
 
-- 嵌入模型固定为 `AllMiniLmL6V2EmbeddingModel`（384 维，本地推理，无需联网）。
-- 所有索引数据带 metadata `type` 区分：`conversation`、`file`、`skill`、`knowledge`。`searchKnowledge` 工具只过滤 `knowledge`/`file`，`SkillManager` 的语义匹配只过滤 `skill`。
-- `removeFromStore` 在两种模式下都做真正删除：InMemory 模式靠**重建整个 store**（LangChain4j 的 InMemoryEmbeddingStore 没有按 ID 删除 API）；Milvus 模式独立维护一个 `MilvusServiceClient`，通过 `delete` + `id in [...]` 表达式按 PK 批量删除。`index()` 会捕获 `embeddingStore.add()` 返回的 PK 存到 `IndexEntry.pk`，registry.json 一并落盘；旧 registry 没有 pk 字段时 load 进来 pk=null，删除时跳过 Milvus delete 只清 registry（向后兼容）。
-- 文件分块：`chunkSize=500`，`overlap=100`（`indexFile` / `indexKnowledge`）。
+不要再把 H2 当成本地业务库使用。H2 仅作为测试依赖存在。
 
-### 安全与多租户
+## 前端
 
-- `SecurityConfig`：无状态 JWT，`/api/auth/**`、`/actuator/**`、静态资源放行，其余全部需要认证。CORS 全开。
-- `SecurityContextHelper.getCurrentTenantId()` 在所有数据写入路径被调用——新增 Repository 查询时**必须按 tenantId 过滤**，模型 / 技能 / 知识 / 文件 / token_usage / 会话 表都有 `tenant_id` 列。
-- JWT 密钥写在 yml 里（`jwt.secret`），AccessToken 2 小时、RefreshToken 7 天。
+前端源码在 `data-agent/frontend/src`，Vite 构建产物输出到 `data-agent/src/main/resources/static`，由 Spring Boot 托管。
 
-## 文件与数据存储
+当前导航功能包括：
 
-以下目录都在**仓库根目录**（与 `docker-compose.yml` 同级），不在 `data-agent/` 子目录内：
+- 工作台
+- 智能对话
+- 资料中心
+- 记忆中心
+- 知识库
+- 文件
+- 管理员申请
+- 用户
+- 角色权限
+- 模型
+- 技能
+- Agent
+- 数据源
+- 统计
+- 质量
+- 追踪
+- 反馈
+- 审计
 
-- `uploads/` —— 用户上传的原始文件（Excel、PDF 等）。
-- `tmp/` —— 临时文件（解析过程中的中间文件）。
-- `data/` —— H2 数据库文件（dev profile 的 `./data/agent_db` 实际落在此处）和 InMemory 向量持久化文件（`vector-store/embeddings.json`、`registry.json`）。
+修改前端后需要跑：
 
-`data-agent/target/` 是 Maven 构建输出。`src/main/resources/static/index.html` 是内嵌的单文件前端，跟着 jar 一起发布，根路径 `/` 直接访问。
+```bash
+cd data-agent/frontend
+npm run build
+```
 
-## 关键约定与陷阱
+## 认证和 RBAC
 
-- 新增或修改代码时，Javadoc、块注释和行内注释统一使用中文；如果改到旧文件，优先把相关注释一并改成中文。
+认证接口在 `/api/v1/auth`：
 
-- **`@EnableScheduling` 已开启**：`MCPContextManager.cleanupExpiredContexts`（每 5 分钟）、`VectorMemoryService.autoPersist`（每 60 秒）、`SessionManager` 的过期清理 都依赖这个。新增 `@Scheduled` 直接加即可。
-- **`MCPContext` 必须配对 destroy**：`DataAnalysisAgentImpl.handleWithSkill` 用 try/finally 确保 `mcpContextManager.destroyContext`，新增使用 context 的代码必须遵循同样模式，否则虽然 5 分钟会过期回收但会污染统计。
-- **文件内容截断**：`MAX_FILE_CHARS=3000`（`DataAnalysisAgentImpl`），`AgentTools.getFileContent` 也是 3000，`DynamicSkill.MAX_DATA_CHARS=3000`。改其中一处别忘改其他。
-- **会话历史**：内存中 `ConversationSession`（`SessionManager.sessions` Map）+ MySQL `conversation_session/conversation_message` 双写。`SessionManager` 30 分钟超时清内存，但数据库记录保留。
-- **测试**：目前只有一个空的 `AppTest.java`，没有现成测试基础设施。新增功能时需自行考虑验证方式。
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/bootstrap-admin`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
 
-## 不要做
+RBAC 已经落表：
 
-- 不要把新工具直接写在 `ReActAgent` 内部 —— 加到 `AgentTools` 并在 switch 和 spec 列表同时注册，保持三处一致。
-- 不要直接 new `DynamicSkill` 注入 Spring —— 它通过 `DataInitializer` 从数据库加载，Spring 不管理它。
-- 不要假设 Milvus 一定可用 —— 任何用 `vectorMemoryService.searchMatches` / `searchRelevant` 的代码，必须能容忍空结果（InMemory 早期可能没数据）。
-- 不要在 yml 里改 `langchain4j.open-ai.*` 的同时忘记 `DataInitializer.initDefaultModel` —— 后者首次启动时把这些值写入 `model_config` 表，之后改 yml 不会同步到数据库，需要手动改库或删默认模型让其重建。
+- `sys_user`
+- `sys_role`
+- `sys_permission`
+- `sys_user_role`
+- `sys_role_permission`
+
+默认初始化会确保：
+
+- `USER` 角色
+- `ADMIN` 角色
+- `app:use` 权限
+- `*:*` 权限
+- `BOOTSTRAP_ADMIN_USERS` 指定的已有用户自动补 ADMIN，local 默认是 `super`
+
+如果系统里没有任何管理员，可以调用 `/api/v1/auth/bootstrap-admin` 创建或提权第一个管理员。已有管理员后，用户应走管理员申请流程，由管理员审核。
+
+管理员相关接口被 `ADMIN` 角色保护。`/actuator/health` 和 `/actuator/info` 放行，其他 `/actuator/**` 需要 ADMIN。
+
+## 模型接入
+
+模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 会保证同一租户只有一个默认模型。模型变更会发布 `ModelConfigChangeEvent`，`McpModelService` 监听后清理缓存。
+
+OpenAI 兼容 HTTP 调用在 `com.ai.mcp.ModelHttpClient`。当前已支持 Kimi 两类常见配置：
+
+- Moonshot 开放平台：`https://api.moonshot.cn/v1`，模型名如 `kimi-k2.6`
+- Kimi Coding：`https://api.kimi.com/coding/v1`，模型名 `kimi-for-coding`
+
+Kimi Coding 场景下，`kimi-2.6`、`kimi-k2.6` 等别名会被归一为 `kimi-for-coding`。401/403 通常是 API Key 与 Base URL 不匹配，404 通常是模型名或接口路径错误。
+
+模型调用有重试和熔断：`ModelRetryExecutor` 不会重试 401/403/404，避免无意义重试；429 和 5xx 会重试。
+
+## Agent 执行链路
+
+主入口：
+
+- `POST /api/v1/analysis/analyze`
+- `POST /api/v1/analysis/analyze/stream`
+
+核心路由在 `AgentRuntimeService`：
+
+1. 斜杠命令：`SkillManager.processWithCommand`
+2. 指定 `agentId`：`MultiAgentRuntimeService`
+3. 指定 `skillId`：`SkillExecutionService`
+4. 默认优先 `OrchestratorAgent`
+5. Orchestrator 不可用时回退 `ReActAgent`
+
+SSE 由 `AnalysisStreamService` 协调。它不是底层模型 token 直通，而是执行完成后把 thinking steps、result、done 等事件结构化发给前端。
+
+## ReAct 与工具
+
+ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类中，而是在 `com.ai.agent.tool` 下拆分：
+
+- `AgentTools`
+- `AgentToolInvoker`
+- `AgentToolDefinition`
+- `AgentFileToolService`
+- `AgentKnowledgeToolService`
+- `AgentSkillToolService`
+- `AgentDataSourceToolService`
+- `AgentConversationToolService`
+- `AgentChartToolService`
+- `AgentUtilityToolService`
+
+新增工具时先看现有 service 的职责边界，通常需要同步更新工具定义、调用分发、测试和前端展示。
+
+## Orchestrator 与专家
+
+编排器相关代码在 `com.ai.agent.orchestrator`，专家在 `com.ai.agent.specialist`。当前有数据、知识、图表、报告、聊天、技能、ReAct 等专家类型。
+
+配置位于 `app.orchestrator.*` 和 `app.agent.reasoning.*`。默认关闭 LLM 意图识别和 LLM 规划，优先使用确定性分类和规划，避免启动后必须依赖可用模型。
+
+执行轨迹会写入 `agent_execution_trace`，质量和反馈相关数据写入 `agent_feedback` 等表。
+
+## Skill 系统
+
+Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据库加载到 `SkillManager`。
+
+重要约定：
+
+- 启动时只注册内存 Skill，不刷新 Milvus 技能向量索引，避免向量库抖动影响应用启动。
+- 创建、更新、启用 Skill 时才刷新向量索引。
+- 删除或禁用 Skill 时会从运行时注册表移除并清理向量索引。
+- `DynamicSkill` 支持 prompt template、steps、外部 API 调用、keywords 等配置。
+
+## 文件、知识库和 RAG
+
+文件上传、解析、入库、向量索引分属以下模块：
+
+- `FileUploadController`
+- `FileProcessingSubmissionService`
+- `FileProcessingWorker`
+- `FileParserService`
+- `FileStorageService`
+- `KnowledgeService`
+- `KnowledgeVectorIndexService`
+
+支持常见文本、Office、PDF、图片 OCR/解析扩展点。文件和知识库内容会进入 MySQL，同时由 Milvus 建向量索引。
+
+RAG 相关代码在 `com.ai.rag`，默认全文检索走 JPA。可选 Elasticsearch provider。RAG 会融合全文、向量、父上下文、重排、压缩和质量评估。
+
+## 记忆系统
+
+记忆相关代码在 `com.ai.memory`，持久化表包括：
+
+- `memory_entry`
+- `user_profile`
+
+记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。模型压缩默认关闭：`MEMORY_MODEL_COMPRESSION_ENABLED=false`。
+
+## 向量和 Embedding
+
+向量代码在 `com.ai.vector`。
+
+- 默认 embedding provider 是 `local`，使用本地 AllMiniLmL6V2，维度 384。
+- 可切换 `EMBEDDING_PROVIDER=api`，走 OpenAI 兼容 embedding API。
+- Milvus collection、dimension、index、metric 在 `application.yml` 的 `milvus.*` 配置。
+- `MilvusVectorStoreGateway` 启动阶段只初始化客户端和索引，`MilvusEmbeddingStore` 首次 add/search 时懒加载。
+
+如果修改 embedding 维度，必须同时处理 Milvus collection 维度和历史数据，否则会写入失败。
+
+## 数据库与租户
+
+所有业务数据默认在 MySQL。新增查询必须考虑租户隔离，优先使用 `SecurityContextHelper.getCurrentTenantId()`。
+
+常见租户字段：
+
+- `tenant_id`
+- `user_id`
+- `created_by`
+
+跨租户共享的默认数据通常使用 `tenant_id=default`。修改 list/detail 权限时要确认是否允许读取 default tenant 数据。
+
+## 配置和密钥
+
+`.env.example` 是环境变量模板。生产或共享环境必须配置：
+
+- `DB_URL`
+- `DB_USERNAME`
+- `DB_PASSWORD`
+- `JWT_SECRET`
+- `APP_ENCRYPTION_KEY`
+- `MILVUS_HOST`
+- `MILVUS_PORT`
+- 模型 API 相关变量或后台模型配置
+
+`APP_ENCRYPTION_KEY` 用于数据库敏感字段加密。改这个值会影响已加密字段解密，不能随意轮换。
+
+## 测试和验证
+
+常用验证：
+
+```bash
+cd data-agent
+mvn -Dfrontend.skip=true test
+mvn -Dfrontend.skip=true -DskipTests compile
+cd frontend && npm run build
+```
+
+最近一次巡检时后端测试数约为 403 个。不要并发跑多个 Maven 命令写同一个 `target/`，资源复制阶段可能互相踩文件。
+
+## 开发注意事项
+
+- 保持 JDK 17。
+- 后端 public 类和 public 方法要写有意义的 Javadoc。
+- 安全、租户隔离、异步、缓存、重试、熔断、向量索引、模型调用等逻辑要写简短原因注释。
+- 不要在启动阶段做重型外部写入；启动初始化应尽量只做 schema/data repair 和内存注册。
+- 不要在改模型配置后绕过 `ModelConfigService` 直接写缓存；否则模型缓存不会清理。
+- 不要把 `/actuator/**` 全部放开，只放开 health/info。
+- 不要把真实密钥提交到文档或配置模板。
+- 不要假设 Milvus 中已有 collection；首次写入时可能由 LangChain4j 创建。
+- 不要用手写字符串拼复杂 SQL 参数；Repository native query 要用命名参数，避免参数数量错位。

@@ -6027,7 +6027,7 @@ Phase 1 验收证据：
 - `DeterministicMemoryCompressorTest`、`ModelBackedMemoryCompressorTest`、`MemoryWorthinessEvaluatorTest` 验证压缩和值得记忆判断。
 - `UserProfileMemoryServiceTest`、`UserProfileMemoryRefreshServiceTest` 验证用户画像提取和刷新。
 - 2026-05-19 已执行聚焦测试：
-  `./mvnw17.sh -q -Dtest=MemoryManagerTest,MemoryCrossSessionIntegrationTest,MemoryDecaySchedulerTest,MemoryGovernanceServiceTest,MemoryWorthinessEvaluatorTest test`
+  `mvn -q -Dtest=MemoryManagerTest,MemoryCrossSessionIntegrationTest,MemoryDecaySchedulerTest,MemoryGovernanceServiceTest,MemoryWorthinessEvaluatorTest test`
 
 ### Phase 2 验收标准
 
@@ -6056,7 +6056,7 @@ Phase 2 验收证据：
 - `ElasticsearchFullTextClientTest`、`ElasticsearchFullTextRetrieverTest`、`JpaFullTextRetrieverTest` 验证全文检索实现与回退。
 - `RagParentContextResolverTest`、`RagContextCompressorTest`、`RagQualityEvaluationServiceTest` 验证父上下文、压缩和质量评估。
 - 2026-05-19 已执行聚焦测试：
-  `./mvnw17.sh -q -Dtest=EnhancedRagPipelineTest,HybridRetrieverTest,RagRetrievalServiceTest,RagQueryRewriterTest,RagRerankerTest,TextChunkerTest,SmartTextChunkerTest,SemanticChunkerTest,HierarchicalChunkerTest test`
+  `mvn -q -Dtest=EnhancedRagPipelineTest,HybridRetrieverTest,RagRetrievalServiceTest,RagQueryRewriterTest,RagRerankerTest,TextChunkerTest,SmartTextChunkerTest,SemanticChunkerTest,HierarchicalChunkerTest test`
 
 ### Phase 3 验收标准
 
@@ -6083,7 +6083,7 @@ Phase 3 验收证据：
 - `ReActResponseParserTest` 验证结构化工具调用解析。
 - `ReActAgentFastPathTest`、`ReActSynchronousStepProcessorTest`、`ReActStreamingStepProcessorTest` 验证同步/流式主链路。
 - 2026-05-19 已执行聚焦测试：
-  `./mvnw17.sh -q -Dtest=TaskPlannerTest,TaskComplexityClassifierTest,ParallelPlanExecutorTest,ParallelTaskExecutorTest,ErrorRecoveryAdvisorTest,SelfReflectorTest,ReActFastPathDeciderTest,ReActFastAnswerServiceTest,ReActRecoveryTrackerTest,ReActSynchronousStepProcessorTest,ReActStreamingStepProcessorTest,ReActAgentFastPathTest,ReActResponseParserTest,ResultIntegratorTest test`
+  `mvn -q -Dtest=TaskPlannerTest,TaskComplexityClassifierTest,ParallelPlanExecutorTest,ParallelTaskExecutorTest,ErrorRecoveryAdvisorTest,SelfReflectorTest,ReActFastPathDeciderTest,ReActFastAnswerServiceTest,ReActRecoveryTrackerTest,ReActSynchronousStepProcessorTest,ReActStreamingStepProcessorTest,ReActAgentFastPathTest,ReActResponseParserTest,ResultIntegratorTest test`
 
 ### Phase 4 验收标准
 
@@ -6110,7 +6110,7 @@ Phase 4 验收证据：
 - `DataAgentSpecialistTest`、`KnowledgeExpertSpecialistTest`、`ChartExpertSpecialistTest`、`ReportExpertSpecialistTest` 验证核心系统专家。
 - `OrchestratorAgentTest`、`MultiAgentRuntimeServiceTest`、`CustomAgentRuntimeIntegrationTest`、`CustomAgentControllerTest` 验证多 Agent 主链路和用户自定义 Agent API。
 - 2026-05-19 已执行聚焦测试：
-  `./mvnw17.sh -q -Dtest=AgentSpecialistRegistryTest,IntentAnalyzerTest,OrchestratorTaskPlannerTest,CollaborationManagerTest,ResultIntegratorTest,DataAgentSpecialistTest,KnowledgeExpertSpecialistTest,ChartExpertSpecialistTest,ReportExpertSpecialistTest,SpecialistFactoryTest,OrchestratorAgentTest,MultiAgentRuntimeServiceTest,CustomAgentRuntimeIntegrationTest,CustomAgentControllerTest test`
+  `mvn -q -Dtest=AgentSpecialistRegistryTest,IntentAnalyzerTest,OrchestratorTaskPlannerTest,CollaborationManagerTest,ResultIntegratorTest,DataAgentSpecialistTest,KnowledgeExpertSpecialistTest,ChartExpertSpecialistTest,ReportExpertSpecialistTest,SpecialistFactoryTest,OrchestratorAgentTest,MultiAgentRuntimeServiceTest,CustomAgentRuntimeIntegrationTest,CustomAgentControllerTest test`
 
 ---
 

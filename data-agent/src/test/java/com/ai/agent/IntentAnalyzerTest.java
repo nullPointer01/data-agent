@@ -15,7 +15,7 @@ import com.ai.agent.orchestrator.OrchestratorProperties;
 
 class IntentAnalyzerTest {
 
-    private final IntentAnalyzer analyzer = new IntentAnalyzer();
+    private final IntentAnalyzer analyzer = new IntentAnalyzer(null, new ObjectMapper(), new OrchestratorProperties());
 
     @Test
     void analyzeDetectsDataAnalysisIntentFromMetricSignals() {

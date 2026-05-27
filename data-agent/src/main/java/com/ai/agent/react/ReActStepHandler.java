@@ -3,6 +3,8 @@ package com.ai.agent.react;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -26,12 +28,9 @@ public class ReActStepHandler {
     private final AgentToolInvoker toolInvoker;
     private final ErrorRecoveryAdvisor recoveryAdvisor;
 
-    public ReActStepHandler(ReActResponseParser responseParser, AgentToolInvoker toolInvoker) {
-        this(responseParser, toolInvoker, null);
-    }
-
+    @Autowired
     public ReActStepHandler(ReActResponseParser responseParser, AgentToolInvoker toolInvoker,
-            ErrorRecoveryAdvisor recoveryAdvisor) {
+            @Nullable ErrorRecoveryAdvisor recoveryAdvisor) {
         this.responseParser = responseParser;
         this.toolInvoker = toolInvoker;
         this.recoveryAdvisor = recoveryAdvisor;

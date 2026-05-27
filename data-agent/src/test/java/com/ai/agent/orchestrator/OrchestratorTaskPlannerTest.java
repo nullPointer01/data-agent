@@ -15,7 +15,7 @@ import com.ai.agent.IntentAnalysisResult;
 
 class OrchestratorTaskPlannerTest {
 
-    private final OrchestratorTaskPlanner planner = new OrchestratorTaskPlanner();
+    private final OrchestratorTaskPlanner planner = new OrchestratorTaskPlanner(null, new ObjectMapper(), new OrchestratorProperties());
 
     @Test
     void planCreatesDataSpecialistTaskForDataIntent() {

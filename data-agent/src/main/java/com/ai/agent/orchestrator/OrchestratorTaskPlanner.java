@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -45,11 +47,8 @@ public class OrchestratorTaskPlanner {
     private final ObjectMapper objectMapper;
     private final OrchestratorProperties orchestratorProperties;
 
-    public OrchestratorTaskPlanner() {
-        this(null, new ObjectMapper(), new OrchestratorProperties());
-    }
-
-    public OrchestratorTaskPlanner(McpModelService modelService,
+    @Autowired
+    public OrchestratorTaskPlanner(@Nullable McpModelService modelService,
             ObjectMapper objectMapper,
             OrchestratorProperties orchestratorProperties) {
         this.modelService = modelService;

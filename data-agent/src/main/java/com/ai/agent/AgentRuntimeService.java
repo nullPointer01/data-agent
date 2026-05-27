@@ -5,6 +5,8 @@ import com.ai.model.AnalysisResponse;
 import com.ai.model.ConversationSession;
 import com.ai.service.MultiAgentRuntimeService;
 import com.ai.skill.SkillManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import com.ai.agent.orchestrator.OrchestratorAgent;
 import com.ai.agent.orchestrator.OrchestratorResult;
@@ -30,22 +32,14 @@ public class AgentRuntimeService {
     private final AgentConversationRecorder conversationRecorder;
     private final AgentExecutionTraceService traceService;
 
+    @Autowired
     public AgentRuntimeService(SkillManager skillManager,
             ReActAgent reActAgent,
             MultiAgentRuntimeService multiAgentRuntimeService,
-            SkillExecutionService skillExecutionService,
-            AgentConversationRecorder conversationRecorder) {
-        this(skillManager, reActAgent, multiAgentRuntimeService, null, skillExecutionService,
-                conversationRecorder, null);
-    }
-
-    public AgentRuntimeService(SkillManager skillManager,
-            ReActAgent reActAgent,
-            MultiAgentRuntimeService multiAgentRuntimeService,
-            OrchestratorAgent orchestratorAgent,
+            @Nullable OrchestratorAgent orchestratorAgent,
             SkillExecutionService skillExecutionService,
             AgentConversationRecorder conversationRecorder,
-            AgentExecutionTraceService traceService) {
+            @Nullable AgentExecutionTraceService traceService) {
         this.skillManager = skillManager;
         this.reActAgent = reActAgent;
         this.multiAgentRuntimeService = multiAgentRuntimeService;

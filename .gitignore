@@ -22,3 +22,46 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Build outputs and dependencies
+target/
+node_modules/
+dist/
+.vite/
+
+# Runtime and local data
+data/
+uploads/
+tmp/
+logs/
+*.db
+*.mv.db
+*.trace.db
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# IDE and local assistant metadata
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+.continue/
+.claude/
+.codex/
+.gemini/
+.kiro/
+.opencode/
+.qoder/
+.roo/
+.trae/
+.windsurf/
+.agent/
+.codebuddy/
+.codegraph/
+data-agent/.codegraph/
+
+# Generated local artifacts
+pet-builds/

@@ -27,7 +27,7 @@ class ReActRequestContextBuilderTest {
         request.setQuestion("分析销售趋势");
         when(ragRetrievalService.retrieve("分析销售趋势"))
                 .thenReturn(new RagContextResponse("企业资料内容", 1));
-        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService);
+        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService, null);
 
         ReActRequestContext context = builder.build(request, "csv-content");
 
@@ -45,7 +45,7 @@ class ReActRequestContextBuilderTest {
         request.setQuestion("你好");
         when(ragRetrievalService.retrieve("你好"))
                 .thenReturn(new RagContextResponse("", 0));
-        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService);
+        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService, null);
 
         ReActRequestContext context = builder.build(request, null);
 
@@ -89,7 +89,7 @@ class ReActRequestContextBuilderTest {
         AnalysisRequest request = new AnalysisRequest();
         request.setQuestion("你好");
         when(ragRetrievalService.retrieve("你好")).thenThrow(new IllegalStateException("vector down"));
-        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService);
+        ReActRequestContextBuilder builder = new ReActRequestContextBuilder(ragRetrievalService, null);
 
         ReActRequestContext context = builder.build(request, null);
 

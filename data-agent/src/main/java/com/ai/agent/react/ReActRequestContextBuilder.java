@@ -8,6 +8,8 @@ import com.ai.rag.RagRetrievalService;
 import com.ai.rag.dto.RagContextResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,11 +27,9 @@ public class ReActRequestContextBuilder {
     private final MemoryManager memoryManager;
     private final MemoryContextPromptFormatter memoryFormatter;
 
-    public ReActRequestContextBuilder(RagRetrievalService ragRetrievalService) {
-        this(ragRetrievalService, null);
-    }
-
-    public ReActRequestContextBuilder(RagRetrievalService ragRetrievalService, MemoryManager memoryManager) {
+    @Autowired
+    public ReActRequestContextBuilder(RagRetrievalService ragRetrievalService,
+            @Nullable MemoryManager memoryManager) {
         this.ragRetrievalService = ragRetrievalService;
         this.memoryManager = memoryManager;
         this.memoryFormatter = new MemoryContextPromptFormatter();

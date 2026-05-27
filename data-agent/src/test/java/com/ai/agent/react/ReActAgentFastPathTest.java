@@ -237,7 +237,7 @@ class ReActAgentFastPathTest {
         return new ReActAgent(
                 mock(SessionManager.class),
                 mock(AgentToolInvoker.class),
-                new ReActRequestContextBuilder(ragRetrievalService),
+                new ReActRequestContextBuilder(ragRetrievalService, null),
                 recorder,
                 new ReActStreamEventWriter(new ObjectMapper()),
                 loopRunner,

@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -50,25 +52,12 @@ public class IntentAnalyzer {
     private final ObjectMapper objectMapper;
     private final OrchestratorProperties properties;
 
-    /**
-     * 无参构造器，仅使用关键词匹配，不启用 LLM 增强。
-     */
-    public IntentAnalyzer() {
-        this(null, new ObjectMapper(), new OrchestratorProperties());
-    }
-
-    /**
-     * 完整构造器，支持可选的 LLM 增强意图分析。
-     *
-     * @param modelService 模型调用服务，可为空
-     * @param objectMapper JSON 序列化工具
-     * @param properties 编排配置
-     */
-    public IntentAnalyzer(McpModelService modelService, ObjectMapper objectMapper,
+    @Autowired
+    public IntentAnalyzer(@Nullable McpModelService modelService, ObjectMapper objectMapper,
             OrchestratorProperties properties) {
         this.modelService = modelService;
-        this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
-        this.properties = properties == null ? new OrchestratorProperties() : properties;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     /**

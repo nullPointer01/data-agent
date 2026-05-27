@@ -11,6 +11,7 @@ import com.ai.model.AgentProfile;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.service.AgentProfileService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -246,8 +247,8 @@ class OrchestratorAgentTest {
                 new AgentSpecialistRegistry(registeredSpecialists),
                 reActAgent,
                 new TaskComplexityClassifier(),
-                new IntentAnalyzer(),
-                new OrchestratorTaskPlanner(),
+                new IntentAnalyzer(null, new ObjectMapper(), new OrchestratorProperties()),
+                new OrchestratorTaskPlanner(null, new ObjectMapper(), new OrchestratorProperties()),
                 new CollaborationManager(),
                 new ResultIntegrator(),
                 new ParallelTaskExecutor(Runnable::run),
