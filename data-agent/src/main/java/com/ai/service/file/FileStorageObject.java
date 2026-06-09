@@ -8,6 +8,7 @@ package com.ai.service.file;
  * @param contentType client-provided content type
  * @param size file size in bytes
  * @param path absolute storage path
+ * @param contentHash SHA-256 hex digest of the file content, used for deduplication
  * @author data-agent
  */
 public record FileStorageObject(
@@ -15,5 +16,6 @@ public record FileStorageObject(
         String filename,
         String contentType,
         long size,
-        String path) {
+        String path,
+        String contentHash) {
 }

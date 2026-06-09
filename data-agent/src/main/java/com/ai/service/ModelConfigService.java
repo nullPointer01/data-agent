@@ -1,5 +1,6 @@
 package com.ai.service;
 
+import com.ai.config.CacheNames;
 import com.ai.event.ModelConfigChangeEvent;
 import com.ai.model.ModelConfig;
 import com.ai.modelconfig.dto.ModelConfigDetailResponse;
@@ -11,6 +12,9 @@ import com.ai.repository.ModelConfigRepository;
 import com.ai.security.SecurityContextHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +50,10 @@ public class ModelConfigService {
         this.securityContextHelper = securityContextHelper;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
+            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
+    })
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse addModel(ModelConfigRequest request) {
         validate(request);
@@ -59,6 +67,10 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.created(modelConfig.getModelId(), modelConfig.getName());
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
+            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
+    })
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse updateModel(String modelId, ModelConfigRequest request) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -74,6 +86,10 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.updated(modelId);
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
+            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
+    })
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse deleteModel(String modelId) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -87,6 +103,10 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.deleted();
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
+            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
+    })
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse toggleModel(String modelId) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -100,6 +120,7 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.toggled(modelId, existing.isEnabled());
     }
 
+    @Cacheable(value = CacheNames.MODELS, key = "@securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public ModelConfigListResponse listModels() {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -112,6 +133,7 @@ public class ModelConfigService {
                 .collect(Collectors.toList()));
     }
 
+    @Cacheable(value = CacheNames.MODEL_DETAIL, key = "#modelId + ':' + @securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public ModelConfigDetailResponse getModelDetail(String modelId) {
         ModelConfig config = getModel(modelId);
@@ -121,6 +143,7 @@ public class ModelConfigService {
         return ModelConfigDetailResponse.success(ModelConfigResponse.from(config));
     }
 
+    @Cacheable(value = CacheNames.MODELS, key = "'entity:' + #modelId + ':' + @securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public ModelConfig getModel(String modelId) {
         return findModelById(modelId);

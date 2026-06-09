@@ -1,9 +1,8 @@
 package com.ai.security.rbac;
-import com.ai.security.rbac.SysPermission;
-import com.ai.security.rbac.SysRoleRepository;
-import com.ai.security.rbac.SysRole;
-import com.ai.security.SecurityConstants;
 
+import com.ai.config.CacheNames;
+import com.ai.security.SecurityConstants;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,6 +83,7 @@ public class RolePermissionService {
                 .anyMatch(role -> role.isEnabled() && role.getRoleCode().equals(normalizedRoleCode));
     }
 
+    @Cacheable(value = CacheNames.ROLES, key = "'entity_all'")
     @Transactional(readOnly = true)
     public List<SysRole> listRoles() {
         return roleRepository.findAll().stream()

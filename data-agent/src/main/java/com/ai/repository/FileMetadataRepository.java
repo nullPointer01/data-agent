@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.ai.model.FileProcessingStatus;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -41,6 +43,17 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
      * @return 文件元数据
      */
     Optional<FileMetadata> findByFileIdAndTenantId(String fileId, String tenantId);
+
+    /**
+     * 按内容哈希和租户查询已完成处理的文件（用于上传去重）。
+     *
+     * @param contentHash SHA-256 hex digest
+     * @param tenantId 租户编号
+     * @param status 期望的处理状态（通常为 COMPLETED）
+     * @return 匹配的已有文件
+     */
+    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndProcessingStatus(
+            String contentHash, String tenantId, FileProcessingStatus status);
 
     /**
      * JPA 全文检索兜底查询。

@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.ai.model.FileProcessingStatus;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
@@ -31,6 +33,7 @@ public class FileProcessingServiceImpl implements FileProcessingService {
     private static final String METRIC_FILE_DELETE_TOTAL = "data_agent_file_delete_total";
     private static final String TAG_STATUS = "status";
     private static final String STATUS_ACCEPTED = "accepted";
+    private static final String STATUS_DEDUPLICATED = "deduplicated";
     private static final String STATUS_FAILED = "failed";
     private static final String STATUS_SUCCESS = "success";
     private static final String RESOURCE_TYPE_FILE = "FILE";
@@ -68,6 +71,20 @@ public class FileProcessingServiceImpl implements FileProcessingService {
         try {
             String fileId = UUID.randomUUID().toString();
             storedFile = fileStorageService.store(fileId, file);
+
+            // 去重：同租户下已有相同内容且处理完成的文件，直接返回已有记录
+            Optional<FileMetadata> duplicate = metadataLifecycleService.findCompletedDuplicate(
+                    storedFile.contentHash());
+            if (duplicate.isPresent()) {
+                // 清理刚存储的重复文件
+                safeDeleteStoredFile(storedFile);
+                FileMetadata existing = duplicate.get();
+                LOGGER.info("File upload deduplicated: {} -> existing {}, hash={}",
+                        storedFile.filename(), existing.getFileId(), storedFile.contentHash());
+                meterRegistry.counter(METRIC_FILE_UPLOAD_TOTAL, TAG_STATUS, STATUS_DEDUPLICATED).increment();
+                return FileResponse.accepted(existing, "文件内容与已有文件相同，已自动关联");
+            }
+
             metadata = metadataLifecycleService.createQueued(storedFile);
             meterRegistry.counter(METRIC_FILE_UPLOAD_TOTAL, TAG_STATUS, STATUS_ACCEPTED).increment();
             auditLogService.record(ACTION_UPLOAD_ACCEPTED, RESOURCE_TYPE_FILE, fileId, AUDIT_STATUS_SUCCESS,
@@ -135,6 +152,14 @@ public class FileProcessingServiceImpl implements FileProcessingService {
         return metadataLifecycleService.findCurrentTenantFile(fileId)
                 .map(FileResponse::from)
                 .orElse(FileResponse.failure("文件不存在或无权限"));
+    }
+
+    private void safeDeleteStoredFile(FileStorageObject storedFile) {
+        try {
+            fileStorageService.delete(storedFile.path());
+        } catch (IOException | SecurityException e) {
+            LOGGER.warn("去重后清理重复文件失败: {}", storedFile.fileId(), e);
+        }
     }
 
     private void cleanupUntrackedFile(FileStorageObject storedFile, FileMetadata metadata) {

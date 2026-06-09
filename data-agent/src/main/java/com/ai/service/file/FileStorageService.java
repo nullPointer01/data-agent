@@ -6,10 +6,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 /**
  * Handles upload filesystem operations and guards all paths inside the managed upload directory.
@@ -47,11 +51,26 @@ public class FileStorageService {
         Path filePath = uploadDir.resolve(fileId + "_" + safeFilename).normalize();
         validateManagedPath(filePath);
 
-        try (InputStream inputStream = file.getInputStream()) {
-            Files.copy(inputStream, filePath, StandardCopyOption.REPLACE_EXISTING);
+        // 边写文件边计算 SHA-256，零额外 IO 开销
+        MessageDigest digest = newSha256Digest();
+        try (InputStream inputStream = file.getInputStream();
+                OutputStream fileOut = Files.newOutputStream(filePath);
+                DigestOutputStream digestOut = new DigestOutputStream(fileOut, digest)) {
+            inputStream.transferTo(digestOut);
         }
 
-        return new FileStorageObject(fileId, filename, file.getContentType(), file.getSize(), filePath.toString());
+        String contentHash = HexFormat.of().formatHex(digest.digest());
+        return new FileStorageObject(fileId, filename, file.getContentType(), file.getSize(),
+                filePath.toString(), contentHash);
+    }
+
+    private static MessageDigest newSha256Digest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandated by the Java spec; this should never happen
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     /**

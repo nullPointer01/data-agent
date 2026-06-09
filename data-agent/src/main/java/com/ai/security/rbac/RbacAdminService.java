@@ -1,11 +1,9 @@
 package com.ai.security.rbac;
-import com.ai.security.rbac.SysPermissionRepository;
-import com.ai.security.rbac.SysPermission;
-import com.ai.security.rbac.SysRoleRepository;
-import com.ai.security.rbac.SysRole;
 
+import com.ai.config.CacheNames;
 import com.ai.security.dto.PermissionResponse;
 import com.ai.security.dto.RoleResponse;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +27,7 @@ public class RbacAdminService {
         this.permissionRepository = permissionRepository;
     }
 
+    @Cacheable(value = CacheNames.ROLES, key = "'all'")
     @Transactional(readOnly = true)
     public List<RoleResponse> listRoles() {
         return roleRepository.findAll().stream()
@@ -36,6 +35,7 @@ public class RbacAdminService {
                 .toList();
     }
 
+    @Cacheable(value = CacheNames.PERMISSIONS, key = "'all'")
     @Transactional(readOnly = true)
     public List<PermissionResponse> listPermissions() {
         return permissionRepository.findAll().stream()

@@ -44,6 +44,7 @@ public class FileMetadataLifecycleService {
         metadata.setContentType(storedFile.contentType());
         metadata.setSize(storedFile.size());
         metadata.setPath(storedFile.path());
+        metadata.setContentHash(storedFile.contentHash());
         metadata.setProcessingStatus(FileProcessingStatus.QUEUED);
         metadata.setTenantId(securityContextHelper.getCurrentTenantId());
         metadata.setUploadedBy(securityContextHelper.getCurrentUserId());
@@ -69,6 +70,21 @@ public class FileMetadataLifecycleService {
     @Transactional(readOnly = true)
     public Optional<FileMetadata> findCurrentTenantFile(String fileId) {
         return fileMetadataRepository.findByFileIdAndTenantId(fileId, securityContextHelper.getCurrentTenantId());
+    }
+
+    /**
+     * 按内容哈希查找当前租户下已处理完成的相同文件（用于上传去重）。
+     *
+     * @param contentHash SHA-256 hex digest
+     * @return 已有的同内容文件
+     */
+    @Transactional(readOnly = true)
+    public Optional<FileMetadata> findCompletedDuplicate(String contentHash) {
+        if (contentHash == null || contentHash.isBlank()) {
+            return Optional.empty();
+        }
+        return fileMetadataRepository.findFirstByContentHashAndTenantIdAndProcessingStatus(
+                contentHash, securityContextHelper.getCurrentTenantId(), FileProcessingStatus.COMPLETED);
     }
 
     /**

@@ -16,7 +16,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.springframework.core.task.AsyncTaskExecutor;
 
 /**
  * 协调分析执行与 SSE 事件投递。
@@ -45,13 +48,13 @@ public class AnalysisStreamService {
     private final DataAnalysisAgent dataAnalysisAgent;
     private final ReActStreamEventWriter streamEventWriter;
     private final ObjectMapper objectMapper;
-    private final Executor sseExecutor;
+    private final AsyncTaskExecutor sseExecutor;
     private final long sseTimeoutMs;
 
     public AnalysisStreamService(DataAnalysisAgent dataAnalysisAgent,
             ReActStreamEventWriter streamEventWriter,
             ObjectMapper objectMapper,
-            @Qualifier("sseExecutor") Executor sseExecutor,
+            @Qualifier("sseExecutor") AsyncTaskExecutor sseExecutor,
             @Value("${app.sse.timeout-ms:600000}") long sseTimeoutMs) {
         this.dataAnalysisAgent = dataAnalysisAgent;
         this.streamEventWriter = streamEventWriter;
@@ -68,10 +71,28 @@ public class AnalysisStreamService {
      */
     public SseEmitter stream(AnalysisRequest request) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        emitter.onCompletion(() -> LOGGER.debug("SSE 流已完成"));
-        emitter.onTimeout(() -> LOGGER.warn("SSE 流已超时"));
+        AtomicReference<Future<?>> taskRef = new AtomicReference<>();
 
-        sseExecutor.execute(() -> executeStreamingAnalysis(request, emitter));
+        // 超时/客户端断开时中断后台分析线程，避免白跑模型调用
+        Runnable cancelTask = () -> {
+            Future<?> task = taskRef.get();
+            if (task != null) {
+                task.cancel(true);
+            }
+        };
+
+        emitter.onCompletion(() -> LOGGER.debug("SSE 流已完成"));
+        emitter.onTimeout(() -> {
+            LOGGER.warn("SSE 流已超时");
+            cancelTask.run();
+        });
+        emitter.onError(ex -> {
+            LOGGER.warn("SSE 流异常断开: {}", ex.getMessage());
+            cancelTask.run();
+        });
+
+        Future<?> future = sseExecutor.submit(() -> executeStreamingAnalysis(request, emitter));
+        taskRef.set(future);
         return emitter;
     }
 
@@ -190,6 +211,9 @@ public class AnalysisStreamService {
     }
 
     private void sendRawEvent(SseEmitter emitter, String eventJson) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event().name(EVENT_STREAM).data(eventJson));
         } catch (Exception e) {

@@ -8,6 +8,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
 
+import org.springframework.core.task.AsyncTaskExecutor;
+
 /**
  * 异步任务执行器配置。
  *
@@ -40,7 +42,7 @@ public class AsyncConfig {
     }
 
     @Bean(name = "sseExecutor")
-    public Executor sseExecutor(
+    public AsyncTaskExecutor sseExecutor(
             @Value("${app.sse.core-pool-size:2}") int corePoolSize,
             @Value("${app.sse.max-pool-size:8}") int maxPoolSize,
             @Value("${app.sse.queue-capacity:100}") int queueCapacity,
@@ -57,8 +59,8 @@ public class AsyncConfig {
         return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-task-", taskDecorator);
     }
 
-    private Executor buildExecutor(int corePoolSize, int maxPoolSize, int queueCapacity, String threadNamePrefix,
-            TaskDecorator taskDecorator) {
+    private ThreadPoolTaskExecutor buildExecutor(int corePoolSize, int maxPoolSize, int queueCapacity,
+            String threadNamePrefix, TaskDecorator taskDecorator) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
         executor.setMaxPoolSize(maxPoolSize);

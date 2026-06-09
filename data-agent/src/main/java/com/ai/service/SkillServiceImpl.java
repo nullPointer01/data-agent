@@ -1,5 +1,6 @@
 package com.ai.service;
 
+import com.ai.config.CacheNames;
 import com.ai.model.SkillConfig;
 import com.ai.model.SkillPromptHistory;
 import com.ai.repository.SkillConfigRepository;
@@ -15,6 +16,8 @@ import com.ai.skill.dto.SkillRequest;
 import com.ai.skill.dto.SkillResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -73,6 +76,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse createSkill(SkillRequest request) {
         validateCreateRequest(request);
@@ -90,6 +94,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @Cacheable(value = CacheNames.SKILLS, key = "@securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public SkillListResponse listSkills() {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -103,6 +108,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse updateSkill(String skillId, SkillRequest request) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -136,6 +142,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse rollbackSkill(String skillId, int version) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -164,6 +171,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse deleteSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -180,6 +188,7 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
+    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse toggleSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
