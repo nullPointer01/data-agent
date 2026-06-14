@@ -3,7 +3,7 @@ package com.ai.security;
 import java.util.Set;
 
 /**
- * Security module constants.
+ * 安全模块常量。
  *
  * @author data-agent
  */

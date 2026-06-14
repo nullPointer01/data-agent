@@ -3,7 +3,7 @@ package com.ai.file.dto;
 import java.util.List;
 
 /**
- * File list response.
+ * 文件列表响应。
  *
  * @author data-agent
  */

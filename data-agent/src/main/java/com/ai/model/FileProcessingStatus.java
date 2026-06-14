@@ -1,20 +1,20 @@
 package com.ai.model;
 
 /**
- * File processing lifecycle status.
+ * 文件处理生命周期状态。
  *
  * @author data-agent
  */
 public enum FileProcessingStatus {
-    /** File is waiting for asynchronous processing. */
+    /** 文件等待异步处理。 */
     QUEUED,
 
-    /** File is currently being processed. */
+    /** 文件正在处理中。 */
     PROCESSING,
 
-    /** File processing completed successfully. */
+    /** 文件处理成功完成。 */
     COMPLETED,
 
-    /** File processing failed. */
+    /** 文件处理失败。 */
     FAILED
 }

@@ -1,28 +1,28 @@
 package com.ai.service.file;
 
 /**
- * Result of submitting one file to the asynchronous processing executor.
+ * 将一个文件提交给异步处理执行器的结果。
  *
- * @param accepted whether the executor accepted the task
- * @param message user-facing submission message
+ * @param accepted 执行器是否接受了任务
+ * @param message 面向用户的提交消息
  * @author data-agent
  */
 public record FileProcessingSubmissionResult(boolean accepted, String message) {
 
     /**
-     * Creates an accepted submission result.
+     * 创建接受的提交结果。
      *
-     * @return accepted result
+     * @return 接受结果
      */
     public static FileProcessingSubmissionResult acceptedResult() {
         return new FileProcessingSubmissionResult(true, null);
     }
 
     /**
-     * Creates a rejected submission result.
+     * 创建拒绝的提交结果。
      *
-     * @param message rejection reason
-     * @return rejected result
+     * @param message 拒绝原因
+     * @return 拒绝结果
      */
     public static FileProcessingSubmissionResult rejectedResult(String message) {
         return new FileProcessingSubmissionResult(false, message);

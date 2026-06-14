@@ -10,58 +10,58 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for tenant-scoped model configuration.
+ * 租户隔离的模型配置仓储。
  *
  * @author data-agent
  */
 public interface ModelConfigRepository extends JpaRepository<ModelConfig, String> {
 
     /**
-     * Finds model configurations for a tenant.
+     * 查询租户的模型配置。
      *
-     * @param tenantId tenant id
-     * @return tenant model configurations
+     * @param tenantId 租户 ID
+     * @return 租户模型配置列表
      */
     List<ModelConfig> findByTenantId(String tenantId);
 
     /**
-     * Finds enabled model configurations for a tenant.
+     * 查询租户已启用的模型配置。
      *
-     * @param tenantId tenant id
-     * @return enabled tenant model configurations
+     * @param tenantId 租户 ID
+     * @return 已启用租户模型配置列表
      */
     List<ModelConfig> findByTenantIdAndEnabledTrue(String tenantId);
 
     /**
-     * Finds default enabled model configurations for a tenant.
+     * 查询租户已启用且为默认的模型配置。
      *
-     * @param tenantId tenant id
-     * @return default enabled tenant model configurations
+     * @param tenantId 租户 ID
+     * @return 已启用且为默认的租户模型配置列表
      */
     List<ModelConfig> findByTenantIdAndEnabledTrueAndIsDefaultTrue(String tenantId);
 
     /**
-     * Finds one model configuration within a tenant.
+     * 查询租户内的一个模型配置。
      *
-     * @param modelId model id
-     * @param tenantId tenant id
-     * @return matched model configuration
+     * @param modelId 模型 ID
+     * @param tenantId 租户 ID
+     * @return 匹配的模型配置
      */
     Optional<ModelConfig> findByModelIdAndTenantId(String modelId, String tenantId);
 
     /**
-     * Counts default model configurations.
+     * 统计默认模型配置的数量。
      *
-     * @return default model count
+     * @return 默认模型数量
      */
     long countByIsDefaultTrue();
 
     /**
-     * Clears the default flag for models in one tenant except the provided model.
+     * 清除一个租户内除指定模型外其他模型的默认标记。
      *
-     * @param tenantId tenant id
-     * @param excludedModelId model id to keep default
-     * @return affected rows
+     * @param tenantId 租户 ID
+     * @param excludedModelId 保持默认的模型 ID
+     * @return 受影响的行数
      */
     @Modifying
     @Query("""
@@ -74,9 +74,9 @@ public interface ModelConfigRepository extends JpaRepository<ModelConfig, String
     int clearOtherDefaults(@Param("tenantId") String tenantId, @Param("excludedModelId") String excludedModelId);
 
     /**
-     * Finds all enabled model configurations.
+     * 查询所有已启用的模型配置。
      *
-     * @return enabled model configurations
+     * @return 已启用的模型配置列表
      */
     List<ModelConfig> findByEnabledTrue();
 }

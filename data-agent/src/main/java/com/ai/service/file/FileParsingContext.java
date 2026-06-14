@@ -9,12 +9,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Normalized file parsing context shared by all file content parsers.
+ * 由所有文件内容解析器共享的规范化文件解析上下文。
  *
- * @param path filesystem path when the file has already been stored locally
- * @param multipartFile live upload input when the file is still in memory
- * @param filename original filename
- * @param contentType original mime type
+ * @param path 文件已在本地存储时的文件系统路径
+ * @param multipartFile 文件仍在内存中时的实时上传输入
+ * @param filename 原始文件名
+ * @param contentType 原始 MIME 类型
  * @author data-agent
  */
 public record FileParsingContext(
@@ -24,22 +24,22 @@ public record FileParsingContext(
         String contentType) {
 
     /**
-     * Creates a parsing context for a stored file.
+     * 为存储文件创建解析上下文。
      *
-     * @param path stored file path
-     * @param filename original filename
-     * @param contentType content type
-     * @return parsing context
+     * @param path 存储文件路径
+     * @param filename 原始文件名
+     * @param contentType 内容类型
+     * @return 解析上下文
      */
     public static FileParsingContext from(Path path, String filename, String contentType) {
         return new FileParsingContext(path, null, filename, contentType);
     }
 
     /**
-     * Creates a parsing context for a live multipart upload.
+     * 为实时多部分上传创建解析上下文。
      *
-     * @param file multipart file
-     * @return parsing context
+     * @param file 多部分文件
+     * @return 解析上下文
      */
     public static FileParsingContext from(MultipartFile file) {
         return new FileParsingContext(null, file, file.getOriginalFilename(), file.getContentType());

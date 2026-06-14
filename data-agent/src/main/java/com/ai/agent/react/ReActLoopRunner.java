@@ -2,9 +2,11 @@ package com.ai.agent.react;
 
 import com.ai.logging.StructuredLogger;
 import com.ai.model.AnalysisResponse;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.output.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -104,8 +106,9 @@ public class ReActLoopRunner {
                     preview(userQuery, LOG_QUERY_PREVIEW_LENGTH));
             logIterationStart(sessionId, modelId, toolSpecs, iterations, false);
 
-            String llmResponse = modelCaller.callWithTools(messages, toolSpecs, modelId);
-            if (llmResponse == null || llmResponse.isEmpty()) {
+            Response<AiMessage> response = modelCaller.callWithTools(messages, toolSpecs, modelId);
+            AiMessage aiMessage = response == null ? null : response.content();
+            if (isEmptyResponse(aiMessage)) {
                 finalAnswer.append(MODEL_FAILURE_MESSAGE);
                 thinkingSteps.add(new AnalysisResponse.ThinkingStep(iterations, "error", "模型调用失败"));
                 workingMemoryService.recordFailure(sessionId, userQuery, iterations);
@@ -113,7 +116,8 @@ public class ReActLoopRunner {
                 break;
             }
 
-            ReActLoopStepResult stepResult = synchronousStepProcessor.process(llmResponse, toolSpecs, modelId, messages,
+            String llmResponse = describeAiMessage(aiMessage);
+            ReActLoopStepResult stepResult = synchronousStepProcessor.process(aiMessage, toolSpecs, modelId, messages,
                     finalAnswer, thinkingSteps, iterations, recoveryTracker);
             workingMemoryService.recordIteration(sessionId, userQuery, iterations, llmResponse, stepResult,
                     finalAnswer.toString());
@@ -166,10 +170,11 @@ public class ReActLoopRunner {
             LOGGER.info("ReAct streaming iteration {}/{}", iterations, MAX_ITERATIONS);
             logIterationStart(sessionId, modelId, toolSpecs, iterations, true);
             streamEventWriter.emitThinkingStart(eventEmitter, iterations);
-            String llmResponse = modelCaller.callStreamingWithTools(messages, toolSpecs, modelId, token -> {
+            Response<AiMessage> response = modelCaller.callStreamingWithTools(messages, toolSpecs, modelId, token -> {
                 streamEventWriter.emitToken(eventEmitter, token);
             });
-            if (llmResponse == null || llmResponse.isEmpty()) {
+            AiMessage aiMessage = response == null ? null : response.content();
+            if (isEmptyResponse(aiMessage)) {
                 streamEventWriter.emitError(eventEmitter, MODEL_FAILURE_MESSAGE);
                 thinkingSteps.add(new AnalysisResponse.ThinkingStep(iterations, "error", "模型调用失败"));
                 workingMemoryService.recordFailure(sessionId, userQuery, iterations);
@@ -177,7 +182,8 @@ public class ReActLoopRunner {
                 break;
             }
 
-            ReActLoopStepResult stepResult = streamingStepProcessor.process(llmResponse, messages, toolSpecs,
+            String llmResponse = describeAiMessage(aiMessage);
+            ReActLoopStepResult stepResult = streamingStepProcessor.process(aiMessage, messages, toolSpecs,
                     modelId, finalAnswer, thinkingSteps, eventEmitter, recoveryTracker, iterations);
             workingMemoryService.recordIteration(sessionId, userQuery, iterations, llmResponse, stepResult,
                     finalAnswer.toString());
@@ -286,6 +292,32 @@ public class ReActLoopRunner {
         if (!clean.isEmpty()) {
             finalAnswer.append(clean).append("\n");
         }
+    }
+
+    /**
+     * 判断模型响应是否为空：既无文本也无原生工具调用请求时视为调用失败。
+     */
+    private boolean isEmptyResponse(AiMessage aiMessage) {
+        if (aiMessage == null) {
+            return true;
+        }
+        boolean noText = aiMessage.text() == null || aiMessage.text().isEmpty();
+        return noText && !aiMessage.hasToolExecutionRequests();
+    }
+
+    /**
+     * 将 AI 消息转为可记录文本：纯工具调用时生成 "[tool_call] name(args)" 摘要。
+     */
+    private String describeAiMessage(AiMessage aiMessage) {
+        if (aiMessage.text() != null && !aiMessage.text().isEmpty()) {
+            return aiMessage.text();
+        }
+        StringBuilder description = new StringBuilder();
+        for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
+            description.append("[tool_call] ").append(request.name())
+                    .append("(").append(request.arguments()).append(")\n");
+        }
+        return description.toString();
     }
 
     private String preview(String value, int maxLength) {

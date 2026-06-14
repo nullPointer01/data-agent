@@ -1,7 +1,7 @@
 package com.ai.vector;
 
 /**
- * Normalized tenant and user identity for vector metadata.
+ * 向量元数据的规范化租户和用户身份。
  *
  * @author data-agent
  */

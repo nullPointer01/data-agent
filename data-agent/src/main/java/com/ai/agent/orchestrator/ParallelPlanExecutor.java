@@ -1,5 +1,8 @@
 package com.ai.agent.orchestrator;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -8,9 +11,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import com.ai.agent.AgentReasoningProperties;
-import com.ai.agent.react.ReActToolCall;
 import com.ai.agent.tool.AgentToolInvoker;
-import com.ai.agent.tool.ToolResult;
 
 /**
  * 在完整 ReAct 循环前并行执行安全的计划步骤。
@@ -31,6 +32,7 @@ public class ParallelPlanExecutor {
     private static final String TOOL_SEARCH_MEMORY = "searchMemory";
     private static final String TOOL_FAILURE_PREFIX = "工具执行失败:";
     private static final String UNKNOWN_TOOL_PREFIX = "未知工具:";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final AgentToolInvoker toolInvoker;
     private final ParallelTaskExecutor parallelTaskExecutor;
@@ -72,21 +74,36 @@ public class ParallelPlanExecutor {
         return new ParallelPlanExecutionResult(results);
     }
 
-    private Optional<ReActToolCall> buildToolCall(ExecutionPlanStep step, String userQuery) {
+    private Optional<ToolExecutionRequest> buildToolCall(ExecutionPlanStep step, String userQuery) {
         String stepId = step.id().toLowerCase(Locale.ROOT);
         if (STEP_RETRIEVE_KNOWLEDGE.equals(stepId)) {
-            return Optional.of(new ReActToolCall(TOOL_SEARCH_KNOWLEDGE, userQuery, List.of(userQuery)));
+            return Optional.of(queryToolRequest(TOOL_SEARCH_KNOWLEDGE, userQuery));
         }
         if (STEP_INSPECT_DATA.equals(stepId)) {
-            return Optional.of(new ReActToolCall(TOOL_LIST_DATA_SOURCES, "", List.of()));
+            return Optional.of(ToolExecutionRequest.builder()
+                    .name(TOOL_LIST_DATA_SOURCES)
+                    .arguments("{}")
+                    .build());
         }
         if (STEP_GATHER_CONTEXT.equals(stepId)) {
-            return Optional.of(new ReActToolCall(TOOL_SEARCH_MEMORY, userQuery, List.of(userQuery)));
+            return Optional.of(queryToolRequest(TOOL_SEARCH_MEMORY, userQuery));
         }
         return Optional.empty();
     }
 
-    private ParallelPlanStepResult invoke(ExecutionPlanStep step, ReActToolCall toolCall) {
+    /**
+     * 构建单 query 参数的工具请求，参数 JSON 与工具方法的参数名对齐。
+     */
+    private ToolExecutionRequest queryToolRequest(String toolName, String userQuery) {
+        ObjectNode arguments = OBJECT_MAPPER.createObjectNode();
+        arguments.put("query", userQuery);
+        return ToolExecutionRequest.builder()
+                .name(toolName)
+                .arguments(arguments.toString())
+                .build();
+    }
+
+    private ParallelPlanStepResult invoke(ExecutionPlanStep step, ToolExecutionRequest toolCall) {
         try {
             String result = toolInvoker.invoke(toolCall);
             if (isFailureResult(result)) {

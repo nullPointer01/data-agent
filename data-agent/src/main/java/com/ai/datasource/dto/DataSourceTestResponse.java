@@ -1,7 +1,7 @@
 package com.ai.datasource.dto;
 
 /**
- * Data source connection test response.
+ * 数据源连接测试响应。
  *
  * @author data-agent
  */

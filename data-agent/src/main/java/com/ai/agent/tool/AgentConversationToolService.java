@@ -5,7 +5,7 @@ import com.ai.service.SessionManager;
 import org.springframework.stereotype.Service;
 
 /**
- * Conversation helper tools used during agent reasoning.
+ * Agent 推理过程中使用的对话辅助工具。
  *
  * @author data-agent
  */
@@ -22,10 +22,10 @@ public class AgentConversationToolService {
     }
 
     /**
-     * Builds a compact context prompt from the current session history.
+     * 从当前会话历史构建紧凑的上下文提示。
      *
-     * @param sessionId conversation session id
-     * @return model-readable conversation history
+     * @param sessionId 会话 ID
+     * @return 模型可读的对话历史
      */
     public String getConversationHistory(String sessionId) {
         ConversationSession session = sessionManager.getSession(sessionId);
@@ -36,10 +36,10 @@ public class AgentConversationToolService {
     }
 
     /**
-     * Creates a structured request for more user input when a task is under-specified.
+     * 当任务描述不完整时，创建向用户请求更多信息的结构化请求。
      *
-     * @param message missing information requested by the model
-     * @return user-facing clarification request
+     * @param message 模型请求的缺失信息
+     * @return 面向用户的澄清请求
      */
     public String askUserForInfo(String message) {
         return NEED_USER_INPUT_PREFIX + message;

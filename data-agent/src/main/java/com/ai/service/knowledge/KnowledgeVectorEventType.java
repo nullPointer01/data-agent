@@ -1,7 +1,7 @@
 package com.ai.service.knowledge;
 
 /**
- * Knowledge vector event types.
+ * 知识向量事件类型。
  *
  * @author data-agent
  */

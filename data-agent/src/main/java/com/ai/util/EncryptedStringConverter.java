@@ -4,7 +4,7 @@ import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
 /**
- * JPA converter for encrypted string columns.
+ * 加密字符串列的 JPA 转换器。
  *
  * @author data-agent
  */

@@ -14,7 +14,7 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * Knowledge entry persisted before vector indexing.
+ * 向量索引前持久化的知识条目。
  *
  * @author data-agent
  */

@@ -1,7 +1,7 @@
 package com.ai.modelconfig.dto;
 
 /**
- * Model configuration detail response.
+ * 模型配置详情响应。
  *
  * @author data-agent
  */

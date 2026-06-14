@@ -3,7 +3,7 @@ package com.ai.knowledge.dto;
 import java.util.Map;
 
 /**
- * Knowledge statistics response.
+ * 知识统计响应。
  *
  * @author data-agent
  */

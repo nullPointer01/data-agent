@@ -3,7 +3,7 @@ package com.ai.datasource.dto;
 import java.util.List;
 
 /**
- * Data source list response.
+ * 数据源列表响应。
  *
  * @author data-agent
  */

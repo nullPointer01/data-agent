@@ -7,57 +7,57 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for tenant-scoped skill configuration.
+ * 租户隔离的技能配置仓储。
  *
  * @author data-agent
  */
 public interface SkillConfigRepository extends JpaRepository<SkillConfig, String> {
 
     /**
-     * Finds all skills owned by one tenant.
+     * 查询一个租户拥有的所有技能。
      *
-     * @param tenantId tenant id
-     * @return skill configs
+     * @param tenantId 租户 ID
+     * @return 技能配置列表
      */
     List<SkillConfig> findByTenantId(String tenantId);
 
     /**
-     * Finds enabled skills owned by one tenant.
+     * 查询一个租户拥有的已启用技能。
      *
-     * @param tenantId tenant id
-     * @return enabled skill configs
+     * @param tenantId 租户 ID
+     * @return 已启用技能配置列表
      */
     List<SkillConfig> findByTenantIdAndEnabledTrue(String tenantId);
 
     /**
-     * Finds one skill by business id and tenant id.
+     * 按业务 ID 和租户 ID 查询一个技能。
      *
-     * @param skillId skill id
-     * @param tenantId tenant id
-     * @return matched skill config
+     * @param skillId 技能 ID
+     * @param tenantId 租户 ID
+     * @return 匹配的技能配置
      */
     Optional<SkillConfig> findBySkillIdAndTenantId(String skillId, String tenantId);
 
     /**
-     * Searches tenant skills by name.
+     * 按名称搜索租户技能。
      *
-     * @param tenantId tenant id
-     * @param name skill name keyword
-     * @return matched skill configs
+     * @param tenantId 租户 ID
+     * @param name 技能名称关键字
+     * @return 匹配的技能配置列表
      */
     List<SkillConfig> findByTenantIdAndNameContainingIgnoreCase(String tenantId, String name);
 
     /**
-     * Counts default skills.
+     * 统计默认技能数量。
      *
-     * @return default skill count
+     * @return 默认技能数量
      */
     long countByIsDefaultTrue();
 
     /**
-     * Finds all enabled skills.
+     * 查询所有已启用的技能。
      *
-     * @return enabled skill configs
+     * @return 已启用技能配置列表
      */
     List<SkillConfig> findByEnabledTrue();
 }

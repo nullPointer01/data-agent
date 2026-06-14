@@ -1,7 +1,7 @@
 package com.ai.exception;
 
 /**
- * Exception thrown when external knowledge synchronization fails.
+ * 外部知识同步失败时抛出的异常。
  *
  * @author data-agent
  */

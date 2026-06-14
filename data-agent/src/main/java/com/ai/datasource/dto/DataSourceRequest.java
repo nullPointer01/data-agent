@@ -1,7 +1,7 @@
 package com.ai.datasource.dto;
 
 /**
- * Request for creating or updating a data source.
+ * 创建或更新数据源的请求。
  *
  * @author data-agent
  */

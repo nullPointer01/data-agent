@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.Objects;
 
 /**
- * Centralizes tenant ownership checks for knowledge synchronization.
+ * 集中进行知识同步的租户所有权检查。
  *
  * @author data-agent
  */
@@ -30,10 +30,10 @@ public class KnowledgeSyncSecurityService {
     }
 
     /**
-     * Asserts that current tenant owns a knowledge entry.
+     * 断言当前租户拥有知识条目。
      *
-     * @param knowledgeId knowledge id
-     * @return owned knowledge entry
+     * @param knowledgeId 知识 ID
+     * @return 拥有的知识条目
      */
     public KnowledgeEntry assertCurrentTenantKnowledge(String knowledgeId) {
         String tenantId = currentTenantIdOrThrow();
@@ -41,10 +41,10 @@ public class KnowledgeSyncSecurityService {
     }
 
     /**
-     * Finds a sync config owned by current tenant.
+     * 查找由当前租户拥有的同步配置。
      *
-     * @param knowledgeId knowledge id
-     * @return owned sync config
+     * @param knowledgeId 知识 ID
+     * @return 拥有的同步配置
      */
     public KnowledgeSyncConfig findOwnedSyncConfig(String knowledgeId) {
         String tenantId = currentTenantIdOrThrow();

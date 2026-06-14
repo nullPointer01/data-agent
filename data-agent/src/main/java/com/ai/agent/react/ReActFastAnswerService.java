@@ -3,9 +3,11 @@ package com.ai.agent.react;
 import com.ai.memory.MemoryContextPromptFormatter;
 import com.ai.memory.dto.MemoryContext;
 import com.ai.mcp.McpModelService;
+import dev.langchain4j.model.input.PromptTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -17,7 +19,7 @@ import java.util.function.Consumer;
 public class ReActFastAnswerService {
 
     private static final String MODEL_FAILURE_MESSAGE = "模型调用失败，请稍后重试";
-    private static final String FAST_PATH_PROMPT_TEMPLATE = """
+    private static final PromptTemplate FAST_PATH_PROMPT_TEMPLATE = PromptTemplate.from("""
             你是 Data Agent 的企业级智能助手。
             当前请求被判定为简单直答，不需要调用工具。
 
@@ -27,11 +29,11 @@ public class ReActFastAnswerService {
             - 如果问题需要数据、文件、知识库或实时查询，请说明需要进入分析模式
             - 使用简洁中文
 
-            %s
+            {{memorySection}}
 
             用户问题：
-            %s
-            """;
+            {{question}}
+            """);
 
     private final McpModelService mcpModelService;
     private final MemoryContextPromptFormatter memoryContextPromptFormatter;
@@ -87,6 +89,8 @@ public class ReActFastAnswerService {
     }
 
     private String buildPrompt(String question, MemoryContext memoryContext) {
-        return FAST_PATH_PROMPT_TEMPLATE.formatted(memoryContextPromptFormatter.toSection(memoryContext), question);
+        return FAST_PATH_PROMPT_TEMPLATE.apply(Map.of(
+                "memorySection", memoryContextPromptFormatter.toSection(memoryContext),
+                "question", question)).text();
     }
 }

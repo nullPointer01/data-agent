@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.stream.Collectors;
 
 /**
- * Loads persisted system users for Spring Security authentication.
+ * 为 Spring Security 认证加载持久化的系统用户。
  *
  * @author data-agent
  */

@@ -1,26 +1,26 @@
 package com.ai.service.file;
 
 /**
- * Strategy for parsing one file type into text content.
+ * 将一种文件类型解析为文本内容的策略。
  *
  * @author data-agent
  */
 public interface FileContentParser {
 
     /**
-     * Checks whether this parser can handle the given file.
+     * 检查此解析器是否可以处理给定文件。
      *
-     * @param context normalized file context
-     * @return true when the parser can handle the file
+     * @param context 规范化文件上下文
+     * @return 解析器可以处理该文件时返回 true
      */
     boolean supports(FileParsingContext context);
 
     /**
-     * Parses the file into text.
+     * 将文件解析为文本。
      *
-     * @param context normalized file context
-     * @return parsed text content
-     * @throws Exception when the file cannot be parsed
+     * @param context 规范化文件上下文
+     * @return 解析的文本内容
+     * @throws Exception 当文件无法解析时抛出异常
      */
     String parse(FileParsingContext context) throws Exception;
 }

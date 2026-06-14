@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Envelope for knowledge detail response.
+ * 知识详情响应信封。
  *
  * @author data-agent
  */

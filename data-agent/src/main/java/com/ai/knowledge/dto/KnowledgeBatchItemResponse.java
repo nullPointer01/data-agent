@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Per-file result for batch knowledge upload.
+ * 批量知识上传的单文件结果。
  *
  * @author data-agent
  */

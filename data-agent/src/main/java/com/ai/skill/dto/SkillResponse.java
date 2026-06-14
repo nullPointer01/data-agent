@@ -5,7 +5,7 @@ import com.ai.model.SkillConfig;
 import java.time.LocalDateTime;
 
 /**
- * Skill configuration response.
+ * 技能配置响应。
  *
  * @author data-agent
  */

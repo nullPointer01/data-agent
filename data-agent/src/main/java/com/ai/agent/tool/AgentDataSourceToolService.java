@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Data-source tools for schema discovery, preview and read-only querying.
+ * 数据源工具，提供 Schema 发现、数据预览和只读查询能力。
  *
  * @author data-agent
  */
@@ -28,19 +28,19 @@ public class AgentDataSourceToolService {
     }
 
     /**
-     * Lists tenant-enabled data sources that agents may use.
+     * 列出租户下已启用且可供 Agent 使用的数据源。
      *
-     * @return model-readable data source list
+     * @return 模型可读的数据源列表
      */
     public String listDataSources() {
         return dataSourceService.listEnabledForAgent();
     }
 
     /**
-     * Gets database schema or HTTP data shape for one configured data source.
+     * 获取指定数据源的数据库 Schema 或 HTTP 数据结构。
      *
-     * @param datasourceName data source name or id
-     * @return schema or preview text
+     * @param datasourceName 数据源名称或 ID
+     * @return Schema 或预览文本
      */
     public String getDatabaseSchema(String datasourceName) {
         LOGGER.info("Agent getDatabaseSchema for datasource={}", datasourceName);
@@ -48,11 +48,11 @@ public class AgentDataSourceToolService {
     }
 
     /**
-     * Executes a tenant-scoped read-only SQL query.
+     * 在租户作用域下执行只读 SQL 查询。
      *
-     * @param datasourceName data source name or id
-     * @param sql read-only SQL
-     * @return query result in text table format
+     * @param datasourceName 数据源名称或 ID
+     * @param sql 只读 SQL 语句
+     * @return 文本表格格式的查询结果
      */
     public String executeSql(String datasourceName, String sql) {
         LOGGER.info("Agent executeSql on datasource={}, sql={}", datasourceName, sql);
@@ -60,10 +60,10 @@ public class AgentDataSourceToolService {
     }
 
     /**
-     * Previews the first rows or remote response body for one data source.
+     * 预览指定数据源的前几行数据或远程响应体。
      *
-     * @param datasourceName data source name or id
-     * @return preview result
+     * @param datasourceName 数据源名称或 ID
+     * @return 预览结果
      */
     public String previewDataSource(String datasourceName) {
         LOGGER.info("Agent previewDataSource datasource={}", datasourceName);

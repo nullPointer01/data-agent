@@ -10,7 +10,7 @@ import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 
 /**
- * Submits files to the async worker and handles executor backpressure consistently.
+ * 将文件提交到异步工作者并一致地处理执行器反压。
  *
  * @author data-agent
  */

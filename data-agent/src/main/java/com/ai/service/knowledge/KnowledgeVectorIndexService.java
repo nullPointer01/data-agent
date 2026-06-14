@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Coordinates vector indexing for knowledge entries.
+ * 协调知识条目的向量索引。
  *
  * @author data-agent
  */

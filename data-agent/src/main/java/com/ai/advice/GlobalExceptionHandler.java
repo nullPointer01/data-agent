@@ -19,7 +19,7 @@ import com.ai.exception.QuotaExceededException;
 import java.util.Map;
 
 /**
- * Converts framework and business exceptions into API error responses.
+ * 将框架和业务异常转换为 API 错误响应。
  *
  * @author data-agent
  */

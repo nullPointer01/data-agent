@@ -22,7 +22,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Manages tenant-scoped conversation session lifecycle and persistence.
+ * 租户维度的对话会话生命周期管理与持久化服务。
  *
  * @author data-agent
  */
@@ -59,9 +59,9 @@ public class SessionManager {
     }
 
     /**
-     * Creates a new session for current authenticated user.
+     * 为当前认证用户创建新会话。
      *
-     * @return session id
+     * @return 会话编号
      */
     @Transactional(rollbackFor = Exception.class)
     public String createSession() {
@@ -81,10 +81,10 @@ public class SessionManager {
     }
 
     /**
-     * Gets one session after verifying current user and tenant ownership.
+     * 校验当前用户和租户归属后获取会话。
      *
-     * @param sessionId session id
-     * @return session or null when not found
+     * @param sessionId 会话编号
+     * @return 会话对象，未找到时返回 null
      */
     @Transactional(readOnly = true)
     public ConversationSession getSession(String sessionId) {
@@ -122,9 +122,9 @@ public class SessionManager {
     }
 
     /**
-     * Destroys one current-user session.
+     * 销毁当前用户的一个会话。
      *
-     * @param sessionId session id
+     * @param sessionId 会话编号
      */
     @Transactional(rollbackFor = Exception.class)
     public void destroySession(String sessionId) {
@@ -140,21 +140,21 @@ public class SessionManager {
     }
 
     /**
-     * Saves one conversation message and refreshes session metadata.
+     * 保存一条对话消息并刷新会话元数据。
      *
-     * @param sessionId session id
-     * @param role message role
-     * @param content message content
-     * @param skillUsed skill id
-     * @param modelUsed model id
-     * @param tokens token count
+     * @param sessionId 会话编号
+     * @param role 消息角色
+     * @param content 消息内容
+     * @param skillUsed 技能编号
+     * @param modelUsed 模型编号
+     * @param tokens Token 消耗量
      */
     @Transactional(rollbackFor = Exception.class)
     public void saveMessage(String sessionId, String role, String content, String skillUsed, String modelUsed,
             long tokens) {
         Optional<ConversationSessionEntity> entityOptional = findCurrentUserSession(sessionId);
         if (entityOptional.isEmpty()) {
-            LOGGER.warn("Skip saving message for unauthorized or missing session: {}", sessionId);
+            LOGGER.warn("跳过保存消息，会话不存在或无权限: {}", sessionId);
             return;
         }
 

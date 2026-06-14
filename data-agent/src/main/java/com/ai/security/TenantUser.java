@@ -5,7 +5,7 @@ import org.springframework.security.core.GrantedAuthority;
 import java.util.Collection;
 
 /**
- * Authenticated principal carrying user, tenant and authority information.
+ * 认证主体，携带用户、租户和权限信息。
  *
  * @author data-agent
  */

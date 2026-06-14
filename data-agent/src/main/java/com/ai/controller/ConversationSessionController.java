@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Conversation session API.
+ * 对话会话接口。
  *
  * @author data-agent
  */

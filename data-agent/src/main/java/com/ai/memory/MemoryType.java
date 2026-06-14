@@ -1,54 +1,54 @@
 package com.ai.memory;
 
 /**
- * Semantic type of a memory entry.
+ * 记忆条目的语义类型。
  *
  * @author data-agent
  */
 public enum MemoryType {
 
     /**
-     * Raw or summarized conversation memory.
+     * 原始或摘要对话记忆。
      */
     CONVERSATION,
 
     /**
-     * Conversation summary memory.
+     * 对话摘要记忆。
      */
     SUMMARY,
 
     /**
-     * User intent memory.
+     * 用户意图记忆。
      */
     INTENT,
 
     /**
-     * Entity memory such as person, company, product, or metric.
+     * 实体记忆，如人物、公司、产品或指标。
      */
     ENTITY,
 
     /**
-     * Relationship memory between entities.
+     * 实体之间的关系记忆。
      */
     RELATION,
 
     /**
-     * User preference memory.
+     * 用户偏好记忆。
      */
     PREFERENCE,
 
     /**
-     * Behavioral pattern memory.
+     * 行为模式记忆。
      */
     PATTERN,
 
     /**
-     * Durable knowledge memory.
+     * 持久化知识记忆。
      */
     KNOWLEDGE,
 
     /**
-     * Important conclusion memory.
+     * 重要结论记忆。
      */
     CONCLUSION
 }

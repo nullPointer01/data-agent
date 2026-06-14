@@ -7,6 +7,7 @@ import com.ai.service.SessionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -31,7 +32,7 @@ import com.ai.agent.tool.AgentToolInvoker;
 import com.ai.memory.MemoryManager;
 
 /**
- * ReAct-style data analysis agent.
+ * ReAct 风格的数据分析智能体（Agent）。
  *
  * @author data-agent
  */
@@ -39,6 +40,7 @@ import com.ai.memory.MemoryManager;
 public class ReActAgent {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReActAgent.class);
+    private static final String ROLE_USER = "user";
     private static final String SYSTEM_PROMPT = """
             你是一个强大的数据分析智能体(Agent)，拥有多种工具来辅助完成用户的数据分析任务。
 
@@ -112,11 +114,11 @@ public class ReActAgent {
     }
 
     /**
-     * Executes the ReAct loop and returns one complete analysis response.
+     * 执行 ReAct 循环并返回完整的分析响应。
      *
-     * @param request analysis request
-     * @param fileContent optional uploaded file content
-     * @return analysis response
+     * @param request 分析请求
+     * @param fileContent 可选的上传文件内容
+     * @return 分析响应
      */
     public AnalysisResponse execute(AnalysisRequest request, String fileContent) {
         String modelId = request.hasModel() ? request.getModelId() : null;
@@ -192,11 +194,11 @@ public class ReActAgent {
     }
 
     /**
-     * Streams ReAct events to the caller.
+     * 以流式方式向调用方发送 ReAct 事件。
      *
-     * @param request analysis request
-     * @param fileContent optional uploaded file content
-     * @param eventEmitter JSON event consumer
+     * @param request 分析请求
+     * @param fileContent 可选的上传文件内容
+     * @param eventEmitter JSON 事件消费者
      */
     public void executeStreaming(AnalysisRequest request, String fileContent, Consumer<String> eventEmitter) {
         String modelId = request.hasModel() ? request.getModelId() : null;
@@ -225,7 +227,7 @@ public class ReActAgent {
                     conversationRecorder.recordSessionConversation(finalSession, request, finalAnswer, "fast-answer", null);
                     streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null);
                 } catch (Exception e) {
-                    LOGGER.error("Fast path streaming error", e);
+                    LOGGER.error("快速直答流式输出出错", e);
                     streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
                 }
                 return;
@@ -266,13 +268,13 @@ public class ReActAgent {
             conversationRecorder.recordReActConversation(finalSession, request, result, modelId);
             streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null);
         } catch (Exception e) {
-            LOGGER.error("Streaming ReAct execution error", e);
+            LOGGER.error("流式 ReAct 执行出错", e);
             streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
         }
     }
 
     /**
-     * Resolves a tenant-protected session. SessionManager performs ownership checks.
+     * 解析受租户保护的会话。SessionManager 会执行归属权校验。
      */
     private ConversationSession getSession(AnalysisRequest request) {
         if (request.hasSession()) {
@@ -282,16 +284,26 @@ public class ReActAgent {
     }
 
     /**
-     * Builds initial ReAct messages while preserving recent session context when available.
+     * 构建 ReAct 初始消息，在会话上下文可用时保留最近的对话历史。
      */
     private List<ChatMessage> buildInitialMessages(ConversationSession session, ReActRequestContext requestContext) {
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT));
-        if (session != null && !session.getHistory().isEmpty()) {
-            messages.add(UserMessage.from(session.buildContextPrompt(requestContext.userQuery())));
-        } else {
-            messages.add(UserMessage.from(requestContext.userQuery()));
+        if (session != null) {
+            // 按角色还原历史，让模型区分用户与助手发言，而非压成单条 UserMessage 丢失角色结构
+            for (ConversationSession.Message message : session.getHistory()) {
+                String content = message.getContent();
+                if (content == null || content.isBlank()) {
+                    continue;
+                }
+                if (ROLE_USER.equals(message.getRole())) {
+                    messages.add(UserMessage.from(content));
+                } else {
+                    messages.add(AiMessage.from(content));
+                }
+            }
         }
+        messages.add(UserMessage.from(requestContext.userQuery()));
         return messages;
     }
 }

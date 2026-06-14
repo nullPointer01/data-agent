@@ -1,7 +1,7 @@
 package com.ai.skill.dto;
 
 /**
- * Response for skill mutation commands.
+ * 技能变更命令的响应。
  *
  * @author data-agent
  */

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Data source management API.
+ * 数据源管理接口。
  *
  * @author data-agent
  */

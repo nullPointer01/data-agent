@@ -3,6 +3,7 @@ package com.ai.agent.orchestrator;
 import com.ai.mcp.McpModelService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.input.PromptTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,7 +110,8 @@ public class OrchestratorTaskPlanner {
     private OrchestrationPlan planByLlm(String userQuery, IntentAnalysisResult intentAnalysis,
             OrchestrationPlan fallback) {
         try {
-            String response = modelService.callModel(buildPlanningPrompt(userQuery, intentAnalysis, fallback),
+            // JSON 强制输出模式：厂商端约束输出合法 JSON，避免解析失败
+            String response = modelService.callModelJson(buildPlanningPrompt(userQuery, intentAnalysis, fallback),
                     orchestratorProperties.getModelId());
             OrchestrationPlan plan = parsePlanResponse(response, userQuery, fallback.sharedContextKeys());
             return plan.hasTasks() ? plan : fallback;
@@ -119,12 +121,13 @@ public class OrchestratorTaskPlanner {
         }
     }
 
-    private static final String PLANNING_PROMPT_TEMPLATE = loadPromptResource("prompts/orchestrator-planning.txt");
+    private static final PromptTemplate PLANNING_PROMPT_TEMPLATE =
+            PromptTemplate.from(loadPromptResource("prompts/orchestrator-planning.txt"));
 
     private static String loadPromptResource(String path) {
         try (var is = OrchestratorTaskPlanner.class.getClassLoader().getResourceAsStream(path)) {
             if (is == null) {
-                return "%s\n%s\nmax_tasks=%d\nfallback=%s";
+                throw new IllegalStateException("缺少规划提示词资源文件: " + path);
             }
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -134,9 +137,11 @@ public class OrchestratorTaskPlanner {
 
     private String buildPlanningPrompt(String userQuery, IntentAnalysisResult intentAnalysis,
             OrchestrationPlan fallback) {
-        return PLANNING_PROMPT_TEMPLATE.formatted(userQuery, intentAnalysis.toThinkingContent(),
-                Math.max(1, orchestratorProperties.getMaxPlanTasks()),
-                fallback.toThinkingContent());
+        return PLANNING_PROMPT_TEMPLATE.apply(Map.of(
+                "userQuery", userQuery,
+                "intentAnalysis", intentAnalysis.toThinkingContent(),
+                "maxTasks", Math.max(1, orchestratorProperties.getMaxPlanTasks()),
+                "fallbackPlan", fallback.toThinkingContent())).text();
     }
 
     private OrchestrationPlan parsePlanResponse(String response, String userQuery, List<String> fallbackSharedKeys)

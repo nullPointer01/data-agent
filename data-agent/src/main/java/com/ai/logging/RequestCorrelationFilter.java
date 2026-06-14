@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * 为每个 HTTP 请求建立日志关联编号。
  *
  * <p>该过滤器只负责请求级上下文，不读取认证信息。认证成功后的用户和租户信息由
- * {@link com.ai.security.JwtAuthenticationFilter} 继续补充到 MDC。</p>
+ * {@link com.ai.security.auth.JwtAuthenticationFilter} 继续补充到 MDC。</p>
  *
  * @author data-agent
  */

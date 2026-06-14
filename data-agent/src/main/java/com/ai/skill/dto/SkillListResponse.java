@@ -3,7 +3,7 @@ package com.ai.skill.dto;
 import java.util.List;
 
 /**
- * Skill list response.
+ * 技能列表响应。
  *
  * @author data-agent
  */

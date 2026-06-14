@@ -10,7 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Date;
 
 /**
- * Persists fetched knowledge content and updates sync state transactionally.
+ * 持久化获取的知识内容并以事务方式更新同步状态。
  *
  * @author data-agent
  */

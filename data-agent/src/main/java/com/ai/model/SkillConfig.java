@@ -13,7 +13,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Tenant-scoped reusable skill configuration.
+ * 租户隔离的可复用技能配置。
  *
  * @author data-agent
  */

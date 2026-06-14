@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Owns tenant-scoped file metadata state transitions.
+ * 管理租户范围内的文件元数据状态转换。
  *
  * @author data-agent
  */
@@ -31,10 +31,10 @@ public class FileMetadataLifecycleService {
     }
 
     /**
-     * Creates a queued metadata row for the current tenant and user.
+     * 为当前租户和用户创建排队中的元数据行。
      *
-     * @param storedFile stored file descriptor
-     * @return persisted metadata
+     * @param storedFile 存储文件描述符
+     * @return 持久化的元数据
      */
     @Transactional(rollbackFor = Exception.class)
     public FileMetadata createQueued(FileStorageObject storedFile) {

@@ -178,7 +178,8 @@ public class IntentAnalyzer {
      */
     private IntentAnalysisResult analyzeWithLlm(String question, List<String> existingSignals) {
         String prompt = buildLlmIntentPrompt(question);
-        String response = modelService.callModel(prompt, null);
+        // JSON 强制输出模式：厂商端约束输出合法 JSON，避免解析失败
+        String response = modelService.callModelJson(prompt, null);
         if (!StringUtils.hasText(response)) {
             return null;
         }

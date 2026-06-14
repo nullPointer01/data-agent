@@ -6,7 +6,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 
 /**
- * Checks whether Milvus is reachable before initializing the vector store.
+ * 在初始化向量存储之前检查 Milvus 是否可达。
  *
  * @author data-agent
  */
@@ -16,11 +16,11 @@ public class MilvusAvailabilityChecker {
     private static final int SOCKET_CONNECT_TIMEOUT_MS = 3000;
 
     /**
-     * Tests TCP connectivity to the configured Milvus endpoint.
+     * 测试到配置的 Milvus 端点的 TCP 连接。
      *
-     * @param host Milvus host
-     * @param port Milvus port
-     * @return true when the endpoint accepts a socket connection
+     * @param host Milvus 主机
+     * @param port Milvus 端口
+     * @return 端点接受套接字连接时返回 true
      */
     public boolean isAvailable(String host, int port) {
         try (Socket socket = new Socket()) {

@@ -3,7 +3,7 @@ package com.ai.datasource.dto;
 import com.ai.model.DataSourceConfig;
 
 /**
- * Data source list item response.
+ * 数据源列表项响应。
  *
  * @author data-agent
  */

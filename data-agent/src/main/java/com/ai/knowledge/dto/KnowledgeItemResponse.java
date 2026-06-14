@@ -5,7 +5,7 @@ import com.ai.model.KnowledgeEntry;
 import java.util.Date;
 
 /**
- * Knowledge list item response.
+ * 知识列表项响应。
  *
  * @author data-agent
  */

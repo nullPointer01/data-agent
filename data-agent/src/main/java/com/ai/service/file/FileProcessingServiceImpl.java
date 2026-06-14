@@ -21,7 +21,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Default file upload, async processing, and vector cleanup service.
+ * 默认的文件上传、异步处理和向量清理服务。
  *
  * @author data-agent
  */

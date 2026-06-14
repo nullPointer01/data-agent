@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Redis-backed rate limiter with a local in-memory fallback.
+ * 基于 Redis 的限流服务，Redis 不可用时回退到本地内存计数。
  *
  * @author data-agent
  */
@@ -36,11 +36,11 @@ public class RateLimitService {
     }
 
     /**
-     * Checks one user's per-minute request limit.
+     * 检查单个用户的每分钟请求限额。
      *
-     * @param userId user id
-     * @param requestsPerMinute request limit
-     * @return rate limit result
+     * @param userId 用户编号
+     * @param requestsPerMinute 每分钟请求上限
+     * @return 限流检查结果
      */
     public RateLimitResult checkUserMinuteLimit(String userId, int requestsPerMinute) {
         long epochMinute = System.currentTimeMillis() / MILLIS_PER_MINUTE;
@@ -64,7 +64,7 @@ public class RateLimitService {
             }
             return count != null ? count : REDIS_FALLBACK_MARKER;
         } catch (Exception e) {
-            LOGGER.warn("Redis rate limit check failed, using local fallback: {}", e.getMessage());
+            LOGGER.warn("Redis 限流检查失败，回退到本地计数: {}", e.getMessage());
             return REDIS_FALLBACK_MARKER;
         }
     }

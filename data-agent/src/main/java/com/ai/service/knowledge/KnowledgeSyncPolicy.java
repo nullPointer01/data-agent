@@ -3,7 +3,7 @@ package com.ai.service.knowledge;
 import org.springframework.stereotype.Component;
 
 /**
- * Normalizes and validates knowledge synchronization options.
+ * 规范化和验证知识同步选项。
  *
  * @author data-agent
  */

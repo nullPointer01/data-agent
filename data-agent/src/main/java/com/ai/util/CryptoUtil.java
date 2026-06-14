@@ -18,7 +18,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * AES-GCM encryption helper for persisted secrets.
+ * 持久化密钥的 AES-GCM 加密助手。
  *
  * @author data-agent
  */
@@ -78,7 +78,7 @@ public class CryptoUtil {
             buffer.put(cipherText);
             return ENCRYPTED_PREFIX + Base64.getEncoder().encodeToString(buffer.array());
         } catch (Exception e) {
-            throw new RuntimeException("Encryption failed", e);
+            throw new RuntimeException("加密失败", e);
         }
     }
 

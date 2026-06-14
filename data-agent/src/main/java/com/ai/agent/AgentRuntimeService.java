@@ -15,7 +15,7 @@ import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.service.AgentExecutionTraceService;
 
 /**
- * Routes prepared requests to command, skill, multi-agent or ReAct executors.
+ * 将准备好的请求路由（routing）到命令、技能、多 Agent 或 ReAct 执行器。
  *
  * @author data-agent
  */
@@ -50,10 +50,10 @@ public class AgentRuntimeService {
     }
 
     /**
-     * Routes one prepared request to command, configured agent, skill or ReAct execution.
+     * 将单个已准备的请求路由到命令、已配置 Agent、技能或 ReAct 执行。
      *
-     * @param context prepared execution context
-     * @return analysis response
+     * @param context 已准备的执行上下文
+     * @return 分析响应
      */
     public AnalysisResponse execute(AgentExecutionContext context) {
         AnalysisRequest request = context.getRequest();
@@ -100,7 +100,7 @@ public class AgentRuntimeService {
     private AnalysisResponse executeCommand(AnalysisRequest request, String fileContent, ConversationSession session) {
         String commandResult = skillManager.processWithCommand(request.getQuestion(), fileContent);
         if (commandResult == null) {
-            // Unknown slash commands are treated as normal user input so the agent can still answer.
+            // 未知的斜杠命令视为普通用户输入，让 Agent 继续回答
             return reActAgent.execute(request, fileContent);
         }
 

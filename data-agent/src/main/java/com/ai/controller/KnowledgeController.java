@@ -28,7 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * Knowledge management API.
+ * 知识库管理接口。
  *
  * @author data-agent
  */

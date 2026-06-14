@@ -1,7 +1,9 @@
 package com.ai.config;
 
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import java.time.Duration;
 
 /**
- * LangChain4j default chat model configuration.
+ * LangChain4j 默认聊天模型配置。
  *
  * @author data-agent
  */
@@ -56,6 +58,24 @@ public class LangChain4jConfig {
     @Bean
     public ChatLanguageModel chatLanguageModel() {
         return OpenAiChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .baseUrl(baseUrl)
+                .temperature(temperature)
+                // 重试统一由 ModelRetryExecutor 管理，关闭内置重试避免双层放大
+                .maxRetries(1)
+                .timeout(Duration.ofMillis(timeout))
+                .build();
+    }
+
+    /**
+     * 默认流式聊天模型：SSE 流式输出统一走 LangChain4j。
+     *
+     * @return 流式聊天模型
+     */
+    @Bean
+    public StreamingChatLanguageModel streamingChatLanguageModel() {
+        return OpenAiStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .baseUrl(baseUrl)

@@ -1,7 +1,7 @@
 package com.ai.vector;
 
 /**
- * Vector document source types.
+ * 向量文档来源类型。
  *
  * @author data-agent
  */

@@ -3,7 +3,7 @@ package com.ai.vector;
 import org.springframework.stereotype.Component;
 
 /**
- * Normalizes optional identity fields before writing vector metadata.
+ * 在写入向量元数据前规范化可选的身份字段。
  *
  * @author data-agent
  */

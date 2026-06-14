@@ -11,89 +11,89 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Repository for token usage accounting.
+ * 令牌使用账户仓储。
  *
  * @author data-agent
  */
 public interface TokenUsageRepository extends JpaRepository<TokenUsage, Long> {
 
     /**
-     * Finds usage records by tenant.
+     * 查询租户的使用记录。
      *
-     * @param tenantId tenant id
-     * @return usage records
+     * @param tenantId 租户 ID
+     * @return 使用记录列表
      */
     List<TokenUsage> findByTenantId(String tenantId);
 
     /**
-     * Finds usage records by user.
+     * 查询用户的使用记录。
      *
-     * @param userId user id
-     * @return usage records
+     * @param userId 用户 ID
+     * @return 使用记录列表
      */
     List<TokenUsage> findByUserId(String userId);
 
     /**
-     * Finds tenant usage records within a time range.
+     * 查询租户时间范围内的使用记录。
      *
-     * @param tenantId tenant id
-     * @param start start time
-     * @param end end time
-     * @return usage records
+     * @param tenantId 租户 ID
+     * @param start 开始时间
+     * @param end 结束时间
+     * @return 使用记录列表
      */
     List<TokenUsage> findByTenantIdAndCreatedAtBetween(String tenantId, LocalDateTime start, LocalDateTime end);
 
     /**
-     * Finds paged tenant usage records.
+     * 查询租户分页的使用记录。
      *
-     * @param tenantId tenant id
-     * @param pageable page request
-     * @return usage page
+     * @param tenantId 租户 ID
+     * @param pageable 分页请求
+     * @return 使用记录分页结果
      */
     Page<TokenUsage> findByTenantIdOrderByCreatedAtDesc(String tenantId, Pageable pageable);
 
     /**
-     * Sums total tokens by tenant.
+     * 统计租户的令牌总数。
      *
-     * @param tenantId tenant id
-     * @return token total
+     * @param tenantId 租户 ID
+     * @return 令牌总数
      */
     @Query("SELECT SUM(t.totalTokens) FROM TokenUsage t WHERE t.tenantId = :tenantId")
     Long sumTotalTokensByTenantId(@Param("tenantId") String tenantId);
 
     /**
-     * Sums total tokens by user.
+     * 统计用户的令牌总数。
      *
-     * @param userId user id
-     * @return token total
+     * @param userId 用户 ID
+     * @return 令牌总数
      */
     @Query("SELECT SUM(t.totalTokens) FROM TokenUsage t WHERE t.userId = :userId")
     Long sumTotalTokensByUserId(@Param("userId") String userId);
 
     /**
-     * Sums tenant tokens grouped by model.
+     * 统计租户按模型分组的令牌数。
      *
-     * @param tenantId tenant id
-     * @return model token rows
+     * @param tenantId 租户 ID
+     * @return 模型令牌行
      */
     @Query("SELECT t.modelName, SUM(t.totalTokens) FROM TokenUsage t WHERE t.tenantId = :tenantId GROUP BY t.modelName")
     List<Object[]> sumTokensByModelGroupedByTenant(@Param("tenantId") String tenantId);
 
     /**
-     * Sums tenant tokens grouped by skill.
+     * 统计租户按技能分组的令牌数。
      *
-     * @param tenantId tenant id
-     * @return skill token rows
+     * @param tenantId 租户 ID
+     * @return 技能令牌行
      */
     @Query("SELECT t.skillName, SUM(t.totalTokens) FROM TokenUsage t WHERE t.tenantId = :tenantId GROUP BY t.skillName")
     List<Object[]> sumTokensBySkillGroupedByTenant(@Param("tenantId") String tenantId);
 
     /**
-     * Sums user tokens since the given time.
+     * 统计自指定时间以来的用户令牌数。
      *
-     * @param userId user id
-     * @param startOfDay start time
-     * @return token total
+     * @param userId 用户 ID
+     * @param startOfDay 开始时间
+     * @return 令牌总数
      */
     @Query("SELECT SUM(t.totalTokens) FROM TokenUsage t WHERE t.userId = :userId AND t.createdAt >= :startOfDay")
     Long sumTotalTokensByUserIdSince(@Param("userId") String userId, @Param("startOfDay") LocalDateTime startOfDay);

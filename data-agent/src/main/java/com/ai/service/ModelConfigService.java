@@ -2,7 +2,10 @@ package com.ai.service;
 
 import com.ai.config.CacheNames;
 import com.ai.event.ModelConfigChangeEvent;
+import com.ai.mcp.ModelHttpClient;
 import com.ai.model.ModelConfig;
+import com.ai.modelconfig.dto.AvailableModelsRequest;
+import com.ai.modelconfig.dto.AvailableModelsResponse;
 import com.ai.modelconfig.dto.ModelConfigDetailResponse;
 import com.ai.modelconfig.dto.ModelConfigListResponse;
 import com.ai.modelconfig.dto.ModelConfigMutationResponse;
@@ -26,7 +29,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Application service for tenant-scoped model configuration.
+ * 租户维度的模型配置应用服务。
  *
  * @author data-agent
  */
@@ -41,13 +44,57 @@ public class ModelConfigService {
     private final ModelConfigRepository modelConfigRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final SecurityContextHelper securityContextHelper;
+    private final ModelHttpClient modelHttpClient;
 
     public ModelConfigService(ModelConfigRepository modelConfigRepository,
             ApplicationEventPublisher eventPublisher,
-            SecurityContextHelper securityContextHelper) {
+            SecurityContextHelper securityContextHelper,
+            ModelHttpClient modelHttpClient) {
         this.modelConfigRepository = modelConfigRepository;
         this.eventPublisher = eventPublisher;
         this.securityContextHelper = securityContextHelper;
+        this.modelHttpClient = modelHttpClient;
+    }
+
+    /**
+     * 调用厂商接口拉取可用模型列表，用于配置页一键选择模型名。
+     *
+     * <p>编辑场景下前端传来的 apiKey 是掩码，此时根据 modelId 读取库中真实密钥；
+     * provider 与 baseUrl 同样按"请求优先、库中兜底"的顺序解析。</p>
+     *
+     * @param request 拉取请求
+     * @return 模型列表响应
+     */
+    public AvailableModelsResponse fetchAvailableModels(AvailableModelsRequest request) {
+        ModelConfig probe = new ModelConfig();
+        probe.setProvider(trimToNull(request.provider()));
+        probe.setBaseUrl(trimToNull(request.baseUrl()));
+        probe.setApiKey(shouldUpdateSecret(request.apiKey()) ? request.apiKey().trim() : null);
+
+        if (probe.getApiKey() == null && StringUtils.hasText(request.modelId())) {
+            ModelConfig existing = getModel(request.modelId());
+            if (existing != null) {
+                probe.setApiKey(existing.getApiKey());
+                if (probe.getProvider() == null) {
+                    probe.setProvider(existing.getProvider());
+                }
+                if (probe.getBaseUrl() == null) {
+                    probe.setBaseUrl(existing.getBaseUrl());
+                }
+            }
+        }
+        if (!StringUtils.hasText(probe.getApiKey())) {
+            return AvailableModelsResponse.failure("请先填写 API Key");
+        }
+
+        try {
+            return AvailableModelsResponse.success(modelHttpClient.listAvailableModels(probe));
+        } catch (Exception e) {
+            LOGGER.warn("Fetch available models failed: provider={}, baseUrl={}",
+                    probe.getProvider(), probe.getBaseUrl(), e);
+            return AvailableModelsResponse.failure("获取模型列表失败（该厂商可能不支持自动获取，请手动填写模型名）: "
+                    + e.getMessage());
+        }
     }
 
     @Caching(evict = {
@@ -63,7 +110,7 @@ public class ModelConfigService {
         applyRequest(modelConfig, request, false);
         modelConfigRepository.save(modelConfig);
         enforceSingleDefault(modelConfig);
-        LOGGER.info("Model added: {}, tenant: {}", modelConfig.getName(), modelConfig.getTenantId());
+        LOGGER.info("模型已添加: {}, 租户: {}", modelConfig.getName(), modelConfig.getTenantId());
         return ModelConfigMutationResponse.created(modelConfig.getModelId(), modelConfig.getName());
     }
 
@@ -82,7 +129,7 @@ public class ModelConfigService {
         modelConfigRepository.save(existing);
         enforceSingleDefault(existing);
         publishChange(modelId, ModelConfigChangeEvent.ChangeType.UPDATED);
-        LOGGER.info("Model updated: {}", modelId);
+        LOGGER.info("模型已更新: {}", modelId);
         return ModelConfigMutationResponse.updated(modelId);
     }
 
@@ -99,7 +146,7 @@ public class ModelConfigService {
 
         modelConfigRepository.delete(existing);
         publishChange(modelId, ModelConfigChangeEvent.ChangeType.DELETED);
-        LOGGER.info("Model deleted: {}", modelId);
+        LOGGER.info("模型已删除: {}", modelId);
         return ModelConfigMutationResponse.deleted();
     }
 
@@ -143,10 +190,33 @@ public class ModelConfigService {
         return ModelConfigDetailResponse.success(ModelConfigResponse.from(config));
     }
 
-    @Cacheable(value = CacheNames.MODELS, key = "'entity:' + #modelId + ':' + @securityContextHelper.currentTenantId")
+    // 注意：实体含明文 apiKey（JPA 解密后），禁止上 Redis 缓存，避免密钥以明文落入缓存层
     @Transactional(readOnly = true)
     public ModelConfig getModel(String modelId) {
         return findModelById(modelId);
+    }
+
+    /**
+     * 解析当前租户应使用的默认模型：优先本租户的默认/启用模型，其次共享租户（default），均无则返回 null。
+     *
+     * <p>供未指定 modelId 的调用链路使用，保证后台配置的默认模型真正生效，
+     * 而不是直接落到 yml 占位配置。</p>
+     *
+     * @return 默认模型配置，数据库无可用配置时返回 null
+     */
+    @Transactional(readOnly = true)
+    public ModelConfig resolveTenantDefaultModel() {
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        if (StringUtils.hasText(tenantId)) {
+            ModelConfig tenantModel = getFirstEnabledModel(tenantId);
+            if (tenantModel != null) {
+                return tenantModel;
+            }
+        }
+        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
+            return getFirstEnabledModel(DEFAULT_TENANT_ID);
+        }
+        return null;
     }
 
     @Transactional(readOnly = true)

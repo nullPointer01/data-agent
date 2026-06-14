@@ -13,7 +13,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Executes HTTP-based datasource tests and previews.
+ * 执行基于 HTTP 的数据源测试和预览。
  *
  * @author data-agent
  */
@@ -40,10 +40,10 @@ public class DataConnectorHttpService {
     }
 
     /**
-     * Tests whether one HTTP datasource is reachable.
+     * 测试 HTTP 数据源是否可达。
      *
-     * @param datasource datasource definition
-     * @return textual health result
+     * @param datasource 数据源定义
+     * @return 文本形式的健康检查结果
      */
     public String testHttp(DataSourceConfig datasource) {
         try {

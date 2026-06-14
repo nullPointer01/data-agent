@@ -7,34 +7,34 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for data source configuration.
+ * 数据源配置仓储。
  *
  * @author data-agent
  */
 public interface DataSourceConfigRepository extends JpaRepository<DataSourceConfig, String> {
 
     /**
-     * Find enabled tenant data sources.
+     * 查询租户已启用的数据源。
      *
-     * @param tenantId tenant id
-     * @return enabled data sources
+     * @param tenantId 租户 ID
+     * @return 已启用数据源列表
      */
     List<DataSourceConfig> findByTenantIdAndEnabledTrue(String tenantId);
 
     /**
-     * Find tenant data sources.
+     * 查询租户的数据源。
      *
-     * @param tenantId tenant id
-     * @return data sources
+     * @param tenantId 租户 ID
+     * @return 数据源列表
      */
     List<DataSourceConfig> findByTenantId(String tenantId);
 
     /**
-     * Find a data source by id and tenant id.
+     * 按数据源 ID 和租户 ID 查询数据源。
      *
-     * @param datasourceId data source id
-     * @param tenantId tenant id
-     * @return data source config
+     * @param datasourceId 数据源 ID
+     * @param tenantId 租户 ID
+     * @return 数据源配置
      */
     Optional<DataSourceConfig> findByDatasourceIdAndTenantId(String datasourceId, String tenantId);
 }

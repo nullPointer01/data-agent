@@ -3,7 +3,7 @@ package com.ai.service.file;
 import org.springframework.context.ApplicationEvent;
 
 /**
- * Domain event published after a file is uploaded and parsed.
+ * 文件上传并解析后发布的域事件。
  *
  * @author data-agent
  */

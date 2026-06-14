@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Guard for current user's model token quota.
+ * 当前用户模型令牌配额保护器。
  *
  * @author data-agent
  */
@@ -26,9 +26,9 @@ public class TokenQuotaGuard {
     }
 
     /**
-     * Checks current user's daily token quota.
+     * 检查当前用户的每日令牌配额。
      *
-     * @return quota check result
+     * @return 配额检查结果
      */
     public QuotaCheckResult checkCurrentUserQuota() {
         String userId = securityContextHelper.getCurrentUserId();
@@ -42,27 +42,27 @@ public class TokenQuotaGuard {
     }
 
     /**
-     * Result of quota checking.
+     * 配额检查结果。
      *
-     * @param allowed whether request is allowed
-     * @param message denial message
+     * @param allowed 请求是否允许
+     * @param message 拒绝原因信息
      */
     public record QuotaCheckResult(boolean allowed, String message) {
 
         /**
-         * Creates allowed result.
+         * 创建允许结果。
          *
-         * @return allowed result
+         * @return 允许结果
          */
         public static QuotaCheckResult allow() {
             return new QuotaCheckResult(true, null);
         }
 
         /**
-         * Creates denied result.
+         * 创建拒绝结果。
          *
-         * @param message denial message
-         * @return denied result
+         * @param message 拒绝原因信息
+         * @return 拒绝结果
          */
         public static QuotaCheckResult deny(String message) {
             return new QuotaCheckResult(false, message);

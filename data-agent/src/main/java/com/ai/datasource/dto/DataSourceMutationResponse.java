@@ -1,7 +1,7 @@
 package com.ai.datasource.dto;
 
 /**
- * Response for data source mutation commands.
+ * 数据源变更命令响应。
  *
  * @author data-agent
  */

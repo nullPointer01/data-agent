@@ -4,6 +4,7 @@ import com.ai.model.AnalysisResponse;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.output.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -41,7 +42,7 @@ public class ReActSynchronousStepProcessor {
     /**
      * 处理一轮模型响应，并更新答案、消息和可见思考步骤。
      *
-     * @param llmResponse 原始模型响应
+     * @param aiMessage 模型返回的 AI 消息（可能携带原生工具调用请求）
      * @param toolSpecs 可用的工具描述
      * @param modelId 选中的模型 ID
      * @param messages 可变的 ReAct 消息历史
@@ -51,7 +52,7 @@ public class ReActSynchronousStepProcessor {
      * @param recoveryTracker 本次运行的恢复跟踪器
      * @return 循环控制结果
      */
-    public ReActLoopStepResult process(String llmResponse,
+    public ReActLoopStepResult process(AiMessage aiMessage,
             List<ToolSpecification> toolSpecs,
             String modelId,
             List<ChatMessage> messages,
@@ -59,10 +60,11 @@ public class ReActSynchronousStepProcessor {
             List<AnalysisResponse.ThinkingStep> thinkingSteps,
             int iteration,
             ReActRecoveryTracker recoveryTracker) {
+        String llmResponse = aiMessage.text() == null ? "" : aiMessage.text();
         LOGGER.info("ReAct LLM response (first 200): {}", preview(llmResponse, LOG_RESPONSE_PREVIEW_LENGTH));
         addThinkingStep(llmResponse, thinkingSteps, iteration);
 
-        ReActStepOutcome outcome = stepHandler.handle(llmResponse, messages);
+        ReActStepOutcome outcome = stepHandler.handleNative(aiMessage, messages);
         if (outcome.isFinalAnswer()) {
             finalAnswer.append(outcome.answer());
             thinkingSteps.add(new AnalysisResponse.ThinkingStep(iteration, "answer", "生成最终回答"));
@@ -119,9 +121,9 @@ public class ReActSynchronousStepProcessor {
             List<ToolSpecification> toolSpecs, String modelId, StringBuilder finalAnswer,
             List<AnalysisResponse.ThinkingStep> thinkingSteps, int iteration) {
         messages.add(AiMessage.from("错误恢复次数已达到上限，请停止重试并给出保守结论。"));
-        String summaryResponse = modelCaller.callWithTools(messages, toolSpecs, modelId);
-        if (summaryResponse != null) {
-            finalAnswer.append(responseParser.cleanAssistantAnswer(summaryResponse));
+        String summaryText = summaryText(modelCaller.callWithTools(messages, toolSpecs, modelId));
+        if (summaryText != null) {
+            finalAnswer.append(responseParser.cleanAssistantAnswer(summaryText));
         } else {
             finalAnswer.append(outcome.toolResult());
         }
@@ -137,15 +139,22 @@ public class ReActSynchronousStepProcessor {
             return false;
         }
         messages.add(AiMessage.from(SUMMARY_INTRODUCTION));
-        String summaryResponse = modelCaller.callWithTools(messages, toolSpecs, modelId);
-        if (summaryResponse != null) {
-            finalAnswer.append(responseParser.cleanAssistantAnswer(summaryResponse));
+        String summaryText = summaryText(modelCaller.callWithTools(messages, toolSpecs, modelId));
+        if (summaryText != null) {
+            finalAnswer.append(responseParser.cleanAssistantAnswer(summaryText));
         } else {
             finalAnswer.append(outcome.toolResult());
         }
         thinkingSteps.add(new AnalysisResponse.ThinkingStep(iteration, "answer", "整合结果生成最终回答"));
         addFinalReflection(thinkingSteps, iteration, finalAnswer);
         return true;
+    }
+
+    private String summaryText(Response<AiMessage> response) {
+        if (response == null || response.content() == null) {
+            return null;
+        }
+        return response.content().text();
     }
 
     private void addFinalReflection(List<AnalysisResponse.ThinkingStep> thinkingSteps, int iteration,

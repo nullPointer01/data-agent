@@ -15,7 +15,7 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * External data source configuration.
+ * 外部数据源配置。
  *
  * @author data-agent
  */

@@ -6,48 +6,48 @@ import com.ai.file.dto.FileResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Application service for file upload and processing lifecycle.
+ * 文件上传和处理生命周期的应用服务。
  *
  * @author data-agent
  */
 public interface FileProcessingService {
 
     /**
-     * Accepts an uploaded file and starts asynchronous processing.
+     * 接受上传的文件并启动异步处理。
      *
-     * @param file uploaded multipart file
-     * @return upload result
+     * @param file 上传的多部分文件
+     * @return 上传结果
      */
     FileResponse processFile(MultipartFile file);
 
     /**
-     * Lists files visible to the current tenant.
+     * 列出对当前租户可见的文件。
      *
-     * @return file list
+     * @return 文件列表
      */
     FileListResponse listFiles();
 
     /**
-     * Deletes one file visible to the current tenant.
+     * 删除对当前租户可见的一个文件。
      *
-     * @param fileId file id
-     * @return deletion result
+     * @param fileId 文件 ID
+     * @return 删除结果
      */
     FileMutationResponse deleteFile(String fileId);
 
     /**
-     * Returns parsed content for one file visible to the current tenant.
+     * 返回对当前租户可见的一个文件的解析内容。
      *
-     * @param fileId file id
-     * @return parsed file content, or null when absent
+     * @param fileId 文件 ID
+     * @return 解析的文件内容，缺失时返回 null
      */
     String getFileContent(String fileId);
 
     /**
-     * Returns metadata for one file visible to the current tenant.
+     * 返回对当前租户可见的一个文件的元数据。
      *
-     * @param fileId file id
-     * @return file metadata result
+     * @param fileId 文件 ID
+     * @return 文件元数据结果
      */
     FileResponse getFileInfo(String fileId);
 }

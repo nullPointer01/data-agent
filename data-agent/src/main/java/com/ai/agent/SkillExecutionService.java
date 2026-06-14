@@ -12,11 +12,11 @@ import org.springframework.stereotype.Service;
 import com.ai.agent.tool.AgentConversationRecorder;
 
 /**
- * Executes configured skills inside an MCP context.
+ * 在 MCP 上下文中执行已配置的技能。
  *
- * <p>The service owns skill resolution and context lifecycle. Request routing remains in
- * {@link AgentRuntimeService}, while conversation persistence is delegated to
- * {@link AgentConversationRecorder}.</p>
+ * <p>本服务负责技能解析和上下文生命周期管理。请求路由仍在
+ * {@link AgentRuntimeService} 中完成，会话持久化委托给
+ * {@link AgentConversationRecorder}。</p>
  *
  * @author data-agent
  */
@@ -41,12 +41,12 @@ public class SkillExecutionService {
     }
 
     /**
-     * Executes a requested skill. Returns {@code null} when no skill can be resolved.
+     * 执行请求的技能。当无法解析到技能时返回 {@code null}。
      *
-     * @param request analysis request
-     * @param fileContent optional file content
-     * @param session conversation session
-     * @return skill response or null when fallback should continue
+     * @param request 分析请求
+     * @param fileContent 可选的文件内容
+     * @param session 会话
+     * @return 技能响应，无法解析时返回 null 以继续回退流程
      */
     public AnalysisResponse execute(AnalysisRequest request, String fileContent, ConversationSession session) {
         Skill skill = resolveSkill(request.getSkillId());
@@ -62,7 +62,7 @@ public class SkillExecutionService {
                     request.hasModel() ? request.getModelId() : null);
             return buildSkillResponse(request, session, result, skill.getName());
         } finally {
-            // MCP context is short-lived and must always be released after skill execution.
+            // MCP 上下文是短生命周期的，技能执行完成后必须释放
             mcpContextManager.destroyContext(contextId);
         }
     }

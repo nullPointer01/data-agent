@@ -1,20 +1,23 @@
 package com.ai.agent.react;
 
-import com.ai.mcp.TokenMonitor;
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.Tokenizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * 构建 ReAct 模型调用使用的提示词。
+ * 为原生消息级模型调用准备 ReAct 消息窗口。
+ *
+ * <p>模型调用统一走 LangChain4j 原生协议：消息角色结构原样传给厂商，
+ * 工具规格通过 Function Calling 协议字段单独下发，本类只负责上下文窗口截断。
+ * 截断按 token 预算执行——单条消息可能是几十字也可能是数万字的工具结果，
+ * 按条数截断控制不住上下文溢出。</p>
  *
  * @author data-agent
  */
@@ -22,105 +25,45 @@ import java.util.List;
 public class ReActPromptBuilder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReActPromptBuilder.class);
-    private static final int MAX_CONTEXT_MESSAGES = 12;
-    private static final int MAX_PROMPT_TOKENS = 8000;
-    private static final int PROMPT_TOKEN_CHAR_RATIO = 3;
-    private static final int PROMPT_TRUNCATE_DENOMINATOR = 3;
-    private static final int PROMPT_RETAIN_TAIL_CHARS = 200;
-    private static final String HISTORY_TRUNCATED_MARK = "\n\n[历史对话已截断]\n\n";
-    private static final String CONTENT_TRUNCATED_MARK = "\n...[内容截断]";
+    private static final int MAX_CONTEXT_TOKENS = 8000;
+    // 国产模型词表与 OpenAI 不同，此处计数是近似值；作为窗口控制（非计费）精度足够
+    // 复用全局单例，避免重复加载 tiktoken BPE 词表
+    private static final Tokenizer TOKENIZER = com.ai.config.SharedTokenizer.INSTANCE;
 
-    private final TokenMonitor tokenMonitor;
-
-    public ReActPromptBuilder(TokenMonitor tokenMonitor) {
-        this.tokenMonitor = tokenMonitor;
-    }
-
-    public String buildPromptForModel(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
-        String toolsPrompt = buildToolsPrompt(toolSpecs);
-        List<ChatMessage> truncated = truncateMessages(messages);
-        List<ChatMessage> enhancedMessages = new ArrayList<>(truncated);
-        if (!enhancedMessages.isEmpty() && enhancedMessages.get(0) instanceof SystemMessage) {
-            String originalSystem = ((SystemMessage) enhancedMessages.get(0)).text();
-            enhancedMessages.set(0, SystemMessage.from(originalSystem + "\n\n" + toolsPrompt));
-        } else {
-            enhancedMessages.add(0, SystemMessage.from(toolsPrompt));
-        }
-
-        String prompt = buildPromptFromMessages(enhancedMessages);
-        long estimatedTokens = tokenMonitor.estimateTokens(prompt);
-        if (estimatedTokens > MAX_PROMPT_TOKENS) {
-            LOGGER.warn("ReAct 提示词估算 token 数 {} 超过预算 {}，执行强截断",
-                    estimatedTokens, MAX_PROMPT_TOKENS);
-            return aggressiveTruncatePrompt(prompt);
-        }
-        return prompt;
-    }
-
-    public String buildSummaryPrompt(List<ChatMessage> messages) {
-        return buildPromptFromMessages(truncateMessages(messages));
-    }
-
-    private List<ChatMessage> truncateMessages(List<ChatMessage> messages) {
-        if (messages.size() <= MAX_CONTEXT_MESSAGES) {
+    /**
+     * 为原生消息级调用准备消息：按 token 预算从最新消息往前保留，system 消息始终保留。
+     *
+     * @param messages 完整消息历史
+     * @return 截断后的消息列表
+     */
+    public List<ChatMessage> prepareNativeMessages(List<ChatMessage> messages) {
+        if (messages.isEmpty()) {
             return messages;
         }
-        List<ChatMessage> result = new ArrayList<>();
-        if (!messages.isEmpty() && messages.get(0) instanceof SystemMessage) {
-            result.add(messages.get(0));
-        }
-        int keep = MAX_CONTEXT_MESSAGES - result.size();
-        result.addAll(messages.subList(messages.size() - keep, messages.size()));
-        LOGGER.debug("ReAct 消息历史已截断: {} -> {}", messages.size(), result.size());
-        return result;
-    }
+        SystemMessage systemMessage = messages.get(0) instanceof SystemMessage system ? system : null;
+        int budget = MAX_CONTEXT_TOKENS
+                - (systemMessage != null ? TOKENIZER.estimateTokenCountInMessage(systemMessage) : 0);
 
-    private String aggressiveTruncatePrompt(String prompt) {
-        int cutoff = prompt.lastIndexOf("\n\n", prompt.length() * 2 / PROMPT_TRUNCATE_DENOMINATOR);
-        if (cutoff > prompt.length() / PROMPT_TRUNCATE_DENOMINATOR) {
-            int tailStart = prompt.lastIndexOf("\n\n", prompt.length() - PROMPT_RETAIN_TAIL_CHARS);
-            return prompt.substring(0, cutoff) + HISTORY_TRUNCATED_MARK + prompt.substring(tailStart);
-        }
-        int retainedLength = Math.min(prompt.length(), MAX_PROMPT_TOKENS * PROMPT_TOKEN_CHAR_RATIO);
-        return prompt.substring(0, retainedLength) + CONTENT_TRUNCATED_MARK;
-    }
-
-    private String buildToolsPrompt(List<ToolSpecification> toolSpecs) {
-        StringBuilder sb = new StringBuilder("\n\n# 可用工具\n");
-        for (ToolSpecification spec : toolSpecs) {
-            sb.append("- ").append(spec.name()).append(": ");
-            if (spec.description() != null) {
-                sb.append(spec.description());
+        List<ChatMessage> kept = new ArrayList<>();
+        int firstIndex = systemMessage != null ? 1 : 0;
+        for (int i = messages.size() - 1; i >= firstIndex; i--) {
+            ChatMessage message = messages.get(i);
+            budget -= TOKENIZER.estimateTokenCountInMessage(message);
+            if (budget < 0 && !kept.isEmpty()) {
+                break;
             }
-            sb.append("\n");
+            kept.add(message);
         }
-        sb.append("\n工具调用只能使用 JSON 格式: {\"tool\":\"工具名\",\"arguments\":[\"参数1\",\"参数2\"]}\n");
-        sb.append("例如: {\"tool\":\"listAvailableSkills\",\"arguments\":[]}\n");
-        sb.append("例如: {\"tool\":\"useSkill\",\"arguments\":[\"销售分析\",\"分析销售趋势\"]}\n");
-        sb.append("不要使用 Markdown 代码块包裹工具调用，不要输出旧的 CALL 格式。\n");
-        sb.append("不调用工具时直接回答。\n");
-        return sb.toString();
-    }
+        Collections.reverse(kept);
 
-    private String buildPromptFromMessages(List<ChatMessage> messages) {
-        StringBuilder sb = new StringBuilder();
-        for (ChatMessage message : messages) {
-            appendMessage(sb, message);
+        List<ChatMessage> result = new ArrayList<>();
+        if (systemMessage != null) {
+            result.add(systemMessage);
         }
-        return sb.toString();
-    }
-
-    private void appendMessage(StringBuilder sb, ChatMessage message) {
-        if (message instanceof SystemMessage) {
-            sb.append("[系统] ").append(((SystemMessage) message).text()).append("\n\n");
-            return;
+        result.addAll(kept);
+        if (result.size() < messages.size()) {
+            LOGGER.debug("ReAct 消息历史已按 token 预算截断: {} -> {} 条", messages.size(), result.size());
         }
-        if (message instanceof UserMessage) {
-            sb.append("[用户] ").append(((UserMessage) message).singleText()).append("\n\n");
-            return;
-        }
-        if (message instanceof AiMessage) {
-            sb.append("[助手] ").append(((AiMessage) message).text()).append("\n\n");
-        }
+        return result;
     }
 }

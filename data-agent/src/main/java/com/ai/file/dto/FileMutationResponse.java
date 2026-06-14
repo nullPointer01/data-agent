@@ -1,7 +1,7 @@
 package com.ai.file.dto;
 
 /**
- * File mutation response.
+ * 文件变更响应。
  *
  * @author data-agent
  */

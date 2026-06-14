@@ -3,27 +3,27 @@ package com.ai.memory;
 import com.ai.memory.dto.MemoryCompressionResult;
 
 /**
- * Compresses raw conversation text into reusable memory text.
+ * 将原始对话文本压缩为可复用的记忆文本。
  *
  * @author data-agent
  */
 public interface MemoryCompressor {
 
     /**
-     * Compresses one completed conversation turn.
+     * 压缩一轮已完成的对话。
      *
-     * @param userMessage user message
-     * @param assistantReply assistant reply
-     * @return compression result
+     * @param userMessage 用户消息
+     * @param assistantReply 助手回复
+     * @return 压缩结果
      */
     MemoryCompressionResult compressConversation(String userMessage, String assistantReply);
 
     /**
-     * Compresses a user statement that explicitly asks the system to remember something.
+     * 压缩用户明确要求系统记住的内容。
      *
-     * @param userMessage user message
-     * @param memoryType classified memory type
-     * @return compression result
+     * @param userMessage 用户消息
+     * @param memoryType 分类后的记忆类型
+     * @return 压缩结果
      */
     MemoryCompressionResult compressExplicitMemory(String userMessage, MemoryType memoryType);
 }

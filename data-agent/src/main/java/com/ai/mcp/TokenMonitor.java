@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * In-memory token usage monitor and lightweight token estimator.
+ * 内存令牌使用监控和轻量级令牌估算器。
  *
  * @author data-agent
  */

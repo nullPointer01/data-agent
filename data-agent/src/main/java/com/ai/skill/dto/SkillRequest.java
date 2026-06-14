@@ -1,7 +1,7 @@
 package com.ai.skill.dto;
 
 /**
- * Request payload for creating or updating a skill.
+ * 创建或更新技能的请求负载。
  *
  * @author data-agent
  */

@@ -1,7 +1,7 @@
 package com.ai.resource.dto;
 
 /**
- * Resource center summary response.
+ * 资源中心摘要响应。
  *
  * @author data-agent
  */

@@ -6,7 +6,7 @@ import com.ai.model.FileProcessingStatus;
 import java.time.LocalDateTime;
 
 /**
- * File metadata response.
+ * 文件元数据响应。
  *
  * @author data-agent
  */

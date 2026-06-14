@@ -1,7 +1,7 @@
 package com.ai.service.knowledge;
 
 /**
- * Event used to synchronize knowledge entries into vector store after transaction commit.
+ * 用于在事务提交后将知识条目同步到向量存储的事件。
  *
  * @author data-agent
  */

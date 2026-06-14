@@ -4,7 +4,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Fallback parser for files without a specialized strategy.
+ * 没有专门策略的文件的备用解析器。
  *
  * @author data-agent
  */

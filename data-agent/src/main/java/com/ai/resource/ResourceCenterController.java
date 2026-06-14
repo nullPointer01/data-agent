@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Resource center API.
+ * 资源中心 API。
  *
  * @author data-agent
  */

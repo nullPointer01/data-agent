@@ -22,7 +22,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Asynchronous file parsing and vector indexing worker.
+ * 异步文件解析和向量索引工作者。
  *
  * @author data-agent
  */

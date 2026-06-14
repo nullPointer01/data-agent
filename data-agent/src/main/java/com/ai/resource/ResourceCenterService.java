@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Aggregates files and knowledge entries for the resource center.
+ * 聚合资源中心的文件和知识条目。
  *
  * @author data-agent
  */

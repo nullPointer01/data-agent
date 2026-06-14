@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Generates and optimizes reusable skills through the configured model service.
+ * 通过模型服务生成和优化可复用技能。
  *
  * @author data-agent
  */
@@ -80,7 +80,7 @@ public class SkillGenerator {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> generateFromData(String data, String dataDescription) {
         String prompt = buildDataGenerationPrompt(data, dataDescription);
-        String aiResponse = mcpModelService.callModel(prompt);
+        String aiResponse = mcpModelService.callModelJson(prompt, null);
 
         SkillConfig config = parseAiResponseToSkillConfig(aiResponse, dataDescription);
         if (config == null) {
@@ -89,7 +89,7 @@ public class SkillGenerator {
 
         persistGeneratedSkill(config, SOURCE_DATA);
 
-        LOGGER.info("Auto-generated skill from data: {}", config.getName());
+        LOGGER.info("从数据自动生成技能: {}", config.getName());
         return generatedResponse(config, "Skill自动生成成功", true);
     }
 
@@ -111,7 +111,7 @@ public class SkillGenerator {
         }
 
         String prompt = buildConversationGenerationPrompt(conversationText.toString());
-        String aiResponse = mcpModelService.callModel(prompt);
+        String aiResponse = mcpModelService.callModelJson(prompt, null);
 
         SkillConfig config = parseAiResponseToSkillConfig(aiResponse, "对话生成Skill");
         if (config == null) {
@@ -120,7 +120,7 @@ public class SkillGenerator {
 
         persistGeneratedSkill(config, SOURCE_CONVERSATION);
 
-        LOGGER.info("Generated skill from conversation: {}", config.getName());
+        LOGGER.info("从对话生成技能: {}", config.getName());
         return generatedResponse(config, "从对话生成Skill成功", false);
     }
 
@@ -143,7 +143,7 @@ public class SkillGenerator {
         skillConfigRepository.save(config);
 
         if (shouldOptimize(feedbackCount, positiveCount)) {
-            LOGGER.info("Skill {} has low positive rate, triggering auto-optimization", config.getName());
+            LOGGER.info("技能 {} 正向反馈率偏低，触发自动优化", config.getName());
             optimizeSkill(config);
         }
 
@@ -178,7 +178,7 @@ public class SkillGenerator {
                     config.getKeywords(), config.getSteps() != null ? config.getSteps() : "",
                     config.getPositiveCount(), config.getFeedbackCount());
 
-            String aiResponse = mcpModelService.callModel(prompt);
+            String aiResponse = mcpModelService.callModelJson(prompt, null);
             SkillConfig optimized = parseAiResponseToSkillConfig(aiResponse, config.getName());
             if (optimized != null) {
                 config.setName(optimized.getName());
@@ -190,10 +190,10 @@ public class SkillGenerator {
                 config.setPositiveCount(0);
                 skillConfigRepository.save(config);
                 skillService.registerToSkillManager(config);
-                LOGGER.info("Skill auto-optimized: {}", config.getName());
+                LOGGER.info("技能自动优化完成: {}", config.getName());
             }
         } catch (Exception e) {
-            LOGGER.warn("Failed to auto-optimize skill: {}", e.getMessage());
+            LOGGER.warn("技能自动优化失败: {}", e.getMessage());
         }
     }
 
@@ -263,17 +263,17 @@ public class SkillGenerator {
     public void onFileUploaded(FileUploadedEvent event) {
         try {
             String description = "上传文件: " + event.getFilename();
-            LOGGER.info("Auto-generating skill for uploaded file: {}", event.getFilename());
+            LOGGER.info("为上传文件自动生成技能: {}", event.getFilename());
             generateFromData(event.getContent(), description);
         } catch (Exception e) {
-            LOGGER.warn("Failed to auto-generate skill for file: {} - {}", event.getFilename(), e.getMessage());
+            LOGGER.warn("为文件自动生成技能失败: {} - {}", event.getFilename(), e.getMessage());
         }
     }
 
     private SkillConfig parseAiResponseToSkillConfig(String aiResponse, String dataDescription) {
         try {
             String json = aiResponse.trim();
-            LOGGER.info("AI response for skill generation (first {} chars): {}", LOG_PREVIEW_LENGTH,
+            LOGGER.info("技能生成 AI 响应（前 {} 字符）: {}", LOG_PREVIEW_LENGTH,
                     truncate(json, LOG_PREVIEW_LENGTH));
             if (json.startsWith(MARKDOWN_FENCE)) {
                 json = json.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "");
@@ -302,8 +302,8 @@ public class SkillGenerator {
 
             return config;
         } catch (Exception e) {
-            LOGGER.warn("Failed to parse AI response as SkillConfig: {}", e.getMessage());
-            LOGGER.debug("AI response was: {}", aiResponse);
+            LOGGER.warn("解析 AI 响应为 SkillConfig 失败: {}", e.getMessage());
+            LOGGER.debug("AI 响应内容: {}", aiResponse);
             return null;
         }
     }

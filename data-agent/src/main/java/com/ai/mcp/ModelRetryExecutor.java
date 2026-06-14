@@ -1,5 +1,6 @@
 package com.ai.mcp;
 
+import dev.ai4j.openai4j.OpenAiHttpException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -10,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Executes model calls with retry and circuit breaker protection.
+ * 执行带重试和断路器保护的模型调用。
  *
  * @author data-agent
  */
@@ -23,6 +24,8 @@ public class ModelRetryExecutor {
     private static final int MAX_RETRIES = 3;
     private static final long INITIAL_RETRY_DELAY_MS = 1_000L;
     private static final int MILLISECONDS_PER_SECOND = 1000;
+    private static final int HTTP_TOO_MANY_REQUESTS = 429;
+    private static final int HTTP_SERVER_ERROR_MIN = 500;
     private static final String ERROR_CIRCUIT_PREFIX = "模型[";
 
     private final Map<String, AtomicInteger> failureCount = new ConcurrentHashMap<>();
@@ -38,19 +41,20 @@ public class ModelRetryExecutor {
     }
 
     /**
-     * Executes one model call with retry and circuit breaker.
+     * 执行带重试和断路器的单次模型调用。
      *
-     * @param action model call action
-     * @param modelKey model key
-     * @return model response
-     * @throws Exception call exception
+     * @param <T> 调用结果类型
+     * @param action 模型调用操作
+     * @param modelKey 模型密钥
+     * @return 模型响应
+     * @throws Exception 调用异常
      */
-    public String execute(Callable<String> action, String modelKey) throws Exception {
+    public <T> T execute(Callable<T> action, String modelKey) throws Exception {
         checkCircuitBreaker(modelKey);
         Exception lastException = null;
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
-                String result = action.call();
+                T result = action.call();
                 recordSuccess(modelKey);
                 return result;
             } catch (Exception e) {
@@ -69,6 +73,15 @@ public class ModelRetryExecutor {
     private boolean isRetriable(Exception exception) {
         if (exception instanceof ModelHttpException modelHttpException) {
             return modelHttpException.isRetriable();
+        }
+        // LangChain4j 路径按 HTTP 状态码判定：401/403/404 等认证、路径类错误重试无意义
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof OpenAiHttpException openAiHttpException) {
+                int code = openAiHttpException.code();
+                return code == HTTP_TOO_MANY_REQUESTS || code >= HTTP_SERVER_ERROR_MIN;
+            }
+            cause = cause.getCause();
         }
         return true;
     }

@@ -7,33 +7,33 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for knowledge synchronization configuration.
+ * 知识同步配置仓储。
  *
  * @author data-agent
  */
 public interface KnowledgeSyncConfigRepository extends JpaRepository<KnowledgeSyncConfig, Long> {
 
     /**
-     * Find enabled automatic sync configs.
+     * 查询已启用的自动同步配置。
      *
-     * @return enabled config list
+     * @return 已启用配置列表
      */
     List<KnowledgeSyncConfig> findByEnabledTrue();
 
     /**
-     * Find sync config by knowledge id and tenant id.
+     * 按知识 ID 和租户 ID 查询同步配置。
      *
-     * @param knowledgeId knowledge id
-     * @param tenantId tenant id
-     * @return sync config
+     * @param knowledgeId 知识 ID
+     * @param tenantId 租户 ID
+     * @return 同步配置
      */
     Optional<KnowledgeSyncConfig> findByKnowledgeIdAndTenantId(String knowledgeId, String tenantId);
 
     /**
-     * Find sync configs by tenant id.
+     * 按租户 ID 查询同步配置。
      *
-     * @param tenantId tenant id
-     * @return tenant sync configs
+     * @param tenantId 租户 ID
+     * @return 租户同步配置列表
      */
     List<KnowledgeSyncConfig> findByTenantId(String tenantId);
 }

@@ -13,7 +13,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.io.IOException;
 
 /**
- * Web interceptor enforcing per-user API rate limits.
+ * 强制执行按用户 API 速率限制的 Web 拦截器。
  *
  * @author data-agent
  */

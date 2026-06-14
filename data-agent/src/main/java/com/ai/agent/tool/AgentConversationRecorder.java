@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Persists agent conversations and indexes long-term memory.
+ * 持久化 Agent 对话记录并索引长期记忆。
  *
  * @author data-agent
  */
@@ -45,12 +45,12 @@ public class AgentConversationRecorder {
     }
 
     /**
-     * Records a completed ReAct conversation.
+     * 记录已完成的 ReAct 对话。
      *
-     * @param session conversation session
-     * @param request original request
-     * @param result final answer
-     * @param modelId selected model id
+     * @param session 会话对象
+     * @param request 原始请求
+     * @param result 最终回答
+     * @param modelId 选中的模型 ID
      */
     public void recordReActConversation(ConversationSession session, AnalysisRequest request, String result,
             String modelId) {
@@ -60,13 +60,13 @@ public class AgentConversationRecorder {
     }
 
     /**
-     * Records a session-scoped command or skill conversation without direct raw-conversation vector indexing.
+     * 记录会话范围内的命令或技能对话，不进行原始对话的向量索引。
      *
-     * @param session conversation session
-     * @param request original request
-     * @param result final answer
-     * @param skillUsed skill or command name
-     * @param modelId selected model id
+     * @param session 会话对象
+     * @param request 原始请求
+     * @param result 最终回答
+     * @param skillUsed 使用的技能或命令名称
+     * @param modelId 选中的模型 ID
      */
     public void recordSessionConversation(ConversationSession session, AnalysisRequest request, String result,
             String skillUsed, String modelId) {
@@ -80,11 +80,11 @@ public class AgentConversationRecorder {
      * <p>该入口用于默认编排链和配置化 Agent 路由，确保分析结果不仅落到会话历史，
      * 还会进入后续可检索的长期记忆。</p>
      *
-     * @param session conversation session
-     * @param request original request
-     * @param result final answer
-     * @param skillUsed skill or agent name
-     * @param modelId selected model id
+     * @param session 会话对象
+     * @param request 原始请求
+     * @param result 最终回答
+     * @param skillUsed 使用的技能或 Agent 名称
+     * @param modelId 选中的模型 ID
      */
     public void recordAnalysisConversation(ConversationSession session, AnalysisRequest request, String result,
             String skillUsed, String modelId) {
@@ -106,7 +106,7 @@ public class AgentConversationRecorder {
             sessionManager.saveMessage(session.getSessionId(), ASSISTANT_ROLE, result, skillUsed, modelId,
                     tokenMonitor.estimateTokens(result));
         } catch (Exception e) {
-            LOGGER.warn("Failed to persist agent conversation for session: {}", session.getSessionId(), e);
+            LOGGER.warn("持久化 Agent 对话失败，session: {}", session.getSessionId(), e);
         }
     }
 
@@ -119,7 +119,7 @@ public class AgentConversationRecorder {
                     securityContextHelper.getCurrentTenantId(),
                     securityContextHelper.getCurrentUserId());
         } catch (Exception e) {
-            LOGGER.warn("Failed to index ReAct conversation to vector memory", e);
+            LOGGER.warn("索引 ReAct 对话到向量记忆失败", e);
         }
     }
 
@@ -130,7 +130,7 @@ public class AgentConversationRecorder {
                     request.getQuestion(),
                     result);
         } catch (Exception e) {
-            LOGGER.warn("Failed to capture conversation memory", e);
+            LOGGER.warn("捕获对话记忆失败", e);
         }
     }
 

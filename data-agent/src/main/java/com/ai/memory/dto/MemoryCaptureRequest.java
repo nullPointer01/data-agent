@@ -8,18 +8,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Request used to capture one memory entry.
+ * 用于捕获一条记忆条目的请求。
  *
- * @param tier memory storage tier
- * @param type memory type
- * @param source memory source
- * @param sessionId related session id
- * @param content original content
- * @param compressedContent summary content
- * @param metadata structured metadata
- * @param keyEntities extracted key entities
- * @param topicTags extracted topic tags
- * @param importance importance score in [1, 5]
+ * @param tier 记忆存储层级
+ * @param type 记忆类型
+ * @param source 记忆来源
+ * @param sessionId 关联的会话编号
+ * @param content 原始内容
+ * @param compressedContent 摘要内容
+ * @param metadata 结构化元数据
+ * @param keyEntities 提取的关键实体
+ * @param topicTags 提取的话题标签
+ * @param importance 重要性分数，范围 [1, 5]
  * @author data-agent
  */
 public record MemoryCaptureRequest(
@@ -37,9 +37,9 @@ public record MemoryCaptureRequest(
     private static final int DEFAULT_IMPORTANCE = 3;
 
     /**
-     * Creates a normalized request with safe defaults.
+     * 创建具有安全默认值的规范化请求。
      *
-     * @return normalized request
+     * @return 规范化的请求
      */
     public MemoryCaptureRequest normalize() {
         return new MemoryCaptureRequest(
@@ -56,9 +56,9 @@ public record MemoryCaptureRequest(
     }
 
     /**
-     * Returns compressed content when available, otherwise original content.
+     * 如果可用则返回压缩内容，否则返回原始内容。
      *
-     * @return preferred memory text
+     * @return 首选的记忆文本
      */
     public String effectiveContent() {
         if (compressedContent != null && !compressedContent.isBlank()) {

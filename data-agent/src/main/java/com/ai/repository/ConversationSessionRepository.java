@@ -7,62 +7,62 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for persisted conversation sessions.
+ * 持久化对话会话仓储。
  *
  * @author data-agent
  */
 public interface ConversationSessionRepository extends JpaRepository<ConversationSessionEntity, String> {
 
     /**
-     * Finds sessions owned by one user.
+     * 查询某个用户拥有的会话。
      *
-     * @param userId user id
-     * @return session entities
+     * @param userId 用户 ID
+     * @return 会话实体列表
      */
     List<ConversationSessionEntity> findByUserIdOrderByLastAccessAtDesc(String userId);
 
     /**
-     * Finds sessions owned by one tenant.
+     * 查询某个租户拥有的会话。
      *
-     * @param tenantId tenant id
-     * @return session entities
+     * @param tenantId 租户 ID
+     * @return 会话实体列表
      */
     List<ConversationSessionEntity> findByTenantIdOrderByLastAccessAtDesc(String tenantId);
 
     /**
-     * Finds user sessions by status.
+     * 按状态查询用户会话。
      *
-     * @param userId user id
-     * @param status session status
-     * @return session entities
+     * @param userId 用户 ID
+     * @param status 会话状态
+     * @return 会话实体列表
      */
     List<ConversationSessionEntity> findByUserIdAndStatus(String userId, String status);
 
     /**
-     * Finds one session owned by one user.
+     * 查询某个用户拥有的一个会话。
      *
-     * @param sessionId session id
-     * @param userId user id
-     * @return matched session
+     * @param sessionId 会话 ID
+     * @param userId 用户 ID
+     * @return 匹配的会话
      */
     Optional<ConversationSessionEntity> findBySessionIdAndUserId(String sessionId, String userId);
 
     /**
-     * Finds one session owned by one user in one tenant.
+     * 查询某个用户在某个租户中的一个会话。
      *
-     * @param sessionId session id
-     * @param userId user id
-     * @param tenantId tenant id
-     * @return matched session
+     * @param sessionId 会话 ID
+     * @param userId 用户 ID
+     * @param tenantId 租户 ID
+     * @return 匹配的会话
      */
     Optional<ConversationSessionEntity> findBySessionIdAndUserIdAndTenantId(String sessionId, String userId,
             String tenantId);
 
     /**
-     * Counts sessions owned by one user.
+     * 统计某个用户拥有的会话数。
      *
-     * @param userId user id
-     * @return session count
+     * @param userId 用户 ID
+     * @return 会话数
      */
     long countByUserId(String userId);
 

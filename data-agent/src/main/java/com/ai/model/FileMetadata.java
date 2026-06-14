@@ -13,7 +13,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Metadata and processing state for an uploaded file.
+ * 上传文件的元数据和处理状态。
  *
  * @author data-agent
  */

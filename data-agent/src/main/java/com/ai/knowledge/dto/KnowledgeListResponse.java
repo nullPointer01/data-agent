@@ -3,7 +3,7 @@ package com.ai.knowledge.dto;
 import java.util.List;
 
 /**
- * Knowledge list response.
+ * 知识列表响应。
  *
  * @author data-agent
  */

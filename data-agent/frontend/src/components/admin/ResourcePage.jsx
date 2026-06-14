@@ -124,16 +124,75 @@ function renderField({ key, type, options, form, setForm }) {
   }
   if (type === 'select') {
     return (
-      <select className="select" value={form[key] || ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })}>
+      <select className="select" value={form[key] || ''} onChange={(event) => {
+        const value = event.target.value;
+        const selected = (options || []).find((option) => option.value === value);
+        const next = { ...form, [key]: value };
+        // 选项可携带 fill：仅填充表单中尚未填写的字段（如选厂商后自动带出默认 Base URL / 模型名）
+        if (selected?.fill) {
+          Object.entries(selected.fill).forEach(([fillKey, fillValue]) => {
+            if (next[fillKey] == null || next[fillKey] === '') {
+              next[fillKey] = fillValue;
+            }
+          });
+        }
+        setForm(next);
+      }}>
         <option value="">请选择</option>
         {(options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     );
   }
+  if (type === 'suggest') {
+    return <SuggestField fieldKey={key} form={form} setForm={setForm} fetchOptions={options} />;
+  }
   if (type === 'checkbox') {
     return <label className="switch-line"><input type="checkbox" checked={Boolean(form[key])} onChange={(event) => setForm({ ...form, [key]: event.target.checked })} />启用</label>;
   }
   return <input className="input" type={type || 'text'} value={form[key] ?? ''} onChange={(event) => setForm({ ...form, [key]: type === 'number' ? Number(event.target.value) : event.target.value })} />;
+}
+
+function SuggestField({ fieldKey, form, setForm, fetchOptions }) {
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [hint, setHint] = useState('');
+  const listId = `suggest-${fieldKey}`;
+
+  const fetchList = async () => {
+    setLoading(true);
+    setHint('');
+    try {
+      const result = await fetchOptions(form);
+      setCandidates(result);
+      setHint(result.length ? `已获取 ${result.length} 个模型，点击输入框选择` : '未获取到模型，请手动填写');
+    } catch (error) {
+      setCandidates([]);
+      setHint(error.message || '获取失败，请手动填写');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="toolbar" style={{ display: 'flex', gap: 8 }}>
+        <input
+          className="input"
+          style={{ flex: 1 }}
+          list={listId}
+          value={form[fieldKey] ?? ''}
+          onChange={(event) => setForm({ ...form, [fieldKey]: event.target.value })}
+        />
+        <datalist id={listId}>
+          {candidates.map((candidate) => <option key={candidate} value={candidate} />)}
+        </datalist>
+        <button className="btn" type="button" disabled={loading} onClick={fetchList}>
+          {loading ? '获取中…' : '获取列表'}
+        </button>
+      </div>
+      {hint && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
 }
 
 function renderCell(item, key) {

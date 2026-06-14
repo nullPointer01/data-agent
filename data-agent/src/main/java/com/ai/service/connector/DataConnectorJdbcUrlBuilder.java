@@ -4,7 +4,7 @@ import com.ai.model.DataSourceConfig;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds JDBC URLs for supported datasource types.
+ * 为支持的数据源类型构建 JDBC URL。
  *
  * @author data-agent
  */
@@ -27,9 +27,9 @@ public class DataConnectorJdbcUrlBuilder {
     }
 
     /**
-     * Builds the JDBC URL for one datasource.
+     * 为一个数据源构建 JDBC URL。
      *
-     * @param datasource datasource definition
+     * @param datasource 数据源定义
      * @return JDBC URL
      */
     public String buildJdbcUrl(DataSourceConfig datasource) {

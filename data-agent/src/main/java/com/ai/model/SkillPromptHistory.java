@@ -13,7 +13,7 @@ import jakarta.persistence.TemporalType;
 import java.util.Date;
 
 /**
- * Historical prompt snapshot for a tenant skill.
+ * 租户技能的历史提示词快照。
  *
  * @author data-agent
  */

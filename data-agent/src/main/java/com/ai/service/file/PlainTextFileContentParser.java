@@ -4,7 +4,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Parses plain text and unknown files by reading them as UTF-8 text.
+ * 通过以 UTF-8 文本形式读取纯文本和未知文件来解析它们。
  *
  * @author data-agent
  */

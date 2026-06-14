@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Factory methods for common API response envelopes.
+ * 常见 API 响应包装的工厂方法。
  *
  * @author data-agent
  */

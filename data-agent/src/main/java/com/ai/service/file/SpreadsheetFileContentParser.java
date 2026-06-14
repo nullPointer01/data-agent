@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import java.io.InputStream;
 
 /**
- * Parses Excel spreadsheets into tabular text.
+ * 将 Excel 电子表格解析为表格文本。
  *
  * @author data-agent
  */

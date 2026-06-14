@@ -1,7 +1,7 @@
 package com.ai.exception;
 
 /**
- * Raised when a user exceeds token quota.
+ * 当用户超出令牌配额时抛出。
  *
  * @author data-agent
  */

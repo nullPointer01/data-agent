@@ -50,14 +50,14 @@ public class ReActStreamingStepProcessor {
      * @param recoveryTracker 本次运行的恢复跟踪器
      * @return 循环控制结果
      */
-    public ReActLoopStepResult process(String llmResponse,
+    public ReActLoopStepResult process(AiMessage aiMessage,
             List<ChatMessage> messages,
             List<ToolSpecification> toolSpecs,
             String modelId,
             StringBuilder finalAnswer,
             Consumer<String> eventEmitter,
             ReActRecoveryTracker recoveryTracker) {
-        return process(llmResponse, messages, toolSpecs, modelId, finalAnswer, null, eventEmitter, recoveryTracker, 0);
+        return process(aiMessage, messages, toolSpecs, modelId, finalAnswer, null, eventEmitter, recoveryTracker, 0);
     }
 
     /**
@@ -73,7 +73,7 @@ public class ReActStreamingStepProcessor {
      * @param recoveryTracker 本次运行的恢复跟踪器
      * @return 循环控制结果
      */
-    public ReActLoopStepResult process(String llmResponse,
+    public ReActLoopStepResult process(AiMessage aiMessage,
             List<ChatMessage> messages,
             List<ToolSpecification> toolSpecs,
             String modelId,
@@ -81,7 +81,7 @@ public class ReActStreamingStepProcessor {
             List<AnalysisResponse.ThinkingStep> thinkingSteps,
             Consumer<String> eventEmitter,
             ReActRecoveryTracker recoveryTracker) {
-        return process(llmResponse, messages, toolSpecs, modelId, finalAnswer, thinkingSteps, eventEmitter,
+        return process(aiMessage, messages, toolSpecs, modelId, finalAnswer, thinkingSteps, eventEmitter,
                 recoveryTracker, 0);
     }
 
@@ -99,7 +99,7 @@ public class ReActStreamingStepProcessor {
      * @param iteration 当前迭代次数
      * @return 循环控制结果
      */
-    public ReActLoopStepResult process(String llmResponse,
+    public ReActLoopStepResult process(AiMessage aiMessage,
             List<ChatMessage> messages,
             List<ToolSpecification> toolSpecs,
             String modelId,
@@ -108,8 +108,8 @@ public class ReActStreamingStepProcessor {
             Consumer<String> eventEmitter,
             ReActRecoveryTracker recoveryTracker,
             int iteration) {
-        addThinkingStep(llmResponse, thinkingSteps, iteration);
-        ReActStepOutcome outcome = stepHandler.handle(llmResponse, messages);
+        addThinkingStep(aiMessage.text() == null ? "" : aiMessage.text(), thinkingSteps, iteration);
+        ReActStepOutcome outcome = stepHandler.handleNative(aiMessage, messages);
         if (outcome.isFinalAnswer()) {
             addAnswerStep(thinkingSteps, iteration, "生成最终回答");
             finalAnswer.append(outcome.answer());

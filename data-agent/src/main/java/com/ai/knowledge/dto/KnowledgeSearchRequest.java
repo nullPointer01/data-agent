@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Request for vector knowledge retrieval.
+ * 向量知识检索请求。
  *
  * @author data-agent
  */

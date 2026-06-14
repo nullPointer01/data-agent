@@ -7,7 +7,7 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 
 /**
- * Session-scoped working memory stored in Redis.
+ * 会话级工作记忆，存储在 Redis 中。
  *
  * @author data-agent
  */
@@ -24,12 +24,12 @@ public class WorkingMemory {
     }
 
     /**
-     * Saves current task state for one session.
+     * 保存当前会话的任务状态。
      *
-     * @param tenantId tenant id
-     * @param userId user id
-     * @param sessionId session id
-     * @param content working memory content
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param sessionId 会话 ID
+     * @param content 工作记忆内容
      */
     public void save(String tenantId, String userId, String sessionId, String content) {
         if (!hasIdentity(tenantId, userId) || !StringUtils.hasText(sessionId) || !StringUtils.hasText(content)) {
@@ -39,12 +39,12 @@ public class WorkingMemory {
     }
 
     /**
-     * Gets working memory and refreshes its session TTL.
+     * 获取工作记忆并刷新会话 TTL。
      *
-     * @param tenantId tenant id
-     * @param userId user id
-     * @param sessionId session id
-     * @return working memory content
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param sessionId 会话 ID
+     * @return 工作记忆内容
      */
     public String get(String tenantId, String userId, String sessionId) {
         if (!hasIdentity(tenantId, userId) || !StringUtils.hasText(sessionId)) {
@@ -60,11 +60,11 @@ public class WorkingMemory {
     }
 
     /**
-     * Clears working memory for one session.
+     * 清除指定会话的工作记忆。
      *
-     * @param tenantId tenant id
-     * @param userId user id
-     * @param sessionId session id
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param sessionId 会话 ID
      */
     public void clear(String tenantId, String userId, String sessionId) {
         if (!hasIdentity(tenantId, userId) || !StringUtils.hasText(sessionId)) {

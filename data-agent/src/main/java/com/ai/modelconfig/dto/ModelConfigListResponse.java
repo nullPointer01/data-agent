@@ -3,7 +3,7 @@ package com.ai.modelconfig.dto;
 import java.util.List;
 
 /**
- * Model configuration list response.
+ * 模型配置列表响应。
  *
  * @author data-agent
  */

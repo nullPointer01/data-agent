@@ -84,7 +84,7 @@ public class VectorMemoryService {
         String summary = USER_LABEL + userMessage + ASSISTANT_LABEL + assistantReply;
         String entryId = VectorDocumentTypes.CONVERSATION + ":" + sessionId + ":" + System.currentTimeMillis();
         index(summary, VectorDocumentTypes.CONVERSATION, entryId, sessionId, identity);
-        LOGGER.debug("Indexed conversation for session: {}", sessionId);
+        LOGGER.debug("已索引会话向量: {}", sessionId);
     }
 
     public void indexFile(String fileId, String filename, String content) {
@@ -103,7 +103,7 @@ public class VectorMemoryService {
             String text = FILE_LABEL_PREFIX + filename + FILE_LABEL_SUFFIX + chunk.text();
             index(text, VectorDocumentTypes.FILE, chunk, identity);
         }
-        LOGGER.debug("Indexed file: {} ({} chunks)", filename, chunks.size());
+        LOGGER.debug("已索引文件: {} ({} 个分块)", filename, chunks.size());
     }
 
     public void indexSkill(String skillName, String description, String promptTemplate) {
@@ -111,7 +111,7 @@ public class VectorMemoryService {
         String text = SKILL_LABEL_PREFIX + skillName + SKILL_LABEL_MIDDLE + description
                 + SKILL_TEMPLATE_SEPARATOR + promptTemplate;
         index(text, VectorDocumentTypes.SKILL, skillName, skillName, identity);
-        LOGGER.debug("Indexed skill: {}", skillName);
+        LOGGER.debug("已索引技能: {}", skillName);
     }
 
     public void indexKnowledge(String content, String source) {
@@ -129,16 +129,16 @@ public class VectorMemoryService {
         for (VectorChunk chunk : chunks) {
             index(chunk.text(), VectorDocumentTypes.KNOWLEDGE, chunk, identity);
         }
-        LOGGER.debug("Indexed knowledge from: {} ({} chunks)", source, chunks.size());
+        LOGGER.debug("已索引知识: {} ({} 个分块)", source, chunks.size());
     }
 
     /**
-     * Indexes durable user memory into Milvus for long-term recall.
+     * 将持久化用户记忆索引到 Milvus，用于长期召回。
      *
-     * @param memoryId memory id
-     * @param content memory text
-     * @param tenantId tenant id
-     * @param userId user id
+     * @param memoryId 记忆编号
+     * @param content 记忆文本
+     * @param tenantId 租户编号
+     * @param userId 用户编号
      */
     public void indexMemory(String memoryId, String content, String tenantId, String userId) {
         if (!hasText(content)) {
@@ -151,7 +151,7 @@ public class VectorMemoryService {
         for (VectorChunk chunk : chunks) {
             index(MEMORY_LABEL_PREFIX + chunk.text(), VectorDocumentTypes.MEMORY, chunk, identity);
         }
-        LOGGER.debug("Indexed long-term memory: {} ({} chunks)", memoryId, chunks.size());
+        LOGGER.debug("已索引长期记忆: {} ({} 个分块)", memoryId, chunks.size());
     }
 
     public int estimateChunkCount(String content) {
@@ -171,21 +171,21 @@ public class VectorMemoryService {
     }
 
     /**
-     * Searches vector context and formats it for prompt injection.
+     * 检索向量上下文并格式化用于提示词注入。
      *
-     * @param query query text
-     * @param topK result count
-     * @param minScore minimum vector score
-     * @param tenantId tenant id
-     * @param sourceTypes optional source type filter
-     * @return formatted relevant context
+     * @param query 查询文本
+     * @param topK 返回结果数量
+     * @param minScore 最小向量相似度分数
+     * @param tenantId 租户编号
+     * @param sourceTypes 可选来源类型过滤
+     * @return 格式化后的相关上下文
      */
     public String searchRelevant(String query, int topK, double minScore, String tenantId,
             List<String> sourceTypes) {
         List<EmbeddingMatch<TextSegment>> matches = searchMatches(query, topK, minScore, tenantId, null,
                 sourceTypes);
         if (matches.isEmpty()) {
-            LOGGER.debug("No relevant results found for query: {}", preview(query, QUERY_LOG_PREVIEW_LENGTH));
+            LOGGER.debug("未找到相关结果，查询: {}", preview(query, QUERY_LOG_PREVIEW_LENGTH));
             return "";
         }
         return matches.stream()
@@ -194,22 +194,22 @@ public class VectorMemoryService {
     }
 
     /**
-     * Searches vector context with tenant and user isolation, then formats matches for prompt injection.
+     * 带租户和用户隔离的向量上下文检索，格式化匹配结果用于提示词注入。
      *
-     * @param query query text
-     * @param topK result count
-     * @param minScore minimum vector score
-     * @param tenantId tenant id
-     * @param userId user id
-     * @param sourceTypes optional source type filter
-     * @return formatted relevant context
+     * @param query 查询文本
+     * @param topK 返回结果数量
+     * @param minScore 最小向量相似度分数
+     * @param tenantId 租户编号
+     * @param userId 用户编号
+     * @param sourceTypes 可选来源类型过滤
+     * @return 格式化后的相关上下文
      */
     public String searchRelevant(String query, int topK, double minScore, String tenantId, String userId,
             List<String> sourceTypes) {
         List<EmbeddingMatch<TextSegment>> matches = searchMatches(query, topK, minScore, tenantId, userId,
                 sourceTypes);
         if (matches.isEmpty()) {
-            LOGGER.debug("No relevant results found for query: {}", preview(query, QUERY_LOG_PREVIEW_LENGTH));
+            LOGGER.debug("未找到相关结果，查询: {}", preview(query, QUERY_LOG_PREVIEW_LENGTH));
             return "";
         }
         return matches.stream()

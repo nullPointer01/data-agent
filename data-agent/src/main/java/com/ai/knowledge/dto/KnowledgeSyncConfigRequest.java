@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Request for automatic knowledge synchronization config.
+ * 知识自动同步配置请求。
  *
  * @author data-agent
  */

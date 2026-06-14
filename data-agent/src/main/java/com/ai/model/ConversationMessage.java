@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Persisted conversation message.
+ * 持久化的对话消息。
  *
  * @author data-agent
  */

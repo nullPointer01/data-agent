@@ -3,7 +3,7 @@ package com.ai.event;
 import org.springframework.context.ApplicationEvent;
 
 /**
- * Event published when a model configuration changes.
+ * 模型配置变更时发布的事件。
  *
  * @author data-agent
  */

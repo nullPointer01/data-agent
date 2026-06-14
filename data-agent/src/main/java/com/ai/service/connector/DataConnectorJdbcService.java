@@ -5,13 +5,12 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 
 /**
- * Executes JDBC datasource checks, metadata discovery and read-only queries.
+ * 执行 JDBC 数据源检查、元数据发现和只读查询。
  *
  * @author data-agent
  */
@@ -27,21 +26,23 @@ public class DataConnectorJdbcService {
 
     private final DataConnectorJdbcUrlBuilder jdbcUrlBuilder;
     private final DataConnectorSqlPolicy sqlPolicy;
+    private final JdbcConnectionPoolManager poolManager;
 
-    public DataConnectorJdbcService(DataConnectorJdbcUrlBuilder jdbcUrlBuilder, DataConnectorSqlPolicy sqlPolicy) {
+    public DataConnectorJdbcService(DataConnectorJdbcUrlBuilder jdbcUrlBuilder, DataConnectorSqlPolicy sqlPolicy,
+            JdbcConnectionPoolManager poolManager) {
         this.jdbcUrlBuilder = jdbcUrlBuilder;
         this.sqlPolicy = sqlPolicy;
+        this.poolManager = poolManager;
     }
 
     /**
-     * Tests a JDBC datasource connection.
+     * 测试 JDBC 数据源连接。
      *
-     * @param datasource datasource definition
-     * @return textual health result
+     * @param datasource 数据源定义
+     * @return 文本形式的健康检查结果
      */
     public String testJdbc(DataSourceConfig datasource) {
-        try (Connection conn = DriverManager.getConnection(buildJdbcUrl(datasource), datasource.getUsername(),
-                datasource.getPassword())) {
+        try (Connection conn = poolManager.getConnection(datasource)) {
             return conn.isValid(JDBC_VALIDATION_TIMEOUT_SECONDS) ? "连接成功" : "连接失败";
         } catch (Exception e) {
             return "连接失败: " + e.getMessage();
@@ -55,8 +56,7 @@ public class DataConnectorJdbcService {
      * @return schema text
      */
     public String schemaJdbc(DataSourceConfig datasource) {
-        try (Connection conn = DriverManager.getConnection(buildJdbcUrl(datasource), datasource.getUsername(),
-                datasource.getPassword())) {
+        try (Connection conn = poolManager.getConnection(datasource)) {
             return buildSchema(conn, datasource);
         } catch (Exception e) {
             return "获取 Schema 失败: " + e.getMessage();
@@ -140,8 +140,7 @@ public class DataConnectorJdbcService {
     }
 
     private String firstTable(DataSourceConfig datasource) throws Exception {
-        try (Connection conn = DriverManager.getConnection(buildJdbcUrl(datasource), datasource.getUsername(),
-                datasource.getPassword())) {
+        try (Connection conn = poolManager.getConnection(datasource)) {
             try (ResultSet tables = conn.getMetaData().getTables(conn.getCatalog(), null, "%", new String[]{"TABLE"})) {
                 return tables.next() ? tables.getString("TABLE_NAME") : null;
             }
@@ -150,8 +149,7 @@ public class DataConnectorJdbcService {
 
     private String queryJdbc(DataSourceConfig datasource, String sql, int maxRows) throws Exception {
         sqlPolicy.validateReadOnlySql(sql);
-        try (Connection conn = DriverManager.getConnection(buildJdbcUrl(datasource), datasource.getUsername(),
-                datasource.getPassword())) {
+        try (Connection conn = poolManager.getConnection(datasource)) {
             conn.setReadOnly(true);
             conn.setAutoCommit(false);
             try (Statement stmt = conn.createStatement()) {

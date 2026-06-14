@@ -1,7 +1,7 @@
 package com.ai.resource.dto;
 
 /**
- * Resource asset list item.
+ * 资源资产列表项。
  *
  * @author data-agent
  */

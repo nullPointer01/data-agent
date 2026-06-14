@@ -3,7 +3,7 @@ package com.ai.vector;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds Milvus boolean expressions for metadata-scoped vector deletion.
+ * 为元数据范围的向量删除构建 Milvus 布尔表达式。
  *
  * @author data-agent
  */
@@ -11,12 +11,12 @@ import org.springframework.stereotype.Component;
 public class MilvusDeleteExpressionBuilder {
 
     /**
-     * Builds a delete expression for all chunks under one source.
+     * 为一个来源下的所有块构建删除表达式。
      *
-     * @param type vector document type
-     * @param sourceId source id
-     * @param tenantId optional tenant id
-     * @return Milvus delete expression
+     * @param type 向量文档类型
+     * @param sourceId 来源 ID
+     * @param tenantId 可选的租户 ID
+     * @return Milvus 删除表达式
      */
     public String buildBySource(String type, String sourceId, String tenantId) {
         String expression = jsonMetadataEquals(VectorMetadataKeys.TYPE, type)

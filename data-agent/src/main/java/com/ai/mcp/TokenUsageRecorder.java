@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Persists model token usage records.
+ * 持久化模型令牌使用记录。
  *
  * @author data-agent
  */
@@ -42,12 +42,12 @@ public class TokenUsageRecorder {
     }
 
     /**
-     * Records one token usage item.
+     * 记录一条令牌使用项。
      *
-     * @param modelId model id
-     * @param skillId skill id
-     * @param promptTokens prompt token count
-     * @param completionTokens completion token count
+     * @param modelId 模型 ID
+     * @param skillId 技能 ID
+     * @param promptTokens 提示令牌计数
+     * @param completionTokens 完成令牌计数
      * @param totalTokens total token count
      * @param sessionId session id
      */

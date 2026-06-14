@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * OpenAPI and Swagger grouping configuration.
+ * OpenAPI 和 Swagger 分组配置。
  *
  * @author data-agent
  */

@@ -15,7 +15,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Tenant-scoped large language model configuration.
+ * 租户隔离的大语言模型配置。
  *
  * @author data-agent
  */

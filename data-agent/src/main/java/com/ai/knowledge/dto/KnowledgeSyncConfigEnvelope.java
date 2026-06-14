@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Envelope for automatic synchronization config response.
+ * 自动同步配置响应信封。
  *
  * @author data-agent
  */

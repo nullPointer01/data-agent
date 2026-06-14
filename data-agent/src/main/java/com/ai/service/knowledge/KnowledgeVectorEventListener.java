@@ -8,7 +8,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Handles knowledge vector events after database transactions commit.
+ * 处理数据库事务提交后的知识向量事件。
  *
  * @author data-agent
  */

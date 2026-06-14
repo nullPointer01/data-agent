@@ -5,7 +5,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
- * Reads authenticated tenant user details from Spring Security context.
+ * 从 Spring Security 上下文中读取认证的租户用户详情。
  *
  * @author data-agent
  */

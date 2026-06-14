@@ -4,7 +4,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Parses image uploads into a lightweight placeholder instead of raw binary text.
+ * 将图像上传解析为轻量级占位符，而不是原始二进制文本。
  *
  * @author data-agent
  */

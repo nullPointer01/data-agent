@@ -5,7 +5,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * MVC interceptor registration configuration.
+ * MVC 拦截器注册配置。
  *
  * @author data-agent
  */

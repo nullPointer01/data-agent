@@ -3,7 +3,7 @@ package com.ai.service.file;
 import java.util.Set;
 
 /**
- * Shared file type helpers used by the parsing strategy layer.
+ * 解析策略层使用的共享文件类型辅助程序。
  *
  * @author data-agent
  */
@@ -45,40 +45,40 @@ final class FileTypeSupport {
     }
 
     /**
-     * Normalizes a filename to lower case, tolerating null input.
+     * 将文件名规范化为小写，容忍空输入。
      *
-     * @param filename original filename
-     * @return lower-case filename, or empty string when absent
+     * @param filename 原始文件名
+     * @return 小写文件名，缺失时返回空字符串
      */
     static String lowerName(String filename) {
         return filename == null ? "" : filename.toLowerCase();
     }
 
     /**
-     * Checks whether a content type points to an image.
+     * 检查内容类型是否指向图像。
      *
-     * @param contentType mime type
-     * @return true when the mime type is an image
+     * @param contentType MIME 类型
+     * @return MIME 类型为图像时返回 true
      */
     static boolean isImage(String contentType) {
         return contentType != null && contentType.contains(CONTENT_TYPE_IMAGE);
     }
 
     /**
-     * Checks whether a filename points to a common image extension.
+     * 检查文件名是否指向常见的图像扩展名。
      *
-     * @param lowerName normalized lower-case filename
-     * @return true when the filename looks like an image
+     * @param lowerName 规范化的小写文件名
+     * @return 文件名看起来像图像时返回 true
      */
     static boolean isImageFile(String lowerName) {
         return IMAGE_EXTENSIONS.stream().anyMatch(lowerName::endsWith);
     }
 
     /**
-     * Checks whether a filename should be treated as plain text.
+     * 检查文件名是否应被视为纯文本。
      *
-     * @param lowerName normalized lower-case filename
-     * @return true when the file should be read as text
+     * @param lowerName 规范化的小写文件名
+     * @return 文件应被读为文本时返回 true
      */
     static boolean isTextFile(String lowerName) {
         return TEXT_EXTENSIONS.stream().anyMatch(lowerName::endsWith)
@@ -91,11 +91,11 @@ final class FileTypeSupport {
     }
 
     /**
-     * Builds a human-readable placeholder for images.
+     * 为图像构建易读的占位符。
      *
-     * @param filename image name
-     * @param size image size in bytes
-     * @return placeholder text
+     * @param filename 图像名称
+     * @param size 图像大小（字节）
+     * @return 占位符文本
      */
     static String imagePlaceholder(String filename, long size) {
         return IMAGE_FILE_PREFIX + filename + " (" + size + " bytes)";

@@ -23,7 +23,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * Redis template and cache configuration.
+ * Redis 模板和缓存配置。
  *
  * @author data-agent
  */

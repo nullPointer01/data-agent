@@ -79,7 +79,7 @@ public class AgentKnowledgeToolService {
 
             return formatMatches(knowledgeMatches);
         } catch (Exception e) {
-            LOGGER.warn("Knowledge search failed: {}", e.getMessage());
+            LOGGER.warn("知识库搜索失败: {}", e.getMessage());
             return "知识库搜索失败: " + e.getMessage();
         }
     }

@@ -1,44 +1,44 @@
 package com.ai.agent.react;
 
 /**
- * Tool recovery category used for ReAct self-correction.
+ * ReAct 自我修正时使用的工具恢复类别。
  *
  * @author data-agent
  */
 public enum ErrorRecoveryType {
 
     /**
-     * Tool result does not need a special recovery instruction.
+     * 工具结果无需特殊恢复指令。
      */
     NONE,
 
     /**
-     * The model selected a tool that does not exist.
+     * 模型选择了一个不存在的工具。
      */
     UNKNOWN_TOOL,
 
     /**
-     * Required tool arguments are missing or malformed.
+     * 必需的工具参数缺失或格式错误。
      */
     ARGUMENT_ERROR,
 
     /**
-     * A data or knowledge lookup returned no available data.
+     * 数据或知识查询未返回可用数据。
      */
     NO_DATA,
 
     /**
-     * SQL execution failed and the model should inspect schema or simplify query.
+     * SQL 执行失败，模型应检查 Schema 或简化查询。
      */
     SQL_ERROR,
 
     /**
-     * The provider or downstream dependency timed out.
+     * 上游服务或下游依赖超时。
      */
     TIMEOUT,
 
     /**
-     * Generic tool execution failure.
+     * 通用工具执行失败。
      */
     TOOL_FAILURE
 }

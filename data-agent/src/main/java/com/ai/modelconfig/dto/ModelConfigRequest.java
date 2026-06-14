@@ -1,7 +1,7 @@
 package com.ai.modelconfig.dto;
 
 /**
- * Request payload for creating or updating model configuration.
+ * 创建或更新模型配置的请求负载。
  *
  * @author data-agent
  */

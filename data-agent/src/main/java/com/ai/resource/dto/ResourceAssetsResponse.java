@@ -3,7 +3,7 @@ package com.ai.resource.dto;
 import java.util.List;
 
 /**
- * Resource asset list response.
+ * 资源资产列表响应。
  *
  * @author data-agent
  */

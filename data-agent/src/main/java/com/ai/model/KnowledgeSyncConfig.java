@@ -13,7 +13,7 @@ import jakarta.persistence.TemporalType;
 import java.util.Date;
 
 /**
- * Automatic synchronization configuration for a knowledge entry.
+ * 知识条目的自动同步配置。
  *
  * @author data-agent
  */

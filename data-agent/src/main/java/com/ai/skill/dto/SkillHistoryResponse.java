@@ -5,7 +5,7 @@ import com.ai.model.SkillPromptHistory;
 import java.util.Date;
 
 /**
- * Skill prompt history response.
+ * 技能提示历史响应。
  *
  * @author data-agent
  */

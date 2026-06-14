@@ -1,9 +1,12 @@
 package com.ai.controller;
 
+import com.ai.modelconfig.dto.AvailableModelsRequest;
+import com.ai.modelconfig.dto.AvailableModelsResponse;
 import com.ai.modelconfig.dto.ModelConfigDetailResponse;
 import com.ai.modelconfig.dto.ModelConfigListResponse;
 import com.ai.modelconfig.dto.ModelConfigMutationResponse;
 import com.ai.modelconfig.dto.ModelConfigRequest;
+import com.ai.modelconfig.dto.ProviderCatalogResponse;
 import com.ai.service.ModelConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST API for tenant-scoped model configuration.
+ * 租户维度模型配置的 REST 接口。
  *
  * @author data-agent
  */
@@ -63,5 +66,27 @@ public class ModelConfigController {
     @GetMapping("/get/{modelId}")
     public ModelConfigDetailResponse getModel(@PathVariable String modelId) {
         return modelConfigService.getModelDetail(modelId);
+    }
+
+    /**
+     * 返回厂商目录：前端配置页的厂商下拉与默认值唯一来源。
+     *
+     * @return 厂商目录响应
+     */
+    @GetMapping("/providers")
+    public ProviderCatalogResponse providers() {
+        return ProviderCatalogResponse.fromCatalog();
+    }
+
+    /**
+     * 拉取厂商可用模型列表，配置页用于一键选择模型名。
+     *
+     * @param request 拉取请求
+     * @return 模型列表响应
+     */
+    @PostMapping("/available")
+    public AvailableModelsResponse availableModels(@RequestBody AvailableModelsRequest request) {
+        LOGGER.info("Fetch available models request: provider={}", request.provider());
+        return modelConfigService.fetchAvailableModels(request);
     }
 }

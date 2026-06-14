@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Token usage and quota API.
+ * 令牌使用量和配额接口。
  *
  * @author data-agent
  */

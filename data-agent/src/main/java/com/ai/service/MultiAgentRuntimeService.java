@@ -64,7 +64,7 @@ public class MultiAgentRuntimeService {
             }
             return memoryManager.buildContext(request.getSessionId(), request.getQuestion());
         } catch (Exception e) {
-            LOGGER.warn("Failed to build configured agent memory context: {}", e.getMessage());
+            LOGGER.warn("构建 Agent 记忆上下文失败: {}", e.getMessage());
             return MemoryContext.empty();
         }
     }

@@ -15,7 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * Checks and reports per-user daily token quota.
+ * 用户每日 Token 配额检查与查询服务。
  *
  * @author data-agent
  */
@@ -39,9 +39,9 @@ public class TokenQuotaService {
     }
 
     /**
-     * Checks whether current daily quota is exhausted.
+     * 检查当前用户的每日配额是否已耗尽。
      *
-     * @param userId user id
+     * @param userId 用户编号
      */
     @Transactional(readOnly = true)
     public void checkDailyQuota(String userId) {
@@ -56,7 +56,7 @@ public class TokenQuotaService {
 
         long usedTokens = getUsedTodayTokens(userId);
         if (usedTokens >= limit) {
-            LOGGER.warn("Token quota exceeded: userId={}, used={}, limit={}", userId, usedTokens, limit);
+            LOGGER.warn("Token 配额已耗尽: userId={}, used={}, limit={}", userId, usedTokens, limit);
             throw new QuotaExceededException(
                     String.format("今日 Token 用量已达上限（已用 %,d / 上限 %,d），请明日再试或联系管理员提升配额",
                             usedTokens, limit));
@@ -64,10 +64,10 @@ public class TokenQuotaService {
     }
 
     /**
-     * Gets remaining daily quota.
+     * 查询剩余每日配额。
      *
-     * @param userId user id
-     * @return remaining token quota
+     * @param userId 用户编号
+     * @return 剩余 Token 配额
      */
     @Transactional(readOnly = true)
     public long getRemainingQuota(String userId) {

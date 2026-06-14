@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Request for creating or updating text knowledge.
+ * 创建或更新文本知识请求。
  *
  * @author data-agent
  */

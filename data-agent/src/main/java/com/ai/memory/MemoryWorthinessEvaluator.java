@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Evaluates whether conversation content is worth storing as memory.
+ * 评估对话内容是否值得存储为记忆。
  *
  * @author data-agent
  */
@@ -22,21 +22,21 @@ public class MemoryWorthinessEvaluator {
             "我是", "我叫", "我的公司", "我们公司", "职位", "角色", "行业");
 
     /**
-     * Checks whether one completed conversation turn should be retained as short-term memory.
+     * 检查一轮已完成的对话是否应保留为短期记忆。
      *
-     * @param userMessage user message
-     * @param assistantReply assistant reply
-     * @return true if the turn contains useful content
+     * @param userMessage 用户消息
+     * @param assistantReply 助手回复
+     * @return 如果该轮对话包含有用内容则返回 true
      */
     public boolean shouldStoreConversation(String userMessage, String assistantReply) {
         return StringUtils.hasText(normalize(userMessage)) || StringUtils.hasText(normalize(assistantReply));
     }
 
     /**
-     * Checks whether user explicitly requested durable memory capture.
+     * 检查用户是否显式请求持久化记忆捕获。
      *
-     * @param userMessage user message
-     * @return true if explicit memory intent exists
+     * @param userMessage 用户消息
+     * @return 如果存在显式记忆意图则返回 true
      */
     public boolean hasExplicitMemoryIntent(String userMessage) {
         String normalizedMessage = normalize(userMessage).toLowerCase(Locale.ROOT);
@@ -47,10 +47,10 @@ public class MemoryWorthinessEvaluator {
     }
 
     /**
-     * Classifies explicit user memory into a semantic memory type.
+     * 将用户显式记忆分类为语义记忆类型。
      *
-     * @param userMessage user message
-     * @return memory type
+     * @param userMessage 用户消息
+     * @return 记忆类型
      */
     public MemoryType classifyExplicitMemory(String userMessage) {
         String normalizedMessage = normalize(userMessage);

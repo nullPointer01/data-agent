@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 /**
- * Captures reusable memory from completed user-assistant conversations.
+ * 从已完成的用户-助手对话中捕获可复用的记忆。
  *
  * @author data-agent
  */
@@ -31,11 +31,11 @@ public class ConversationMemoryCaptureService {
     }
 
     /**
-     * Captures short-term summary and explicit long-term user memory from one completed turn.
+     * 从一轮已完成的对话中捕获短期摘要和显式长期用户记忆。
      *
-     * @param sessionId conversation session id
-     * @param userMessage user message
-     * @param assistantReply assistant reply
+     * @param sessionId 对话会话 ID
+     * @param userMessage 用户消息
+     * @param assistantReply 助手回复
      */
     public void captureCompletedConversation(String sessionId, String userMessage, String assistantReply) {
         if (!memoryWorthinessEvaluator.shouldStoreConversation(userMessage, assistantReply)) {

@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
- * Runtime vector index statistics registry.
+ * 运行时向量索引统计注册表。
  *
  * @author data-agent
  */

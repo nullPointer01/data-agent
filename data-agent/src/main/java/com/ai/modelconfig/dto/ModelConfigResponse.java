@@ -6,7 +6,7 @@ import com.ai.util.CryptoUtil;
 import java.time.LocalDateTime;
 
 /**
- * Model configuration response.
+ * 模型配置响应。
  *
  * @author data-agent
  */

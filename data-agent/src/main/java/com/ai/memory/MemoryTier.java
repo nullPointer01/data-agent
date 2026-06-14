@@ -1,24 +1,24 @@
 package com.ai.memory;
 
 /**
- * Memory storage tier.
+ * 记忆存储层级。
  *
  * @author data-agent
  */
 public enum MemoryTier {
 
     /**
-     * Session-scoped working memory stored in Redis.
+     * 会话级工作记忆，存储在 Redis 中。
      */
     WORKING,
 
     /**
-     * Recent summarized memory stored in MySQL.
+     * 近期摘要记忆，存储在 MySQL 中。
      */
     SHORT_TERM,
 
     /**
-     * Durable memory indexed into vector storage.
+     * 持久化记忆，索引到向量存储中。
      */
     LONG_TERM
 }

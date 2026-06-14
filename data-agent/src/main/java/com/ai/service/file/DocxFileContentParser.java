@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.io.InputStream;
 
 /**
- * Parses DOCX files into text.
+ * 将 DOCX 文件解析为文本。
  *
  * @author data-agent
  */

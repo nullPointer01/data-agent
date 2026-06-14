@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.StringJoiner;
 
 /**
- * Creates and validates JWT access and refresh tokens.
+ * 创建和验证 JWT 访问令牌与刷新令牌。
  *
  * @author data-agent
  */

@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Cleans vector indexes associated with deleted files.
+ * 清理与已删除文件关联的向量索引。
  *
  * @author data-agent
  */

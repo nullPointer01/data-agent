@@ -9,50 +9,50 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 /**
- * Repository for persisted conversation messages.
+ * 持久化对话消息仓储。
  *
  * @author data-agent
  */
 public interface ConversationMessageRepository extends JpaRepository<ConversationMessage, Long> {
 
     /**
-     * Finds all messages in one session.
+     * 查询一个会话中的所有消息。
      *
-     * @param sessionId session id
-     * @return messages
+     * @param sessionId 会话 ID
+     * @return 消息列表
      */
     List<ConversationMessage> findBySessionIdOrderByCreatedAtAsc(String sessionId);
 
     /**
-     * Finds messages in one session by role.
+     * 按角色查询一个会话中的消息。
      *
-     * @param sessionId session id
-     * @param role message role
-     * @return messages
+     * @param sessionId 会话 ID
+     * @param role 消息角色
+     * @return 消息列表
      */
     List<ConversationMessage> findBySessionIdAndRoleOrderByCreatedAtAsc(String sessionId, String role);
 
     /**
-     * Counts messages in one session.
+     * 统计一个会话中的消息数。
      *
-     * @param sessionId session id
-     * @return message count
+     * @param sessionId 会话 ID
+     * @return 消息数
      */
     long countBySessionId(String sessionId);
 
     /**
-     * Deletes messages in one session.
+     * 删除一个会话中的消息。
      *
-     * @param sessionId session id
+     * @param sessionId 会话 ID
      */
     void deleteBySessionId(String sessionId);
 
     /**
-     * Finds recent messages in reverse chronological order.
+     * 按倒序时间顺序查询最近的消息。
      *
-     * @param sessionId session id
-     * @param pageable page request
-     * @return recent messages
+     * @param sessionId 会话 ID
+     * @param pageable 分页请求
+     * @return 最近消息
      */
     @Query("SELECT m FROM ConversationMessage m WHERE m.sessionId = :sessionId ORDER BY m.createdAt DESC")
     List<ConversationMessage> findRecentBySessionId(@Param("sessionId") String sessionId, Pageable pageable);

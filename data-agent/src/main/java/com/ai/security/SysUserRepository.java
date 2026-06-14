@@ -5,25 +5,25 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 /**
- * Repository for system users.
+ * 系统用户仓储。
  *
  * @author data-agent
  */
 public interface SysUserRepository extends JpaRepository<SysUser, String> {
 
     /**
-     * Finds a user by username.
+     * 按用户名查找用户。
      *
-     * @param username username
-     * @return matched user
+     * @param username 用户名
+     * @return 匹配的用户
      */
     Optional<SysUser> findByUsername(String username);
 
     /**
-     * Checks whether the username exists.
+     * 检查用户名是否已存在。
      *
-     * @param username username
-     * @return true when exists
+     * @param username 用户名
+     * @return 存在时返回 true
      */
     boolean existsByUsername(String username);
 

@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Persisted metadata for a conversation session.
+ * 对话会话的持久化元数据。
  *
  * @author data-agent
  */

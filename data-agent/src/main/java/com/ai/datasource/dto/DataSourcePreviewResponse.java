@@ -1,7 +1,7 @@
 package com.ai.datasource.dto;
 
 /**
- * Data source preview response.
+ * 数据源预览响应。
  *
  * @author data-agent
  */

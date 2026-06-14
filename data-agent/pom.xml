@@ -79,9 +79,12 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- LangChain4j 主模块：ChatMemory、PromptTemplate、ToolExecutor 等核心能力。
+             不用 spring-boot-starter：其自动配置读 langchain4j.open-ai.chat-model.* 前缀与本项目
+             yml 不匹配从未生效，模型 bean 由 LangChain4jConfig 手动构建（可控关闭内置重试等定制） -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-spring-boot-starter</artifactId>
+            <artifactId>langchain4j</artifactId>
             <version>0.30.0</version>
         </dependency>
         <dependency>

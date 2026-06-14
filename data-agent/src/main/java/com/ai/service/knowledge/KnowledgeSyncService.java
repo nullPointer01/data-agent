@@ -17,7 +17,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * Synchronizes external knowledge sources into knowledge entries and vector store.
+ * 将外部知识源同步到知识条目和向量存储。
  *
  * @author data-agent
  */

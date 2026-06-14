@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Authentication application service for registration, login and token refresh.
+ * 认证应用服务，包含注册、登录和令牌刷新功能。
  *
  * @author data-agent
  */

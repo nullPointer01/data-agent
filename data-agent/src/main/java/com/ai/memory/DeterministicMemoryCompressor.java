@@ -7,7 +7,7 @@ import org.springframework.util.StringUtils;
 import java.util.List;
 
 /**
- * Rule-based memory compressor used before introducing model-based summarization.
+ * 基于规则的记忆压缩器，在引入模型摘要之前使用。
  *
  * @author data-agent
  */

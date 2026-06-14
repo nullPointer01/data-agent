@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Model context and direct model call API.
+ * 模型上下文和直接模型调用接口。
  *
  * @author data-agent
  */

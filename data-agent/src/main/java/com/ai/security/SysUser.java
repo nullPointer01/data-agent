@@ -19,7 +19,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Persisted system user with tenant, role and quota attributes.
+ * 持久化的系统用户，包含租户、角色和配额属性。
  *
  * @author data-agent
  */

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Administrative user management API.
+ * 用户管理管理员 API。
  *
  * @author data-agent
  */

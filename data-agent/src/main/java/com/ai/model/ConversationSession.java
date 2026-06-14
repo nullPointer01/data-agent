@@ -9,7 +9,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * Redis-friendly in-memory conversation context.
+ * 适用于 Redis 的内存对话上下文。
  *
  * @author data-agent
  */

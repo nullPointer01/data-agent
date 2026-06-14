@@ -1,7 +1,7 @@
 package com.ai.knowledge.dto;
 
 /**
- * Response for knowledge create, update, delete and sync commands.
+ * 知识创建、更新、删除、同步命令的响应。
  *
  * @author data-agent
  */

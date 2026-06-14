@@ -1,5 +1,6 @@
 package com.ai.agent.tool;
 
+import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.springframework.stereotype.Component;
 
@@ -40,13 +41,13 @@ public class AgentTools {
         return agentSkillToolService.listAvailableSkills();
     }
 
-    @Tool("使用指定技能分析问题。参数: skillName(技能名称), query(分析问题)")
-    public String useSkill(String skillName, String query) {
+    @Tool("使用指定技能分析问题")
+    public String useSkill(@P("技能名称") String skillName, @P("要分析的问题") String query) {
         return agentSkillToolService.useSkill(skillName, query);
     }
 
-    @Tool("获取已上传文件的内容。参数: fileId(文件ID)")
-    public String getFileContent(String fileId) {
+    @Tool("获取已上传文件的内容")
+    public String getFileContent(@P("文件ID") String fileId) {
         return agentFileToolService.getFileContent(fileId);
     }
 
@@ -56,22 +57,22 @@ public class AgentTools {
     }
 
     @Tool("获取当前会话的对话历史摘要")
-    public String getConversationHistory(String sessionId) {
+    public String getConversationHistory(@P("会话ID") String sessionId) {
         return agentConversationToolService.getConversationHistory(sessionId);
     }
 
-    @Tool("当无法完成用户请求时，向用户请求更多信息或数据。参数: message(请求信息)")
-    public String askUserForInfo(String message) {
+    @Tool("当无法完成用户请求时，向用户请求更多信息或数据")
+    public String askUserForInfo(@P("向用户展示的请求信息") String message) {
         return agentConversationToolService.askUserForInfo(message);
     }
 
-    @Tool("搜索相关的历史对话、文件内容和知识，实现长期记忆。参数: query(搜索关键词)")
-    public String searchMemory(String query) {
+    @Tool("搜索相关的历史对话、文件内容和知识，实现长期记忆")
+    public String searchMemory(@P("搜索关键词") String query) {
         return agentKnowledgeToolService.searchMemory(query);
     }
 
-    @Tool("执行数学计算表达式。支持加减乘除、括号、求幂等。参数: expression(数学表达式，如 '(100+200)*0.8')")
-    public String calculate(String expression) {
+    @Tool("执行数学计算表达式。支持加减乘除、括号、求幂等")
+    public String calculate(@P("数学表达式，如 (100+200)*0.8") String expression) {
         return agentUtilityToolService.calculate(expression);
     }
 
@@ -80,13 +81,13 @@ public class AgentTools {
         return agentUtilityToolService.getCurrentTime();
     }
 
-    @Tool("对文件数据进行统计分析摘要(行数、列数、数值列的均值/最大/最小/求和)。参数: fileId(文件ID)")
-    public String analyzeFileData(String fileId) {
+    @Tool("对文件数据进行统计分析摘要(行数、列数、数值列的均值/最大/最小/求和)")
+    public String analyzeFileData(@P("文件ID") String fileId) {
         return agentFileToolService.analyzeFileData(fileId);
     }
 
-    @Tool("搜索知识库中的专业知识和文档。与 searchMemory 不同，此工具专注于搜索已索引的知识文档。参数: query(搜索内容)")
-    public String searchKnowledge(String query) {
+    @Tool("搜索知识库中的专业知识和文档。与 searchMemory 不同，此工具专注于搜索已索引的知识文档")
+    public String searchKnowledge(@P("搜索内容") String query) {
         return agentKnowledgeToolService.searchKnowledge(query);
     }
 
@@ -95,8 +96,8 @@ public class AgentTools {
         return agentKnowledgeToolService.getMemoryStats();
     }
 
-    @Tool("获取指定数据源的数据库 Schema（所有表名、字段名、字段类型）。参数: datasourceName(数据源名称)")
-    public String getDatabaseSchema(String datasourceName) {
+    @Tool("获取指定数据源的数据库 Schema（所有表名、字段名、字段类型），执行 SQL 前应先调用此工具了解表结构")
+    public String getDatabaseSchema(@P("数据源名称") String datasourceName) {
         return agentDataSourceToolService.getDatabaseSchema(datasourceName);
     }
 
@@ -105,18 +106,19 @@ public class AgentTools {
         return agentDataSourceToolService.listDataSources();
     }
 
-    @Tool("在指定数据源上执行 SQL 查询（仅支持 SELECT）。参数: datasourceName(数据源名称), sql(SQL语句)")
-    public String executeSql(String datasourceName, String sql) {
+    @Tool("在指定数据源上执行 SQL 查询（仅支持 SELECT）")
+    public String executeSql(@P("数据源名称") String datasourceName, @P("SELECT SQL 语句") String sql) {
         return agentDataSourceToolService.executeSql(datasourceName, sql);
     }
 
-    @Tool("预览指定数据源的数据。支持数据库首表预览、HTTP/JSON/CSV/TEXT URL 预览。参数: datasourceName(数据源名称或ID)")
-    public String previewDataSource(String datasourceName) {
+    @Tool("预览指定数据源的数据。支持数据库首表预览、HTTP/JSON/CSV/TEXT URL 预览")
+    public String previewDataSource(@P("数据源名称或ID") String datasourceName) {
         return agentDataSourceToolService.previewDataSource(datasourceName);
     }
 
-    @Tool("根据数据生成 ECharts 图表配置。参数: chartType(bar/line/pie/scatter), dataJson(数据JSON字符串), title(图表标题)")
-    public String generateChart(String chartType, String dataJson, String title) {
+    @Tool("根据数据生成 ECharts 图表配置，前端直接渲染")
+    public String generateChart(@P("图表类型: bar/line/pie/scatter") String chartType,
+            @P("数据JSON字符串") String dataJson, @P("图表标题") String title) {
         return agentChartToolService.generateChart(chartType, dataJson, title);
     }
 

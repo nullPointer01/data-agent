@@ -5,7 +5,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
- * Publishes knowledge vector synchronization events.
+ * 发布知识向量同步事件。
  *
  * @author data-agent
  */

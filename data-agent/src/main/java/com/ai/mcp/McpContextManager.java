@@ -11,7 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages short-lived model call contexts.
+ * 管理短生命周期的模型调用上下文。
  *
  * @author data-agent
  */

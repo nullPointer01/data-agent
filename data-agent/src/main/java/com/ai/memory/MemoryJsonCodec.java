@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * JSON codec used by memory metadata persistence.
+ * 记忆元数据持久化使用的 JSON 编解码器。
  *
  * @author data-agent
  */
@@ -24,10 +24,10 @@ public class MemoryJsonCodec {
     }
 
     /**
-     * Serializes a value to JSON.
+     * 将值序列化为 JSON。
      *
-     * @param value value to serialize
-     * @return JSON text
+     * @param value 待序列化的值
+     * @return JSON 文本
      */
     public String toJson(Object value) {
         if (value == null) {

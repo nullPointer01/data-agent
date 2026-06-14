@@ -1,7 +1,7 @@
 package com.ai.modelconfig.dto;
 
 /**
- * Response for model configuration mutation commands.
+ * 模型配置变更命令的响应。
  *
  * @author data-agent
  */

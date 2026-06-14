@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Persisted token usage accounting record.
+ * 持久化的 Token 用量记账记录。
  *
  * @author data-agent
  */

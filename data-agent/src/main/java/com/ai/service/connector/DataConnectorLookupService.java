@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Resolves tenant-scoped data source configurations.
+ * 解析租户范围的数据源配置。
  *
  * @author data-agent
  */
@@ -24,10 +24,10 @@ public class DataConnectorLookupService {
     }
 
     /**
-     * Finds an enabled data source in the current tenant scope.
+     * 在当前租户范围内查找已启用的数据源。
      *
-     * @param datasourceIdOrName datasource id or name
-     * @return enabled data source configuration
+     * @param datasourceIdOrName 数据源 ID 或名称
+     * @return 已启用的数据源配置
      */
     public DataSourceConfig requireEnabledDatasource(String datasourceIdOrName) {
         if (!StringUtils.hasText(datasourceIdOrName)) {

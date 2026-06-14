@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Authentication API.
+ * 认证 API。
  *
  * @author data-agent
  */

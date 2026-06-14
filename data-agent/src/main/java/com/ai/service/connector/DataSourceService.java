@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Application service for data source management.
+ * 数据源管理应用服务。
  *
  * @author data-agent
  */

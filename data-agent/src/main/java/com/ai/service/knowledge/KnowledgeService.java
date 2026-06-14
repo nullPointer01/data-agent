@@ -37,7 +37,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Knowledge document management and vector indexing service.
+ * 知识文档管理和向量索引服务。
  *
  * @author data-agent
  */

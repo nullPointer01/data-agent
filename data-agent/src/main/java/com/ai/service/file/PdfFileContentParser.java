@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import java.io.InputStream;
 
 /**
- * Parses PDF files into text.
+ * 将 PDF 文件解析为文本。
  *
  * @author data-agent
  */

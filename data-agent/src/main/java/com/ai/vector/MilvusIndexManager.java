@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Ensures Milvus collections have a usable vector index.
+ * 确保 Milvus collection 拥有可用的向量索引。
  *
  * @author data-agent
  */

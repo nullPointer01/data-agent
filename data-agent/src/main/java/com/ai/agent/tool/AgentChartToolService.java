@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Chart-generation tool backed by the configured model provider.
+ * 基于已配置模型服务的图表生成工具。
  *
  * @author data-agent
  */
@@ -26,12 +26,12 @@ public class AgentChartToolService {
     }
 
     /**
-     * Generates an ECharts option JSON from source data.
+     * 根据源数据生成 ECharts option 配置 JSON。
      *
-     * @param chartType chart type, for example bar or line
-     * @param dataJson source data as JSON text
-     * @param title chart title
-     * @return prefixed chart payload that the frontend can render
+     * @param chartType 图表类型，如 bar 或 line
+     * @param dataJson 源数据的 JSON 文本
+     * @param title 图表标题
+     * @return 带前缀的图表数据，前端可直接渲染
      */
     public String generateChart(String chartType, String dataJson, String title) {
         LOGGER.info("Agent generateChart: type={}, title={}", chartType, title);
@@ -63,7 +63,7 @@ public class AgentChartToolService {
     }
 
     private String normalizeJson(String value) {
-        // LLMs may wrap JSON in markdown fences; strip those before handing it to the frontend.
+        // LLM 可能会用 Markdown 代码块包裹 JSON；在交给前端前去除这些标记。
         String json = value.replaceAll(CHART_JSON_BLOCK_PATTERN, "")
                 .replaceAll(MARKDOWN_BLOCK_PATTERN, "")
                 .trim();

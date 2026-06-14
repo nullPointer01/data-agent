@@ -1,14 +1,14 @@
 package com.ai.service.file;
 
 /**
- * Immutable description of a file persisted in local upload storage.
+ * 本地上传存储中持久化文件的不可变描述。
  *
- * @param fileId stable file id
- * @param filename normalized display filename
- * @param contentType client-provided content type
- * @param size file size in bytes
- * @param path absolute storage path
- * @param contentHash SHA-256 hex digest of the file content, used for deduplication
+ * @param fileId 稳定的文件编号
+ * @param filename 规范化的显示文件名
+ * @param contentType 客户端提供的内容类型
+ * @param size 文件大小（字节）
+ * @param path 绝对存储路径
+ * @param contentHash 文件内容的 SHA-256 十六进制摘要，用于去重
  * @author data-agent
  */
 public record FileStorageObject(

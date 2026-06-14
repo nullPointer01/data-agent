@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Administrative user management service.
+ * 管理员用户管理服务。
  *
  * @author data-agent
  */

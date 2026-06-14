@@ -4,7 +4,7 @@ import com.ai.model.DataSourceConfig;
 import org.springframework.stereotype.Service;
 
 /**
- * Facade for datasource testing, schema discovery and read-only query execution.
+ * 数据源测试、模式发现和只读查询执行的外观模式。
  *
  * @author data-agent
  */
@@ -25,20 +25,20 @@ public class DataConnectorService {
     }
 
     /**
-     * Finds an enabled datasource in the current tenant scope.
+     * 在当前租户范围内查找已启用的数据源。
      *
-     * @param datasourceIdOrName datasource id or name
-     * @return datasource configuration
+     * @param datasourceIdOrName 数据源 id 或名称
+     * @return 数据源配置
      */
     public DataSourceConfig requireEnabledDatasource(String datasourceIdOrName) {
         return lookupService.requireEnabledDatasource(datasourceIdOrName);
     }
 
     /**
-     * Tests one datasource connection.
+     * 测试数据源连接。
      *
-     * @param datasourceIdOrName datasource id or name
-     * @return textual test result
+     * @param datasourceIdOrName 数据源 id 或名称
+     * @return 文本形式的测试结果
      */
     public String test(String datasourceIdOrName) {
         DataSourceConfig datasource = requireEnabledDatasource(datasourceIdOrName);

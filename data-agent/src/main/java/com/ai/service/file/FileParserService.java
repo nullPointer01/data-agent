@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Parses uploaded files into text content for indexing and analysis.
+ * 将上传的文件解析为文本内容以供索引和分析。
  *
  * @author data-agent
  */
@@ -25,24 +25,24 @@ public class FileParserService {
     }
 
     /**
-     * Parses a stored file into text.
+     * 将存储的文件解析为文本。
      *
-     * @param path stored file path
-     * @param filename original filename
-     * @param contentType mime type
-     * @return parsed content
-     * @throws Exception when parsing fails
+     * @param path 存储文件路径
+     * @param filename 原始文件名
+     * @param contentType MIME 类型
+     * @return 解析的内容
+     * @throws Exception 解析失败时抛出异常
      */
     public String parse(Path path, String filename, String contentType) throws Exception {
         return parse(FileParsingContext.from(path, filename, contentType));
     }
 
     /**
-     * Parses a multipart upload into text.
+     * 将多部分上传解析为文本。
      *
-     * @param file multipart upload
-     * @return parsed content
-     * @throws Exception when parsing fails
+     * @param file 多部分上传
+     * @return 解析的内容
+     * @throws Exception 解析失败时抛出异常
      */
     public String parse(MultipartFile file) throws Exception {
         return parse(FileParsingContext.from(file));

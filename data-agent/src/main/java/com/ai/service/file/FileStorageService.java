@@ -16,7 +16,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * Handles upload filesystem operations and guards all paths inside the managed upload directory.
+ * 处理上传文件系统操作，守卫托管上传目录内的所有路径。
  *
  * @author data-agent
  */
@@ -38,12 +38,12 @@ public class FileStorageService {
     }
 
     /**
-     * Stores an uploaded multipart file and returns normalized metadata for persistence.
+     * 存储上传的多部分文件，并返回规范化的元数据以供持久化。
      *
-     * @param fileId generated file id
-     * @param file uploaded multipart file
-     * @return stored file descriptor
-     * @throws IOException when the upload stream cannot be written
+     * @param fileId 生成的文件 ID
+     * @param file 上传的多部分文件
+     * @return 存储的文件描述符
+     * @throws IOException 当上传流无法写入时
      */
     public FileStorageObject store(String fileId, MultipartFile file) throws IOException {
         String filename = normalizeFilename(file.getOriginalFilename());

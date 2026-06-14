@@ -5,7 +5,7 @@ import com.ai.model.KnowledgeSyncConfig;
 import java.util.Date;
 
 /**
- * Automatic synchronization config response.
+ * 自动同步配置响应。
  *
  * @author data-agent
  */
