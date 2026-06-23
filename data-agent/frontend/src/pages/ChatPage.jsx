@@ -25,9 +25,8 @@ export function ChatPage({ api, token, toast }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [models, setModels] = useState([]);
-  const [skills, setSkills] = useState([]);
   const [agents, setAgents] = useState([]);
-  const [choice, setChoice] = useState({ modelId: '', skillId: '', agentId: '' });
+  const [choice, setChoice] = useState({ modelId: '', agentId: '' });
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -64,13 +63,11 @@ export function ChatPage({ api, token, toast }) {
   const boot = useCallback(async () => {
     setLoading(true);
     try {
-      const [modelRes, skillRes, agentRes] = await Promise.all([
+      const [modelRes, agentRes] = await Promise.all([
         api.get('/api/v1/models/list').catch(() => ({ models: [] })),
-        api.get('/api/v1/skills/list').catch(() => ({ skills: [] })),
         api.get('/api/v1/my/agents?enabledOnly=true').catch(() => ({ agents: [] }))
       ]);
       setModels(modelRes.models || []);
-      setSkills(skillRes.skills || []);
       setAgents(agentRes.agents || []);
       await loadSessions();
       if (sessionId) {
@@ -93,15 +90,20 @@ export function ChatPage({ api, token, toast }) {
   };
 
   const deleteSession = async (sid) => {
-    await api.delete(`/api/v1/analysis/session/${sid}`);
-    if (sid === sessionId) {
-      localStorage.removeItem('chatSessionId');
-      setSessionId('');
-      setMessages([]);
+    try {
+      await api.delete(`/api/v1/analysis/session/${sid}`);
+      if (sid === sessionId) {
+        localStorage.removeItem('chatSessionId');
+        setSessionId('');
+        setMessages([]);
+      }
+      toast('会话已删除', 'success');
+    } catch (e) {
+      toast('删除失败，请重试', 'error');
+    } finally {
+      setConfirm(null);
+      await loadSessions();
     }
-    setConfirm(null);
-    await loadSessions();
-    toast('会话已删除', 'success');
   };
 
   const send = async () => {
@@ -274,12 +276,10 @@ export function ChatPage({ api, token, toast }) {
           <div className="composer">
             <div className="toolbar composer-controls">
               <select className="select" value={choice.modelId} onChange={(event) => setChoice({ ...choice, modelId: event.target.value })}>
-                <option value="">默认模型</option>
+                {pickEnabled(models).length === 0
+                  ? <option value="">未配置模型</option>
+                  : <option value="">选择模型</option>}
                 {pickEnabled(models).map((item) => <option key={item.modelId} value={item.modelId}>{item.name}</option>)}
-              </select>
-              <select className="select" value={choice.skillId} onChange={(event) => setChoice({ ...choice, skillId: event.target.value })}>
-                <option value="">自由对话</option>
-                {pickEnabled(skills).map((item) => <option key={item.skillId} value={item.skillId}>{item.name}</option>)}
               </select>
               <select className="select" value={choice.agentId} onChange={(event) => setChoice({ ...choice, agentId: event.target.value })}>
                 <option value="">默认 Agent</option>

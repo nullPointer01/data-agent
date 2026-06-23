@@ -2039,3 +2039,37 @@ tr:hover td {
     white-space: normal;
   }
 }
+
+.multiselect-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.multiselect-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.multiselect-tags .tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--color-surface-2, #f0f0f0);
+  font-size: 12px;
+}
+
+.multiselect-tags .tag-remove {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.multiselect-tags .tag-remove:hover {
+  opacity: 1;
+}

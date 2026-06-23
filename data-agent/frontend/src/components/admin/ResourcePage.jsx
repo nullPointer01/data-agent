@@ -146,6 +146,28 @@ function renderField({ key, type, options, form, setForm }) {
   if (type === 'suggest') {
     return <SuggestField fieldKey={key} form={form} setForm={setForm} fetchOptions={options} />;
   }
+  if (type === 'multiselect') {
+    const selected = Array.isArray(form[key]) ? form[key] : [];
+    return (
+      <div className="multiselect-wrap">
+        <div className="multiselect-tags">
+          {selected.map((v) => {
+            const opt = (options || []).find((o) => o.value === v);
+            return <span key={v} className="tag">{opt ? opt.value : v}<button type="button" className="tag-remove" onClick={() => setForm({ ...form, [key]: selected.filter((s) => s !== v) })}>×</button></span>;
+          })}
+        </div>
+        <select className="select" value="" onChange={(event) => {
+          const v = event.target.value;
+          if (v && !selected.includes(v)) {
+            setForm({ ...form, [key]: [...selected, v] });
+          }
+        }}>
+          <option value="">{selected.length ? '添加更多…' : '请选择'}</option>
+          {(options || []).filter((o) => !selected.includes(o.value)).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+    );
+  }
   if (type === 'checkbox') {
     return <label className="switch-line"><input type="checkbox" checked={Boolean(form[key])} onChange={(event) => setForm({ ...form, [key]: event.target.checked })} />启用</label>;
   }
@@ -198,6 +220,9 @@ function SuggestField({ fieldKey, form, setForm, fetchOptions }) {
 function renderCell(item, key) {
   if (key === 'apiKey' || key === 'password') {
     return item[key] ? '******' : '-';
+  }
+  if (Array.isArray(item[key])) {
+    return item[key].length ? item[key].join(', ') : '-';
   }
   if (key.endsWith('Id')) {
     return <span className="mono muted">{item[key] || '-'}</span>;

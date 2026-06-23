@@ -6,6 +6,7 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.output.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,11 @@ public class ReActLoopRunner {
     private static final Logger LOGGER = LoggerFactory.getLogger(ReActLoopRunner.class);
     private static final int MAX_ITERATIONS = 8;
     private static final int LOG_QUERY_PREVIEW_LENGTH = 50;
+    // [A] intent-without-action 守卫：纠偏重试上限与提示语、意图文本最大长度
+    private static final int MAX_TOOL_INTENT_NUDGES = 2;
+    private static final int TOOL_INTENT_MAX_LENGTH = 80;
+    private static final String TOOL_INTENT_NUDGE =
+            "请立即直接发起工具调用来获取数据，不要只用文字描述你的计划或意图。";
     private static final String MODEL_FAILURE_MESSAGE = "模型调用失败，请稍后重试";
     private static final String MAX_ITERATION_ANSWER_PREFIX = "分析步骤较多，以下是目前已获得的分析结果:\n";
     private static final String MAX_ITERATION_RETRY_PREFIX = "达到最大迭代次数后，请基于现有信息给出保守结论。";
@@ -162,6 +168,7 @@ public class ReActLoopRunner {
         StringBuilder finalAnswer = new StringBuilder();
         List<AnalysisResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
         int iterations = 0;
+        int toolIntentNudges = 0;
         ReActRecoveryTracker recoveryTracker = new ReActRecoveryTracker();
         workingMemoryService.recordStart(sessionId, userQuery);
         logStart(sessionId, userQuery, modelId, toolSpecs, true);
@@ -170,9 +177,9 @@ public class ReActLoopRunner {
             LOGGER.info("ReAct streaming iteration {}/{}", iterations, MAX_ITERATIONS);
             logIterationStart(sessionId, modelId, toolSpecs, iterations, true);
             streamEventWriter.emitThinkingStart(eventEmitter, iterations);
-            Response<AiMessage> response = modelCaller.callStreamingWithTools(messages, toolSpecs, modelId, token -> {
-                streamEventWriter.emitToken(eventEmitter, token);
-            });
+            // [B] 工具决策轮改用非流式调用：返回完整的 {content, tool_calls} 对象，跨模型一致，
+            // 规避流式增量拼接导致部分模型（如先吐旁白的）丢失 tool_call 的失败模式
+            Response<AiMessage> response = modelCaller.callWithTools(messages, toolSpecs, modelId);
             AiMessage aiMessage = response == null ? null : response.content();
             if (isEmptyResponse(aiMessage)) {
                 streamEventWriter.emitError(eventEmitter, MODEL_FAILURE_MESSAGE);
@@ -183,6 +190,21 @@ public class ReActLoopRunner {
             }
 
             String llmResponse = describeAiMessage(aiMessage);
+            // [Day3 学习] 打印每轮模型原始输出，观察它如何思考、决定调哪个工具或给出最终回答
+            LOGGER.info("【ReAct第{}轮·模型原文】\n{}", iterations, llmResponse);
+            // [A] intent-without-action 守卫：模型只用文字说要调工具却没真发起 tool_call 时，
+            // 注入纠偏提示重试一轮。纯启发式、不依赖任何厂商，是模型无关的安全网
+            if (!aiMessage.hasToolExecutionRequests()
+                    && toolIntentNudges < MAX_TOOL_INTENT_NUDGES
+                    && looksLikeUnfulfilledToolIntent(aiMessage.text())) {
+                toolIntentNudges++;
+                messages.add(aiMessage);
+                messages.add(UserMessage.from(TOOL_INTENT_NUDGE));
+                LOGGER.info("检测到'光说不练'，注入纠偏提示重试(第{}次): {}", toolIntentNudges,
+                        preview(aiMessage.text(), LOG_QUERY_PREVIEW_LENGTH));
+                iterations--;
+                continue;
+            }
             ReActLoopStepResult stepResult = streamingStepProcessor.process(aiMessage, messages, toolSpecs,
                     modelId, finalAnswer, thinkingSteps, eventEmitter, recoveryTracker, iterations);
             workingMemoryService.recordIteration(sessionId, userQuery, iterations, llmResponse, stepResult,
@@ -292,6 +314,30 @@ public class ReActLoopRunner {
         if (!clean.isEmpty()) {
             finalAnswer.append(clean).append("\n");
         }
+    }
+
+    /**
+     * [A] 判断模型是否"光说不练"：本轮没有发起任何工具调用，但文字内容是一段
+     * 简短的"我打算调用工具"的意图描述（而非真正的最终答案）。
+     *
+     * <p>纯启发式、不依赖任何厂商：真正的最终答案通常较长且不含调用意图措辞，
+     * 而失败时模型常输出"我先查询/让我调用/直接调用工具获取数据"这类短意图句却不发起调用。</p>
+     *
+     * @param text 模型本轮文本
+     * @return 是否疑似未兑现的工具意图
+     */
+    private boolean looksLikeUnfulfilledToolIntent(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.strip();
+        // 较长文本更可能是真正的最终答案，不拦截
+        if (trimmed.isEmpty() || trimmed.length() > TOOL_INTENT_MAX_LENGTH) {
+            return false;
+        }
+        return trimmed.contains("我先") || trimmed.contains("让我") || trimmed.contains("我将")
+                || trimmed.contains("我直接") || trimmed.contains("调用") || trimmed.contains("查询工具")
+                || trimmed.contains("获取数据") || trimmed.contains("搜索一下") || trimmed.contains("先获取");
     }
 
     /**

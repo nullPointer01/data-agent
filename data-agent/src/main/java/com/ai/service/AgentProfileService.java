@@ -308,6 +308,8 @@ public class AgentProfileService {
         profile.setModelId(blankToNull(request.modelId()));
         profile.setSkillId(resolveSkillId(type, request.skillId()));
         profile.setDatasourceId(resolveDatasourceId(type, request.datasourceId()));
+        profile.setExecutionMode(blankToNull(request.executionMode()) != null ? request.executionMode().trim() : "react");
+        profile.setToolList(request.tools());
         profile.setEnabled(request.enabled() == null || request.enabled());
     }
 

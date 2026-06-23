@@ -305,10 +305,14 @@ public class OrchestratorAgent {
             OrchestrationPlan plan, AnalysisRequest request, String fileContent,
             MemoryContext memoryContext, IntentAnalysisResult intentResult) {
         List<SpecialistResult> taskResults = new ArrayList<>();
+        List<AnalysisResponse.ThinkingStep> allThinkingSteps = new ArrayList<>();
         Map<String, Object> sharedContext = new LinkedHashMap<>();
         Map<String, SpecialistResult> resultIndex = new LinkedHashMap<>();
         List<String> skippedTasks = new ArrayList<>();
         boolean hasFailure = false;
+
+        allThinkingSteps.add(new AnalysisResponse.ThinkingStep(0, "orchestrator",
+                "编排计划: " + plan.tasks().size() + " 个任务, " + plan.executionPhases().size() + " 个阶段"));
 
         // 按阶段顺序执行
         for (ExecutionPhase phase : plan.executionPhases()) {
@@ -327,9 +331,30 @@ public class OrchestratorAgent {
                     continue;
                 }
 
-                // 执行任务
-                SpecialistResult taskResult = executeTask(task, decision, plan, request, fileContent,
-                        sharedContext, resultIndex, memoryContext);
+                allThinkingSteps.add(new AnalysisResponse.ThinkingStep(
+                        taskResults.size() + 1, "orchestrator_task",
+                        "执行任务 " + task.taskId() + ": " + task.description()));
+
+                // 执行任务，同时收集 thinking steps
+                AnalysisResponse taskResponse = executeTaskWithResponse(task, decision, plan, request,
+                        fileContent, sharedContext, resultIndex, memoryContext);
+                if (taskResponse.getThinkingSteps() != null) {
+                    allThinkingSteps.addAll(taskResponse.getThinkingSteps());
+                }
+
+                long elapsed = 0L;
+                SpecialistResult taskResult;
+                String specialistId = resolveTaskType(task).getDisplayName();
+                if (taskResponse.isSuccess()) {
+                    taskResult = new SpecialistResult(task.taskId(), specialistId, true,
+                            taskResponse.getResult(), "", elapsed,
+                            Map.of("final_answer", taskResponse.getResult()), List.of());
+                } else {
+                    taskResult = new SpecialistResult(task.taskId(), specialistId, false,
+                            "", taskResponse.getError() != null ? taskResponse.getError() : "执行失败",
+                            elapsed, Map.of(), List.of());
+                }
+
                 taskResults.add(taskResult);
                 resultIndex.put(task.taskId(), taskResult);
                 // 增量填充 sharedContext，使下游任务能通过 injectSharedContext 获取上游依赖
@@ -375,6 +400,7 @@ public class OrchestratorAgent {
 
         // 整合最终答案
         AnalysisResponse lastResponse = findLastSuccessfulResponse(taskResults);
+        lastResponse.setThinkingSteps(allThinkingSteps);
         OrchestratorExecutionResult execResult = new OrchestratorExecutionResult(
                 taskResults, lastResponse, false, selectedType, selectedAgentName);
         String finalAnswer = resultIntegrator.integrate(request.getQuestion(), decision, execResult, sharedContext);
@@ -394,53 +420,32 @@ public class OrchestratorAgent {
     }
 
     /**
-     * 执行单个编排任务。
+     * 执行单个编排任务，返回完整 AnalysisResponse（保留 thinkingSteps）。
      */
-    private SpecialistResult executeTask(OrchestrationTask task, OrchestratorDecision decision,
+    private AnalysisResponse executeTaskWithResponse(OrchestrationTask task, OrchestratorDecision decision,
             OrchestrationPlan plan, AnalysisRequest request, String fileContent,
             Map<String, Object> sharedContext, Map<String, SpecialistResult> resultIndex,
             MemoryContext memoryContext) {
-        long startTime = System.currentTimeMillis();
         try {
             AgentType taskType = resolveTaskType(task);
             AgentProfile taskProfile = resolveTaskProfile(task, decision, taskType);
             SpecialistTask specialistTask = collaborationManager.injectSharedContext(task, sharedContext, taskProfile);
 
-            // 选择执行方式
-            AnalysisResponse taskResponse;
-            // 对于 REACT 类型任务，优先使用内置 ReActAgent
             if (taskType == AgentType.REACT) {
                 String enhancedContent = buildTaskFileContent(fileContent, task);
-                taskResponse = reActAgent.execute(request, enhancedContent);
-            } else {
-                AgentSpecialist specialist = specialistRegistry.findByType(taskType).orElse(null);
-                if (specialist != null) {
-                    AgentExecutionRequest execRequest = new AgentExecutionRequest(taskProfile, request, fileContent,
-                            specialistTask, memoryContext);
-                    taskResponse = specialist.execute(execRequest);
-                } else {
-                    // 兜底到 ReAct
-                    String enhancedContent = buildTaskFileContent(fileContent, task);
-                    taskResponse = reActAgent.execute(request, enhancedContent);
-                }
+                return reActAgent.execute(request, enhancedContent);
             }
-
-            long elapsed = System.currentTimeMillis() - startTime;
-            String specialistId = taskType.getDisplayName();
-            if (taskResponse.isSuccess()) {
-                return new SpecialistResult(task.taskId(), specialistId, true,
-                        taskResponse.getResult(), "", elapsed,
-                        Map.of("final_answer", taskResponse.getResult()), List.of());
-            } else {
-                return new SpecialistResult(task.taskId(), specialistId, false,
-                        "", taskResponse.getError() != null ? taskResponse.getError() : "执行失败",
-                        elapsed, Map.of(), List.of());
+            AgentSpecialist specialist = specialistRegistry.findByType(taskType).orElse(null);
+            if (specialist != null) {
+                AgentExecutionRequest execRequest = new AgentExecutionRequest(taskProfile, request, fileContent,
+                        specialistTask, memoryContext);
+                return specialist.execute(execRequest);
             }
+            String enhancedContent = buildTaskFileContent(fileContent, task);
+            return reActAgent.execute(request, enhancedContent);
         } catch (Exception e) {
-            long elapsed = System.currentTimeMillis() - startTime;
             LOGGER.warn("任务 {} 执行异常: {}", task.taskId(), e.getMessage());
-            return new SpecialistResult(task.taskId(), "编排器", false, "",
-                    e.getMessage(), elapsed, Map.of(), List.of());
+            return AnalysisResponse.fail("任务执行异常: " + e.getMessage());
         }
     }
 

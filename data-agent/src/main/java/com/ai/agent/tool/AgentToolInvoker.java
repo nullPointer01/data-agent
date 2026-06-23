@@ -1,11 +1,11 @@
 package com.ai.agent.tool;
 
+import dev.langchain4j.agent.tool.DefaultToolExecutor;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolExecutor;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
-import dev.langchain4j.service.tool.DefaultToolExecutor;
-import dev.langchain4j.service.tool.ToolExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -75,11 +75,46 @@ public class AgentToolInvoker {
     }
 
     /**
-     * 返回模型可见的工具规格列表。
+     * 返回全部工具规格列表。
      *
      * @return 工具规格
      */
     public List<ToolSpecification> buildToolSpecifications() {
         return toolSpecifications;
+    }
+
+    /**
+     * 按工具名过滤，返回指定工具的规格列表。
+     *
+     * @param toolNames 要保留的工具方法名，为空时返回全部
+     * @return 过滤后的工具规格
+     */
+    public List<ToolSpecification> buildToolSpecifications(List<String> toolNames) {
+        if (toolNames == null || toolNames.isEmpty()) {
+            return toolSpecifications;
+        }
+        return toolSpecifications.stream()
+                .filter(spec -> toolNames.contains(spec.name()))
+                .toList();
+    }
+
+    /**
+     * 返回所有已注册工具的名称和描述，供前端展示可选工具。
+     *
+     * @return 工具信息列表
+     */
+    public List<ToolInfo> getAllToolInfo() {
+        return toolSpecifications.stream()
+                .map(spec -> new ToolInfo(spec.name(), spec.description()))
+                .toList();
+    }
+
+    /**
+     * 工具摘要信息。
+     *
+     * @param name 工具名
+     * @param description 工具描述
+     */
+    public record ToolInfo(String name, String description) {
     }
 }

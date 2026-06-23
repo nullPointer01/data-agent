@@ -1,11 +1,16 @@
 package com.ai.agent;
 
+import com.ai.agent.react.ReActStreamEventWriter;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.model.ConversationSession;
 import com.ai.service.file.FileProcessingService;
 import com.ai.service.SessionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.util.function.Consumer;
 
 /**
  * 默认数据分析 Agent 实现。
@@ -15,6 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DataAnalysisAgentImpl implements DataAnalysisAgent {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataAnalysisAgentImpl.class);
     private static final int MAX_FILE_CHARS = 3000;
     private static final double FILE_TRUNCATE_NEWLINE_RATIO = 0.7D;
     private static final String EMPTY_QUESTION_MESSAGE = "请输入问题";
@@ -24,12 +30,14 @@ public class DataAnalysisAgentImpl implements DataAnalysisAgent {
     private final FileProcessingService fileProcessingService;
     private final SessionManager sessionManager;
     private final AgentRuntimeService agentRuntimeService;
+    private final ReActStreamEventWriter streamEventWriter;
 
     public DataAnalysisAgentImpl(FileProcessingService fileProcessingService, SessionManager sessionManager,
-            AgentRuntimeService agentRuntimeService) {
+            AgentRuntimeService agentRuntimeService, ReActStreamEventWriter streamEventWriter) {
         this.fileProcessingService = fileProcessingService;
         this.sessionManager = sessionManager;
         this.agentRuntimeService = agentRuntimeService;
+        this.streamEventWriter = streamEventWriter;
     }
 
     @Override
@@ -49,6 +57,28 @@ public class DataAnalysisAgentImpl implements DataAnalysisAgent {
         }
 
         return agentRuntimeService.execute(new AgentExecutionContext(request, session, fileContent));
+    }
+
+    @Override
+    public void analyzeStreaming(AnalysisRequest request, Consumer<String> eventEmitter) {
+        if (request == null || request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
+            streamEventWriter.emitError(eventEmitter, EMPTY_QUESTION_MESSAGE);
+            return;
+        }
+
+        ConversationSession session = resolveSession(request);
+        if (request.hasSession() && session == null) {
+            streamEventWriter.emitError(eventEmitter, SESSION_EXPIRED_MESSAGE);
+            return;
+        }
+
+        String fileContent = loadFileContent(request);
+        if (request.hasFile() && fileContent == null) {
+            streamEventWriter.emitError(eventEmitter, EMPTY_FILE_MESSAGE);
+            return;
+        }
+
+        agentRuntimeService.executeStreaming(new AgentExecutionContext(request, session, fileContent), eventEmitter);
     }
 
     private ConversationSession resolveSession(AnalysisRequest request) {

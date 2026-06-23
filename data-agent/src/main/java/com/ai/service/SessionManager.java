@@ -177,7 +177,7 @@ public class SessionManager {
     }
 
     public List<ConversationSessionEntity> getUserSessions(String userId) {
-        return sessionRepository.findByUserIdOrderByLastAccessAtDesc(userId);
+        return sessionRepository.findByUserIdAndStatusOrderByLastAccessAtDesc(userId, STATUS_ACTIVE);
     }
 
     @Transactional(readOnly = true)

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import com.ai.agent.AgentReasoningProperties;
+import com.ai.agent.AgentSystemPrompts;
 import com.ai.agent.TaskClassification;
 import com.ai.agent.TaskComplexityClassifier;
 import com.ai.memory.dto.MemoryContext;
@@ -41,34 +42,10 @@ public class ReActAgent {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReActAgent.class);
     private static final String ROLE_USER = "user";
-    private static final String SYSTEM_PROMPT = """
-            你是一个强大的数据分析智能体(Agent)，拥有多种工具来辅助完成用户的数据分析任务。
-
-            ## 工作模式 (ReAct: 思考-行动-观察)
-
-            对于每个用户请求，你需要:
-            1. **思考(Thought)**: 分析用户意图，规划解决步骤
-            2. **行动(Action)**: 选择并调用合适的工具
-            3. **观察(Observation)**: 分析工具返回的结果
-            4. 重复上述步骤直到获得足够信息
-            5. **最终回答**: 整合所有信息，给出清晰专业的回答
-
-            ## 核心原则
-            - 绝不编造数据。有数据则基于数据分析；无数据则请求用户提供
-            - 需要计算时使用 calculate 工具，不要心算
-            - 对文件数据先用 analyzeFileData 获取概览，再深入分析
-            - 系统可能会提供“检索上下文”，这是从向量库召回的企业资料。优先基于检索上下文回答；如果上下文不足，再调用工具或说明需要补充资料
-            - 搜索相关知识时可以同时使用 searchMemory 和 searchKnowledge
-            - 每次只调用一个工具
-            - 回答应结构清晰、专业简洁，可使用 Markdown 格式
-
-            ## 输出格式
-            思考和工具调用时，先写出你的思考过程，然后调用工具:
-            [思考] 用户想要...，我需要先...
-            [CALL:工具名(参数)]
-
-            最终回答时，直接给出完整答案，不要包含工具调用语法。
-            """;
+    // 默认 ReAct Agent 的 System Prompt = 角色层 + 框架基座（见 AgentSystemPrompts）。
+    // 不再硬编码"思考-行动-观察"教导（现代模型天生会 ReAct，过度教导反而诱导其"先写思考文本再调工具"
+    // 从而出现 intent without action）；工具调用纪律统一收敛到框架基座，与配置 Agent 共享。
+    private static final String SYSTEM_PROMPT = AgentSystemPrompts.DEFAULT_REACT;
 
     private final SessionManager sessionManager;
     private final AgentToolInvoker toolInvoker;
@@ -124,6 +101,11 @@ public class ReActAgent {
         String modelId = request.hasModel() ? request.getModelId() : null;
         ConversationSession session = getSession(request);
         ReActRequestContext requestContext = requestContextBuilder.build(request, fileContent);
+
+        // 自主模式：跳过分类/快路/规划/预检，直接进循环，决策权全交模型
+        if (reasoningProperties != null && reasoningProperties.isAutonomousMode()) {
+            return executeAutonomous(request, fileContent, requestContext, session, modelId);
+        }
 
         // 任务分类（用于判断是否可直答）
         TaskClassification classification = new TaskComplexityClassifier().classify(request, fileContent, session);
@@ -210,6 +192,12 @@ public class ReActAgent {
             streamEventWriter.emitRagContext(eventEmitter, requestContext.ragContext().getHitCount());
         }
 
+        // 自主模式：跳过分类/快路/规划/预检，直接进循环，决策权全交模型
+        if (reasoningProperties != null && reasoningProperties.isAutonomousMode()) {
+            executeStreamingAutonomous(request, fileContent, requestContext, finalSession, eventEmitter);
+            return;
+        }
+
         // 任务分类（用于判断是否可直答）
         TaskClassification classification = new TaskComplexityClassifier().classify(request, fileContent, session);
 
@@ -269,6 +257,53 @@ public class ReActAgent {
             streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null);
         } catch (Exception e) {
             LOGGER.error("流式 ReAct 执行出错", e);
+            streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 自主模式同步执行：不分类、不规划、不预检，构建消息后直接进循环。
+     *
+     * <p>与编排式 {@link #execute} 的差别在于——这里模型从第一轮就握有全部工具，
+     * "用不用、用哪个、几轮、何时停"全由模型自己决定，而非代码预先裁决。</p>
+     */
+    private AnalysisResponse executeAutonomous(AnalysisRequest request, String fileContent,
+            ReActRequestContext requestContext, ConversationSession session, String modelId) {
+        List<ToolSpecification> toolSpecs = toolInvoker.buildToolSpecifications();
+        List<ChatMessage> messages = buildInitialMessages(session, requestContext);
+        String sessionId = session != null ? session.getSessionId() : null;
+        List<AnalysisResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
+        LOGGER.info("Autonomous sync execute | 模型全权决策 | tools={}", toolSpecs.size());
+        ReActExecutionResult executionResult = loopRunner.run(messages, toolSpecs, modelId, sessionId,
+                requestContext.userQuery(), thinkingSteps);
+        String result = executionResult.answer();
+        conversationRecorder.recordReActConversation(session, request, result, modelId);
+        AnalysisResponse response = AnalysisResponse.ok(result);
+        response.setSkillUsed("react-agent-autonomous");
+        response.setThinkingSteps(thinkingSteps);
+        if (session != null) {
+            response.setSessionId(session.getSessionId());
+        }
+        return response;
+    }
+
+    /**
+     * 自主模式流式执行：构建消息后直接进流式循环，全部工具暴露给模型。
+     */
+    private void executeStreamingAutonomous(AnalysisRequest request, String fileContent,
+            ReActRequestContext requestContext, ConversationSession session, Consumer<String> eventEmitter) {
+        String modelId = request.hasModel() ? request.getModelId() : null;
+        List<ToolSpecification> toolSpecs = toolInvoker.buildToolSpecifications();
+        List<ChatMessage> messages = buildInitialMessages(session, requestContext);
+        String sessionId = session != null ? session.getSessionId() : null;
+        LOGGER.info("Autonomous streaming execute | 模型全权决策 | tools={}", toolSpecs.size());
+        try {
+            String result = loopRunner.runStreaming(messages, toolSpecs, modelId, sessionId,
+                    requestContext.userQuery(), eventEmitter);
+            conversationRecorder.recordReActConversation(session, request, result, modelId);
+            streamEventWriter.emitDone(eventEmitter, session != null ? session.getSessionId() : null);
+        } catch (Exception e) {
+            LOGGER.error("自主流式执行出错", e);
             streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
         }
     }

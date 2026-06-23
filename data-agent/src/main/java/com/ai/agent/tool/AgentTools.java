@@ -122,4 +122,21 @@ public class AgentTools {
         return agentChartToolService.generateChart(chartType, dataJson, title);
     }
 
+    // [Day5 学习] 自定义工具：查询酒店出租率（mock 数据）。
+    // description 是模型选工具的唯一依据，故写清"做什么 + 何时用 + 涉及哪些指标关键词"，
+    // 让模型在用户问"某城市某时间的出租率/入住率"时能语义匹配到本工具。
+    @Tool("查询指定城市、指定日期的酒店出租率(入住率)数据。当用户询问某地某时间的酒店出租率、"
+            + "入住率、RevPAR、ADR 等经营指标时使用此工具")
+    public String queryHotelOccupancy(@P("城市名称，如 杭州") String city,
+            @P("日期或时间范围，如 上周 / 2026-06-10") String date) {
+        // mock：真实场景应查 BI/数据库，这里返回固定示例数据用于演示工具调用
+        double occupancy = 72.5;
+        double adr = 458.0;
+        double revpar = occupancy / 100 * adr;
+        return String.format(
+                "【%s · %s 酒店经营数据(mock)】%n出租率(入住率): %.1f%%%n平均房价(ADR): %.0f 元%n"
+                        + "每可售房收入(RevPAR): %.1f 元%n数据来源: 模拟数据，仅用于演示",
+                city, date, occupancy, adr, revpar);
+    }
+
 }

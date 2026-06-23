@@ -22,6 +22,11 @@ public interface ConversationSessionRepository extends JpaRepository<Conversatio
     List<ConversationSessionEntity> findByUserIdOrderByLastAccessAtDesc(String userId);
 
     /**
+     * 按用户和状态查询会话，按最后访问时间倒序。
+     */
+    List<ConversationSessionEntity> findByUserIdAndStatusOrderByLastAccessAtDesc(String userId, String status);
+
+    /**
      * 查询某个租户拥有的会话。
      *
      * @param tenantId 租户 ID

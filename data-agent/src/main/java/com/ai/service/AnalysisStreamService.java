@@ -102,8 +102,8 @@ public class AnalysisStreamService {
                     KEY_MESSAGE, START_MESSAGE,
                     KEY_SESSION_ID, resolveSessionId(request, null)));
 
-            AnalysisResponse response = dataAnalysisAgent.analyze(request);
-            emitAnalysisResponse(request, response, emitter);
+            // 真流式：事件实时推送，不再阻塞等全部完成
+            dataAnalysisAgent.analyzeStreaming(request, eventJson -> sendRawEvent(emitter, eventJson));
             emitter.complete();
         } catch (Exception e) {
             LOGGER.error("SSE 流式分析失败", e);
@@ -118,6 +118,7 @@ public class AnalysisStreamService {
             streamEventWriter.emitDone(eventJson -> sendRawEvent(emitter, eventJson), resolveSessionId(request, null));
             return;
         }
+        LOGGER.info("SSE emitting thinkingSteps count={}", response.getThinkingSteps() == null ? 0 : response.getThinkingSteps().size());
         emitThinkingSteps(response.getThinkingSteps(), emitter);
         if (response.isSuccess()) {
             streamEventWriter.emitToken(eventJson -> sendRawEvent(emitter, eventJson), resolveResultText(response));

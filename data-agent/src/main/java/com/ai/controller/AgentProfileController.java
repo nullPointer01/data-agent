@@ -6,6 +6,7 @@ import com.ai.agent.dto.AgentProfileRequest;
 import com.ai.agent.dto.AgentProfileResponse;
 import com.ai.agent.dto.AgentRegistryResponse;
 import com.ai.agent.dto.AgentTestRequest;
+import com.ai.agent.tool.AgentToolInvoker;
 import com.ai.model.AnalysisResponse;
 import com.ai.service.AgentProfileService;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +19,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * 当前租户下 Agent 配置管理接口。
  *
@@ -28,9 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentProfileController {
 
     private final AgentProfileService agentProfileService;
+    private final AgentToolInvoker agentToolInvoker;
 
-    public AgentProfileController(AgentProfileService agentProfileService) {
+    public AgentProfileController(AgentProfileService agentProfileService, AgentToolInvoker agentToolInvoker) {
         this.agentProfileService = agentProfileService;
+        this.agentToolInvoker = agentToolInvoker;
     }
 
     /**
@@ -121,5 +127,16 @@ public class AgentProfileController {
     @DeleteMapping("/{agentId}")
     public AgentProfileMutationResponse delete(@PathVariable String agentId) {
         return agentProfileService.delete(agentId);
+    }
+
+    /**
+     * 查询所有可配置的工具列表，供 Agent 工具选择使用。
+     *
+     * @return 工具名称和描述列表
+     */
+    @GetMapping("/available-tools")
+    public Map<String, Object> availableTools() {
+        List<AgentToolInvoker.ToolInfo> tools = agentToolInvoker.getAllToolInfo();
+        return Map.of("success", true, "tools", tools);
     }
 }

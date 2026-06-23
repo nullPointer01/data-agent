@@ -53,16 +53,16 @@ public class TaskComplexityClassifier {
         if (request.isCommand()) {
             return TaskClassification.toolAssisted("命令请求需要专门处理");
         }
+        String question = normalize(request.getQuestion());
+        // 纯问候/身份介绍即使在对话中途也直答，不必因"有历史"就拖全量上下文走重型循环
+        if (isGreeting(question)) {
+            return TaskClassification.simple("问候或身份介绍请求");
+        }
         if (session != null && !session.getHistory().isEmpty()) {
             return TaskClassification.complex("存在历史对话，需要上下文推理");
         }
-
-        String question = normalize(request.getQuestion());
         if (question.length() > MAX_FAST_PATH_QUERY_LENGTH) {
             return TaskClassification.complex("问题较长，需要完整推理");
-        }
-        if (isGreeting(question)) {
-            return TaskClassification.simple("问候或身份介绍请求");
         }
         if (startsWithDirectQuestionPrefix(question)) {
             return classifyDirectQuestion(question);

@@ -27,7 +27,7 @@ langchain4j:
     api-key: ${LANGCHAIN_API_KEY:}
     model-name: ${LANGCHAIN_MODEL_NAME:qwen-plus}
     base-url: ${LANGCHAIN_BASE_URL:https://api.openai.com/v1}
-    temperature: 0.7
+    temperature: 0
     timeout: 30000
 
 milvus:
@@ -71,6 +71,9 @@ app:
     queue-capacity: ${APP_SSE_QUEUE_CAPACITY:100}
   agent:
     reasoning:
+      # 自主模式：true 绕过分类/快路/规划/预检，直接进 ReAct 循环，决策权全交模型。
+      # 默认开启（模型优先）；设为 false 切回编排式用于对比
+      autonomous-mode: ${AGENT_REASONING_AUTONOMOUS_MODE:true}
       fast-path-enabled: ${AGENT_REASONING_FAST_PATH_ENABLED:true}
       planning-enabled: ${AGENT_REASONING_PLANNING_ENABLED:true}
       parallel-precheck-enabled: ${AGENT_REASONING_PARALLEL_PRECHECK_ENABLED:true}

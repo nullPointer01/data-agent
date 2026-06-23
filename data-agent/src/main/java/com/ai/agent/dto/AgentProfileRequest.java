@@ -1,5 +1,7 @@
 package com.ai.agent.dto;
 
+import java.util.List;
+
 /**
  * Agent 配置创建和更新请求。
  *
@@ -14,5 +16,7 @@ public record AgentProfileRequest(
         String modelId,
         String skillId,
         String datasourceId,
+        String executionMode,
+        List<String> tools,
         Boolean enabled) {
 }

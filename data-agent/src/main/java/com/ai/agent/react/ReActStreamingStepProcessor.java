@@ -112,6 +112,9 @@ public class ReActStreamingStepProcessor {
         ReActStepOutcome outcome = stepHandler.handleNative(aiMessage, messages);
         if (outcome.isFinalAnswer()) {
             addAnswerStep(thinkingSteps, iteration, "生成最终回答");
+            // [B] 工具决策轮改非流式后，最终答案不再由模型流式逐 token 产生，
+            // 这里把完整答案作为 token 事件投递给前端（前端按 token 累积渲染）
+            streamEventWriter.emitToken(eventEmitter, outcome.answer());
             finalAnswer.append(outcome.answer());
             addFinalReflection(thinkingSteps, iteration, finalAnswer.toString(), eventEmitter);
             return new ReActLoopStepResult(false, false);

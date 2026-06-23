@@ -1,8 +1,6 @@
 package com.ai.config;
 
-import com.ai.model.ModelConfig;
 import com.ai.model.SkillConfig;
-import com.ai.repository.ModelConfigRepository;
 import com.ai.repository.SkillConfigRepository;
 import com.ai.security.rbac.RolePermissionService;
 import com.ai.security.SecurityConstants;
@@ -46,24 +44,11 @@ public class DataInitializer {
     private static final String PERMISSION_APP_USE = "app:use";
     private static final String DEFAULT_TENANT_ID = "default";
 
-    @Value("${langchain4j.open-ai.api-key}")
-    private String defaultApiKey;
-
-    @Value("${langchain4j.open-ai.model-name}")
-    private String defaultModelName;
-
-    @Value("${langchain4j.open-ai.base-url}")
-    private String defaultBaseUrl;
-
-    @Value("${langchain4j.open-ai.temperature:0.7}")
-    private Double defaultTemperature;
-
     @Value("${app.security.bootstrap-admin-users:super}")
     private String bootstrapAdminUsers;
 
     @Bean
-    public CommandLineRunner initData(ModelConfigRepository modelConfigRepository,
-            SkillConfigRepository skillConfigRepository,
+    public CommandLineRunner initData(SkillConfigRepository skillConfigRepository,
             SkillManager skillManager,
             JdbcTemplate jdbcTemplate,
             SysUserRepository sysUserRepository,
@@ -75,7 +60,6 @@ public class DataInitializer {
             initDefaultRbac(roleRepository, permissionRepository);
             migrateLegacyUserRoles(jdbcTemplate);
             bootstrapAdminUsers(sysUserRepository, rolePermissionService);
-            initDefaultModel(modelConfigRepository);
             initDefaultSkill(skillConfigRepository, skillManager);
             loadExistingSkills(skillConfigRepository, skillManager);
         };
@@ -210,25 +194,6 @@ public class DataInitializer {
                     LOGGER.warn("Bootstrapped ADMIN role for user {}", trimmedUsername);
                 }
             });
-        }
-    }
-
-    private void initDefaultModel(ModelConfigRepository repository) {
-        if (repository.countByIsDefaultTrue() == 0) {
-            ModelConfig defaultModel = new ModelConfig();
-            defaultModel.setName("Qwen Plus (默认)");
-            defaultModel.setProvider("qwen");
-            defaultModel.setApiKey(defaultApiKey);
-            defaultModel.setBaseUrl(defaultBaseUrl);
-            defaultModel.setModelName(defaultModelName);
-            defaultModel.setTemperature(defaultTemperature);
-            defaultModel.setMaxTokens(4096);
-            defaultModel.setEnabled(true);
-            defaultModel.setDefault(true);
-            defaultModel.setTenantId(DEFAULT_TENANT_ID);
-
-            repository.save(defaultModel);
-            LOGGER.info("默认模型已初始化: {} @ {}", defaultModelName, defaultBaseUrl);
         }
     }
 

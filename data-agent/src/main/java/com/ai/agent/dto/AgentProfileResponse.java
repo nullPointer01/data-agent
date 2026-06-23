@@ -3,6 +3,7 @@ package com.ai.agent.dto;
 import com.ai.model.AgentProfile;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Agent 配置响应。
@@ -18,6 +19,8 @@ public record AgentProfileResponse(
         String modelId,
         String skillId,
         String datasourceId,
+        String executionMode,
+        List<String> tools,
         boolean enabled,
         String tenantId,
         String createdBy,
@@ -34,6 +37,8 @@ public record AgentProfileResponse(
                 profile.getModelId(),
                 profile.getSkillId(),
                 profile.getDatasourceId(),
+                profile.getExecutionMode(),
+                profile.getToolList(),
                 profile.isEnabled(),
                 profile.getTenantId(),
                 profile.getCreatedBy(),
