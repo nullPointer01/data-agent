@@ -53,7 +53,7 @@ public class RagReranker {
             return List.of();
         }
         return results.stream()
-                .sorted(Comparator.comparingDouble((RetrievalResult result) -> score(result, analysis))
+                .sorted(Comparator.comparingDouble((RetrievalResult result) -> scoreHybrid(result, analysis))
                         .reversed())
                 .toList();
     }
@@ -66,7 +66,14 @@ public class RagReranker {
         return match.score() * VECTOR_WEIGHT + keywordScore * KEYWORD_WEIGHT + sourceScore * SOURCE_WEIGHT;
     }
 
-    private double score(RetrievalResult result, RagQueryAnalysis analysis) {
+    /**
+     * 返回当前规则重排使用的可解释启发式分数。
+     *
+     * @param result 混合检索候选
+     * @param analysis 查询分析
+     * @return RRF分数、关键词覆盖和来源权重的组合分数
+     */
+    public double scoreHybrid(RetrievalResult result, RagQueryAnalysis analysis) {
         double keywordScore = calculateKeywordScore(result.content(), analysis.keywords());
         double sourceScore = "knowledge".equalsIgnoreCase(result.sourceType()) ? KNOWLEDGE_SOURCE_BOOST : 0D;
         return result.score() * VECTOR_WEIGHT + keywordScore * KEYWORD_WEIGHT + sourceScore * SOURCE_WEIGHT;

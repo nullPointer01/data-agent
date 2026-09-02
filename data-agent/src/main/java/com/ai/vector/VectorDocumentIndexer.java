@@ -26,14 +26,16 @@ public class VectorDocumentIndexer {
     }
 
     public void index(String text, String type, String id, String sourceId, String tenantId, String userId) {
-        TextSegment segment = TextSegment.from(text, VectorMetadataFactory.create(type, id, sourceId, tenantId, userId));
+        TextSegment segment = TextSegment.from(text, VectorMetadataFactory.create(type, id, sourceId, tenantId,
+                userId, embeddingGateway.getProfile()));
         Embedding embedding = embeddingGateway.embed(segment);
         String primaryKey = vectorStoreGateway.add(embedding, segment);
         indexRegistry.record(type, id, text, primaryKey, sourceId, tenantId, userId);
     }
 
     public void index(String text, String type, VectorChunk chunk, String tenantId, String userId) {
-        TextSegment segment = TextSegment.from(text, VectorMetadataFactory.create(type, chunk, tenantId, userId));
+        TextSegment segment = TextSegment.from(text, VectorMetadataFactory.create(type, chunk, tenantId, userId,
+                embeddingGateway.getProfile()));
         Embedding embedding = embeddingGateway.embed(segment);
         String primaryKey = vectorStoreGateway.add(embedding, segment);
         indexRegistry.record(type, chunk.id(), text, primaryKey, chunk.sourceId(), tenantId, userId);

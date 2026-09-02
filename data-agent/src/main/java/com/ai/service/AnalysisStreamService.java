@@ -138,7 +138,7 @@ public class AnalysisStreamService {
             if (!StringUtils.hasText(content)) {
                 continue;
             }
-            if (THINKING_TYPE_REFLECTION.equals(step.getType())) {
+            if (THINKING_TYPE_REFLECTION.equals(step.getType())) { 
                 streamEventWriter.emitReflection(eventJson -> sendRawEvent(emitter, eventJson), content);
                 continue;
             }

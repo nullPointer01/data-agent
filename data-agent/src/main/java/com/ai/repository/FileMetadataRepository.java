@@ -1,10 +1,7 @@
 package com.ai.repository;
 
 import com.ai.model.FileMetadata;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import com.ai.model.FileProcessingStatus;
 
@@ -55,27 +52,4 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
     Optional<FileMetadata> findFirstByContentHashAndTenantIdAndProcessingStatus(
             String contentHash, String tenantId, FileProcessingStatus status);
 
-    /**
-     * JPA 全文检索兜底查询。
-     *
-     * @param tenantId 租户编号
-     * @param status 文件处理状态名称
-     * @param keyword 已转义的检索词
-     * @param pageable 分页参数
-     * @return 命中的文件
-     */
-    @Query(value = """
-            SELECT * FROM file_metadata f
-            WHERE f.tenant_id = :tenantId
-              AND f.processing_status = :status
-              AND (
-                LOWER(f.filename) LIKE :pattern
-                OR (f.content IS NOT NULL AND LOWER(f.content) LIKE :pattern)
-              )
-            ORDER BY f.uploaded_at DESC
-            """, nativeQuery = true)
-    List<FileMetadata> searchByTenantAndKeyword(@Param("tenantId") String tenantId,
-            @Param("status") String status,
-            @Param("pattern") String pattern,
-            Pageable pageable);
 }

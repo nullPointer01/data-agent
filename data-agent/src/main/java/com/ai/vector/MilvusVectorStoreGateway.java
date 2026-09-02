@@ -42,9 +42,8 @@ public class MilvusVectorStoreGateway {
     private final String milvusHost;
     private final int milvusPort;
     private final String collectionName;
-    private final int dimension;
     private final String indexTypeStr;
-    private final String metricTypeStr;
+    private final EmbeddingProfile embeddingProfile;
     private final MilvusAvailabilityChecker availabilityChecker;
     private final MilvusIndexManager indexManager;
     private final MilvusDeleteExpressionBuilder deleteExpressionBuilder;
@@ -58,19 +57,18 @@ public class MilvusVectorStoreGateway {
     public MilvusVectorStoreGateway(
             @Value("${milvus.host:localhost}") String milvusHost,
             @Value("${milvus.port:19530}") int milvusPort,
-            @Value("${milvus.collection-name:data_agent_vectors}") String collectionName,
-            @Value("${milvus.dimension:384}") int dimension,
+            @Value("${milvus.collection-name:data_agent_vectors}") String baseCollectionName,
             @Value("${milvus.index-type:IVF_FLAT}") String indexTypeStr,
-            @Value("${milvus.metric-type:COSINE}") String metricTypeStr,
+            EmbeddingGateway embeddingGateway,
+            MilvusCollectionNameResolver collectionNameResolver,
             MilvusAvailabilityChecker availabilityChecker,
             MilvusIndexManager indexManager,
             MilvusDeleteExpressionBuilder deleteExpressionBuilder) {
         this.milvusHost = milvusHost;
         this.milvusPort = milvusPort;
-        this.collectionName = collectionName;
-        this.dimension = dimension;
+        this.embeddingProfile = embeddingGateway.getProfile();
+        this.collectionName = collectionNameResolver.resolve(baseCollectionName, embeddingProfile);
         this.indexTypeStr = indexTypeStr;
-        this.metricTypeStr = metricTypeStr;
         this.availabilityChecker = availabilityChecker;
         this.indexManager = indexManager;
         this.deleteExpressionBuilder = deleteExpressionBuilder;
@@ -173,7 +171,7 @@ public class MilvusVectorStoreGateway {
     private void initMilvusStore() {
         try {
             this.indexType = IndexType.valueOf(indexTypeStr);
-            this.metricType = MetricType.valueOf(metricTypeStr);
+            this.metricType = MetricType.valueOf(embeddingProfile.metric());
             this.milvusClient = new MilvusServiceClient(
                     ConnectParam.newBuilder()
                             .withHost(milvusHost)
@@ -187,7 +185,8 @@ public class MilvusVectorStoreGateway {
             }
 
             LOGGER.info("Milvus 客户端已初始化 [{}:{}] collection={} dim={} index={} metric={}",
-                    milvusHost, milvusPort, collectionName, dimension, indexTypeStr, metricTypeStr);
+                    milvusHost, milvusPort, collectionName, embeddingProfile.dimension(), indexTypeStr,
+                    embeddingProfile.metric());
         } catch (Exception e) {
             closeMilvusClientQuietly();
             throw new IllegalStateException("Milvus 向量存储初始化失败: " + e.getMessage(), e);
@@ -239,7 +238,7 @@ public class MilvusVectorStoreGateway {
                 .host(milvusHost)
                 .port(milvusPort)
                 .collectionName(collectionName)
-                .dimension(dimension)
+                .dimension(embeddingProfile.dimension())
                 .indexType(indexType)
                 .metricType(metricType)
                 .consistencyLevel(ConsistencyLevelEnum.EVENTUALLY)

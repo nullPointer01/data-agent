@@ -6,7 +6,6 @@ import com.ai.rag.fulltext.FullTextRetriever;
 
 import com.ai.vector.ChunkMetadata;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -19,7 +18,6 @@ import java.util.List;
  * @author data-agent
  */
 @Component
-@ConditionalOnProperty(name = "app.rag.full-text-provider", havingValue = "elasticsearch")
 public class ElasticsearchFullTextRetriever implements FullTextRetriever {
 
     private final ElasticsearchFullTextClient client;

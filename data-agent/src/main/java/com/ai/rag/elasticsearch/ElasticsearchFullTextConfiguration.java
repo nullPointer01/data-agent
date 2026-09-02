@@ -13,7 +13,6 @@ import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +26,6 @@ import java.net.URI;
  * @author data-agent
  */
 @Configuration
-@ConditionalOnProperty(name = "app.rag.full-text-provider", havingValue = "elasticsearch")
 @EnableConfigurationProperties(ElasticsearchProperties.class)
 public class ElasticsearchFullTextConfiguration {
 

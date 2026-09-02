@@ -149,7 +149,10 @@ public class ReActLoopRunner {
     }
 
     /**
-     * 执行一次流式 ReAct 循环并返回最终累积答案。
+     * 执行一次流式 ReAct 循环并返回最终累积答案与迭代次数。
+     *
+     * <p>返回 {@link ReActExecutionResult}（与同步 {@link #run} 对齐），便于上层记录
+     * 执行轨迹——流式路径不再丢失「迭代轮数 / 工具调用次数」这两个可观测性指标。</p>
      *
      * @param messages 可变消息历史
      * @param toolSpecs 可用工具规格
@@ -157,9 +160,9 @@ public class ReActLoopRunner {
      * @param sessionId 当前会话编号
      * @param userQuery 用于工作记忆的用户问题
      * @param eventEmitter JSON 事件消费者
-     * @return 最终答案
+     * @return 循环执行结果（最终答案 + 实际轮数）
      */
-    public String runStreaming(List<ChatMessage> messages,
+    public ReActExecutionResult runStreaming(List<ChatMessage> messages,
             List<ToolSpecification> toolSpecs,
             String modelId,
             String sessionId,
@@ -169,6 +172,8 @@ public class ReActLoopRunner {
         List<AnalysisResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
         int iterations = 0;
         int toolIntentNudges = 0;
+        int toolCallCount = 0;
+        boolean success = true;
         ReActRecoveryTracker recoveryTracker = new ReActRecoveryTracker();
         workingMemoryService.recordStart(sessionId, userQuery);
         logStart(sessionId, userQuery, modelId, toolSpecs, true);
@@ -186,12 +191,17 @@ public class ReActLoopRunner {
                 thinkingSteps.add(new AnalysisResponse.ThinkingStep(iterations, "error", "模型调用失败"));
                 workingMemoryService.recordFailure(sessionId, userQuery, iterations);
                 logEmptyResponse(sessionId, modelId, iterations, true);
+                success = false;
                 break;
             }
 
             String llmResponse = describeAiMessage(aiMessage);
             // [Day3 学习] 打印每轮模型原始输出，观察它如何思考、决定调哪个工具或给出最终回答
             LOGGER.info("【ReAct第{}轮·模型原文】\n{}", iterations, llmResponse);
+            // [Day13 可观测性] 累计本轮发起的工具调用次数，用于执行轨迹统计
+            if (aiMessage.hasToolExecutionRequests()) {
+                toolCallCount += aiMessage.toolExecutionRequests().size();
+            }
             // [A] intent-without-action 守卫：模型只用文字说要调工具却没真发起 tool_call 时，
             // 注入纠偏提示重试一轮。纯启发式、不依赖任何厂商，是模型无关的安全网
             if (!aiMessage.hasToolExecutionRequests()
@@ -228,7 +238,7 @@ public class ReActLoopRunner {
         }
         workingMemoryService.recordCompletion(sessionId, userQuery, iterations, answer);
         logCompletion(sessionId, modelId, iterations, answer, thinkingSteps, true);
-        return answer;
+        return new ReActExecutionResult(answer, iterations, toolCallCount, success);
     }
 
     private void logStart(String sessionId, String userQuery, String modelId, List<ToolSpecification> toolSpecs,

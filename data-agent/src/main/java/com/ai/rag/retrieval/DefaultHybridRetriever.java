@@ -58,11 +58,15 @@ public class DefaultHybridRetriever implements HybridRetriever {
         long fusionStartedAt = System.currentTimeMillis();
         List<RetrievalResult> results = rrfFusionRanker.fuse(vectorMatches, fullTextResults, candidateTopK);
         long fusionTimeMs = System.currentTimeMillis() - fusionStartedAt;
-        return new HybridRetrievalResult(results, sizeOf(vectorMatches), sizeOf(fullTextResults), vectorTimeMs,
-                fullTextTimeMs, fusionTimeMs);
+        return new HybridRetrievalResult(results, safeList(vectorMatches), safeList(fullTextResults),
+                sizeOf(vectorMatches), sizeOf(fullTextResults), vectorTimeMs, fullTextTimeMs, fusionTimeMs);
     }
 
     private int sizeOf(List<?> values) {
         return values == null ? 0 : values.size();
+    }
+
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : List.copyOf(values);
     }
 }

@@ -36,9 +36,8 @@ mvn -Dfrontend.skip=true spring-boot:run
 mvn -Dfrontend.skip=true spring-boot:run \
   -Dspring-boot.run.arguments='--server.port=18080'
 
-# 编译和测试
-mvn -Dfrontend.skip=true -DskipTests compile
-mvn -Dfrontend.skip=true test
+# 只校验 JDK 17 基线，不编译
+mvn -Dfrontend.skip=true validate
 
 # 前端单独构建
 cd frontend
@@ -51,7 +50,7 @@ npm run build
 docker-compose up -d
 ```
 
-项目使用标准 Maven 命令运行。请确保本机 Maven 可用，并且 `JAVA_HOME` 指向 JDK 17。
+项目使用标准 Maven 命令运行。仓库根目录 `.java-version`、Maven Enforcer、CI 和应用 Dockerfile 均固定 JDK 17；JDK 8、11 或 21 会在 Maven `validate` 阶段失败。macOS 可执行 `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` 切换当前终端。
 
 ## 当前运行依赖
 
@@ -60,7 +59,7 @@ local profile 默认配置在 `data-agent/src/main/resources/application-local.y
 - MySQL 是业务主库，默认连接 `jdbc:mysql://localhost:3306/data_agent`，用户名 `root`。
 - Milvus 是强依赖，默认 `localhost:19530`，collection 为 `data_agent_vectors`。应用启动会校验 Milvus 可达；向量写入/检索使用懒加载的 embedding store，避免启动阶段被 collection load 卡住。
 - Redis 依赖存在，但 local profile 关闭 Redis repository 扫描；当前主链路不要求 Redis 必须先启动。
-- Elasticsearch 是 RAG 全文检索的可选 provider。默认 `RAG_FULL_TEXT_PROVIDER=jpa`，不需要 ES；切到 `elasticsearch` 时需要启动 ES。
+- Elasticsearch 是 RAG 唯一的 BM25/全文检索实现，默认地址 `localhost:9200`。不可用时健康检查明确失败，不回退到 SQL LIKE。
 - 模型 API 需要在后台模型配置或环境变量中配置。local profile 里的默认 key 是占位值，只能用于启动，不能保证真实模型调用成功。
 
 本地 MySQL 初始化：
@@ -74,8 +73,6 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 - `local`：默认 profile，本地 MySQL + Milvus。适合 IDE 直接启动。
 - `dev`：共享开发环境，数据库、Redis、Milvus、JWT、模型等通过环境变量注入。
 - `prod`：生产环境，`JWT_SECRET`、`APP_ENCRYPTION_KEY`、数据库和模型凭据必须显式配置。
-
-不要再把 H2 当成本地业务库使用。H2 仅作为测试依赖存在。
 
 ## 前端
 
@@ -218,7 +215,7 @@ Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据�
 
 支持常见文本、Office、PDF、图片 OCR/解析扩展点。文件和知识库内容会进入 MySQL，同时由 Milvus 建向量索引。
 
-RAG 相关代码在 `com.ai.rag`，默认全文检索走 JPA。可选 Elasticsearch provider。RAG 会融合全文、向量、父上下文、重排、压缩和质量评估。
+RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25，向量召回使用 Milvus，两路通过 RRF 融合，再执行规则重排、父上下文解析、压缩和引用生成。当前 `RagReranker` 是可解释的规则重排，不是 Cross-Encoder 模型。
 
 ## 记忆系统
 
@@ -235,10 +232,11 @@ RAG 相关代码在 `com.ai.rag`，默认全文检索走 JPA。可选 Elasticsea
 
 - 默认 embedding provider 是 `local`，使用本地 AllMiniLmL6V2，维度 384。
 - 可切换 `EMBEDDING_PROVIDER=api`，走 OpenAI 兼容 embedding API。
-- Milvus collection、dimension、index、metric 在 `application.yml` 的 `milvus.*` 配置。
+- `app.embedding.*` 形成 provider、modelId、indexVersion、dimension、normalize、metric 的统一 Profile；启动时真实探测模型维度，每次向量化后再次校验。
+- `milvus.*` 只保留连接、Collection 基础名称和索引类型；物理 Collection 名按 Embedding 身份自动版本化，维度和 Metric 只读取当前 Profile。
 - `MilvusVectorStoreGateway` 启动阶段只初始化客户端和索引，`MilvusEmbeddingStore` 首次 add/search 时懒加载。
 
-如果修改 embedding 维度，必须同时处理 Milvus collection 维度和历史数据，否则会写入失败。
+修改模型、维度、Metric 或向量处理策略时必须提升 `EMBEDDING_INDEX_VERSION` 并全量重建，新旧 Collection 不会混写，旧 Collection 也不会自动删除。
 
 ## 数据库与租户
 
@@ -269,16 +267,15 @@ RAG 相关代码在 `com.ai.rag`，默认全文检索走 JPA。可选 Elasticsea
 
 ## 测试和验证
 
-常用验证：
+按当前项目决策，自动化开发 Agent 不主动运行单测、编译、打包、`verify` 或 Docker 构建；只有用户后续明确要求时才执行。供人工需要时使用的命令：
 
 ```bash
 cd data-agent
-mvn -Dfrontend.skip=true test
-mvn -Dfrontend.skip=true -DskipTests compile
+mvn -Dfrontend.skip=true validate
 cd frontend && npm run build
 ```
 
-最近一次巡检时后端测试数约为 403 个。不要并发跑多个 Maven 命令写同一个 `target/`，资源复制阶段可能互相踩文件。
+不要并发跑多个 Maven 命令写同一个 `target/`，资源复制阶段可能互相踩文件。
 
 ## 开发注意事项
 

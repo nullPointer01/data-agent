@@ -21,6 +21,11 @@ public final class VectorMetadataKeys {
     public static final String PARENT_CHUNK_ID = "parentChunkId";
     public static final String PARENT_CHAR_START = "parentCharStart";
     public static final String PARENT_CHAR_END = "parentCharEnd";
+    public static final String EMBEDDING_PROVIDER = "embeddingProvider";
+    public static final String EMBEDDING_MODEL_ID = "embeddingModelId";
+    public static final String EMBEDDING_INDEX_VERSION = "embeddingIndexVersion";
+    public static final String EMBEDDING_DIMENSION = "embeddingDimension";
+    public static final String EMBEDDING_METRIC = "embeddingMetric";
 
     private VectorMetadataKeys() {
     }

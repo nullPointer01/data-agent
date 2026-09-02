@@ -125,18 +125,89 @@ public class AgentTools {
     // [Day5 学习] 自定义工具：查询酒店出租率（mock 数据）。
     // description 是模型选工具的唯一依据，故写清"做什么 + 何时用 + 涉及哪些指标关键词"，
     // 让模型在用户问"某城市某时间的出租率/入住率"时能语义匹配到本工具。
-    @Tool("查询指定城市、指定日期的酒店出租率(入住率)数据。当用户询问某地某时间的酒店出租率、"
-            + "入住率、RevPAR、ADR 等经营指标时使用此工具")
+    @Tool("查询并分析指定城市、指定日期的酒店经营表现。当用户询问某地某时间的酒店出租率、"
+            + "入住率、RevPAR、ADR、预订趋势、经营诊断、是否需要调价等酒店经营指标时使用此工具")
     public String queryHotelOccupancy(@P("城市名称，如 杭州") String city,
             @P("日期或时间范围，如 上周 / 2026-06-10") String date) {
-        // mock：真实场景应查 BI/数据库，这里返回固定示例数据用于演示工具调用
-        double occupancy = 72.5;
-        double adr = 458.0;
-        double revpar = occupancy / 100 * adr;
+        HotelKpiSnapshot current = buildHotelKpiSnapshot(city, date);
+        HotelKpiSnapshot previous = current.previousPeriod();
+        double occupancyChange = current.occupancy() - previous.occupancy();
+        double revparChange = current.revpar() - previous.revpar();
+        String diagnosis = diagnoseHotelPerformance(current, previous);
         return String.format(
-                "【%s · %s 酒店经营数据(mock)】%n出租率(入住率): %.1f%%%n平均房价(ADR): %.0f 元%n"
-                        + "每可售房收入(RevPAR): %.1f 元%n数据来源: 模拟数据，仅用于演示",
-                city, date, occupancy, adr, revpar);
+                "【%s · %s 酒店经营分析(mock)】%n"
+                        + "经营问题: 该城市该时间段酒店表现如何，是否需要调价或促销？%n%n"
+                        + "核心 KPI%n"
+                        + "- 出租率(Occupancy): %.1f%%，环比%+.1fpp%n"
+                        + "- 平均房价(ADR): %.0f 元，环比%+.0f 元%n"
+                        + "- 每可售房收入(RevPAR): %.1f 元，环比%+.1f 元%n"
+                        + "- 预订提前期: %.1f 天，取消率: %.1f%%%n%n"
+                        + "KPI 定义%n"
+                        + "- 出租率 = 已售间夜 / 可售间夜，衡量客房卖出去的比例%n"
+                        + "- ADR = 房费收入 / 已售间夜，衡量卖出去客房的平均价格%n"
+                        + "- RevPAR = ADR * 出租率，衡量所有可售客房的综合收益能力%n%n"
+                        + "领域知识%n"
+                        + "- 出租率高但 ADR 低: 可能价格偏保守，应评估提价空间%n"
+                        + "- ADR 高但出租率低: 可能价格压制需求，应观察竞品和促销弹性%n"
+                        + "- RevPAR 下滑: 需要同时拆解价格、入住、取消率和提前期%n%n"
+                        + "诊断结论: %s%n"
+                        + "建议动作: %s%n"
+                        + "数据来源: 模拟经营数据，用于 Day14 酒店分析 Agent 能力演示",
+                current.city(), current.date(), current.occupancy(), occupancyChange,
+                current.adr(), current.adr() - previous.adr(), current.revpar(), revparChange,
+                current.bookingLeadDays(), current.cancelRate(), diagnosis,
+                recommendHotelAction(current, previous));
+    }
+
+    private HotelKpiSnapshot buildHotelKpiSnapshot(String city, String date) {
+        String normalizedCity = city == null || city.isBlank() ? "未知城市" : city.trim();
+        String normalizedDate = date == null || date.isBlank() ? "最近7天" : date.trim();
+        int seed = Math.abs((normalizedCity + normalizedDate).hashCode());
+        double occupancy = 62.0 + seed % 240 / 10.0;
+        double adr = 360.0 + seed % 180;
+        double bookingLeadDays = 2.0 + seed % 45 / 10.0;
+        double cancelRate = 4.0 + seed % 90 / 10.0;
+        return new HotelKpiSnapshot(normalizedCity, normalizedDate, occupancy, adr, bookingLeadDays, cancelRate);
+    }
+
+    private String diagnoseHotelPerformance(HotelKpiSnapshot current, HotelKpiSnapshot previous) {
+        if (current.revpar() >= previous.revpar() && current.occupancy() >= previous.occupancy()) {
+            return "RevPAR 与出租率同步提升，需求健康，当前经营节奏偏积极。";
+        }
+        if (current.occupancy() >= 78.0 && current.adr() < previous.adr()) {
+            return "出租率较高但 ADR 走弱，可能存在低价换量，收益仍有优化空间。";
+        }
+        if (current.occupancy() < 68.0 && current.adr() > previous.adr()) {
+            return "ADR 较高但出租率不足，价格可能压制了转化，需要关注竞品价差。";
+        }
+        return "核心指标有分化，需要结合流量、竞品价格和取消率继续拆解。";
+    }
+
+    private String recommendHotelAction(HotelKpiSnapshot current, HotelKpiSnapshot previous) {
+        if (current.occupancy() >= 78.0 && current.revpar() >= previous.revpar()) {
+            return "保留基础促销，优先测试小幅提价 3%-5%，并监控转化率变化。";
+        }
+        if (current.occupancy() < 68.0) {
+            return "针对低入住日期加限时券或套餐权益，先拉升出租率，再评估 ADR 修复。";
+        }
+        if (current.cancelRate() >= 10.0) {
+            return "检查取消政策和预付产品占比，降低高取消订单对 RevPAR 的扰动。";
+        }
+        return "维持当前价格带，按入住提前期滚动观察未来 7 天预订趋势。";
+    }
+
+    private record HotelKpiSnapshot(String city, String date, double occupancy, double adr,
+            double bookingLeadDays, double cancelRate) {
+
+        private double revpar() {
+            return occupancy / 100 * adr;
+        }
+
+        private HotelKpiSnapshot previousPeriod() {
+            return new HotelKpiSnapshot(city, "上一周期", Math.max(45.0, occupancy - 3.8),
+                    Math.max(260.0, adr - 18.0), Math.max(1.0, bookingLeadDays - 0.6),
+                    Math.max(2.0, cancelRate - 1.2));
+        }
     }
 
 }

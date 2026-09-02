@@ -20,7 +20,6 @@ import java.util.List;
 public class RagHealthService {
 
     private static final String PROVIDER_ELASTICSEARCH = "elasticsearch";
-    private static final String PROVIDER_JPA = "jpa";
     private static final String VECTOR_PROVIDER = "milvus";
     private static final String CHECK_FULL_TEXT = "FULL_TEXT";
     private static final String CHECK_VECTOR = "VECTOR";
@@ -58,16 +57,13 @@ public class RagHealthService {
         List<RagAcceptanceCheck> checks = checks(lastTrace, vectorHealthy, fullTextHealthy);
         List<String> issues = issues(checks);
         return new RagHealthResponse(ragProperties.isEnabled(), issues.isEmpty(), fullTextProvider(),
-                fullTextHealthy, VECTOR_PROVIDER, vectorHealthy, true, true, true,
+                fullTextHealthy, VECTOR_PROVIDER, vectorHealthy, fullTextHealthy && vectorHealthy, true, true,
                 ragProperties.getHealth().getEsLatencyThresholdMs(),
                 ragProperties.getHealth().getMilvusLatencyThresholdMs(),
                 ragProperties.getHealth().getRagLatencyThresholdMs(), lastTrace, checks, issues);
     }
 
     private boolean isFullTextHealthy() {
-        if (PROVIDER_JPA.equalsIgnoreCase(fullTextProvider())) {
-            return true;
-        }
         ElasticsearchFullTextClient client = elasticsearchClientProvider.getIfAvailable();
         return client != null && client.isAvailable();
     }
@@ -77,7 +73,9 @@ public class RagHealthService {
         List<RagAcceptanceCheck> checks = new ArrayList<>();
         checks.add(check(CHECK_FULL_TEXT, "全文检索", fullTextHealthy, fullTextDetail(fullTextHealthy)));
         checks.add(check(CHECK_VECTOR, "Milvus 向量检索", vectorHealthy, vectorHealthy ? "Milvus 客户端已初始化" : "Milvus 客户端不可用"));
-        checks.add(check(CHECK_HYBRID, "RRF 混合检索", true, "向量通道和全文通道已通过 RRF 融合"));
+        boolean hybridReady = fullTextHealthy && vectorHealthy;
+        checks.add(check(CHECK_HYBRID, "RRF 混合检索", hybridReady,
+                hybridReady ? "Milvus 与 Elasticsearch 均可用，可执行 RRF 融合" : "混合检索依赖未全部就绪"));
         checks.add(check(CHECK_RERANKER, "重排序", true, "轻量重排器已接入关键词覆盖率和来源权重"));
         checks.add(check(CHECK_CITATION, "引用溯源", true, "引用返回来源、位置、通道分数和结构标签"));
         checks.add(checkEsLatency(trace));
@@ -98,15 +96,12 @@ public class RagHealthService {
     }
 
     private RagAcceptanceCheck checkEsLatency(RagRetrievalTrace trace) {
-        if (!PROVIDER_ELASTICSEARCH.equalsIgnoreCase(fullTextProvider())) {
-            return check(CHECK_ES_LATENCY, "ES 检索延迟", true, "当前未启用 ES，使用 JPA 全文检索兜底");
-        }
         return checkLatency(CHECK_ES_LATENCY, "ES 检索延迟", trace.fullTextRetrievalTimeMs(),
                 ragProperties.getHealth().getEsLatencyThresholdMs(), usesElasticsearch(trace));
     }
 
     private boolean usesElasticsearch(RagRetrievalTrace trace) {
-        return PROVIDER_ELASTICSEARCH.equalsIgnoreCase(fullTextProvider()) && trace.fullTextRawCount() > 0;
+        return trace.fullTextRawCount() > 0;
     }
 
     private RagAcceptanceCheck check(String key, String name, boolean passed, String detail) {
@@ -114,10 +109,7 @@ public class RagHealthService {
     }
 
     private String fullTextDetail(boolean fullTextHealthy) {
-        if (PROVIDER_ELASTICSEARCH.equalsIgnoreCase(fullTextProvider())) {
-            return fullTextHealthy ? "Elasticsearch 可访问" : "Elasticsearch 不可访问";
-        }
-        return "当前使用 JPA 全文检索兜底";
+        return fullTextHealthy ? "Elasticsearch 可访问" : "Elasticsearch 不可访问，RAG 不执行 SQL 模糊检索降级";
     }
 
     private List<String> issues(List<RagAcceptanceCheck> checks) {
@@ -128,6 +120,6 @@ public class RagHealthService {
     }
 
     private String fullTextProvider() {
-        return ragProperties.getFullTextProvider();
+        return PROVIDER_ELASTICSEARCH;
     }
 }

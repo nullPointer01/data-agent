@@ -10,6 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.rag")
 public class RagProperties {
 
+    public static final String FULL_TEXT_PROVIDER = "elasticsearch";
+
     private boolean enabled = true;
 
     private int topK = 6;
@@ -20,11 +22,11 @@ public class RagProperties {
 
     private double minScore = 0.45D;
 
-    private String fullTextProvider = "jpa";
-
     private HealthProperties health = new HealthProperties();
 
     private QualityProperties quality = new QualityProperties();
+
+    private BenchmarkProperties benchmark = new BenchmarkProperties();
 
     public boolean isEnabled() {
         return enabled;
@@ -67,11 +69,7 @@ public class RagProperties {
     }
 
     public String getFullTextProvider() {
-        return fullTextProvider;
-    }
-
-    public void setFullTextProvider(String fullTextProvider) {
-        this.fullTextProvider = fullTextProvider;
+        return FULL_TEXT_PROVIDER;
     }
 
     public HealthProperties getHealth() {
@@ -88,6 +86,14 @@ public class RagProperties {
 
     public void setQuality(QualityProperties quality) {
         this.quality = quality;
+    }
+
+    public BenchmarkProperties getBenchmark() {
+        return benchmark;
+    }
+
+    public void setBenchmark(BenchmarkProperties benchmark) {
+        this.benchmark = benchmark;
     }
 
     /**
@@ -189,6 +195,42 @@ public class RagProperties {
 
         public void setSourceCoverageThreshold(double sourceCoverageThreshold) {
             this.sourceCoverageThreshold = sourceCoverageThreshold;
+        }
+    }
+
+    /**
+     * RAG 黄金集批量评测配置。
+     */
+    public static class BenchmarkProperties {
+
+        private String datasetPath = "./config/rag-golden-dataset.json";
+
+        private int minimumCases = 30;
+
+        private int maximumCases = 200;
+
+        public String getDatasetPath() {
+            return datasetPath;
+        }
+
+        public void setDatasetPath(String datasetPath) {
+            this.datasetPath = datasetPath;
+        }
+
+        public int getMinimumCases() {
+            return minimumCases;
+        }
+
+        public void setMinimumCases(int minimumCases) {
+            this.minimumCases = minimumCases;
+        }
+
+        public int getMaximumCases() {
+            return maximumCases;
+        }
+
+        public void setMaximumCases(int maximumCases) {
+            this.maximumCases = maximumCases;
         }
     }
 }

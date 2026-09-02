@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * 全文检索 SPI。
  *
- * <p>默认实现可以先使用 JPA 模糊检索，后续接入 Elasticsearch/BM25 时只需要替换该接口实现。</p>
+ * <p>当前唯一实现为 Elasticsearch BM25；接口用于隔离检索编排与搜索引擎客户端细节。</p>
  *
  * @author data-agent
  */

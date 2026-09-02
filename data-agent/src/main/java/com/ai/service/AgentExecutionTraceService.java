@@ -12,6 +12,7 @@ import com.ai.agent.dto.AgentExecutionTraceResponse;
 import com.ai.logging.StructuredLogger;
 import com.ai.model.AgentExecutionTrace;
 import com.ai.model.AnalysisRequest;
+import com.ai.model.AnalysisResponse;
 import com.ai.model.ConversationSession;
 import com.ai.repository.AgentExecutionTraceRepository;
 import com.ai.security.SecurityContextHelper;
@@ -140,6 +141,85 @@ public class AgentExecutionTraceService {
                 TAG_SELECTED_TYPE, trace.getSelectedType() == null ? UNKNOWN_VALUE : trace.getSelectedType()).increment();
         structuredLogger.logEvent(StructuredLogger.TYPE_AGENT_TRACE, buildTraceLogPayload(trace));
         return traceId;
+    }
+
+    /**
+     * 记录一次 ReAct 流式 / 同步执行轨迹。
+     *
+     * <p>与 {@link #record} 区别：ReAct 是单模型循环，没有多专家编排概念，故
+     * {@code intent}/{@code complexity}/{@code plan_json(多专家计划)} 等字段留空，
+     * ReAct 专属的迭代轮数、工具调用次数塞进 {@code plan_json} 大字段。
+     * 多专家专属语义字段（task_results_json/shared_context_json）留空数组/对象。</p>
+     *
+     * @param request 用户请求
+     * @param session 当前会话（可为空）
+     * @param selectedAgent 选中的 Agent 名称（如「内置 ReAct」）
+     * @param success 是否成功完成
+     * @param error 错误信息（成功时为空）
+     * @param durationMs 执行耗时
+     * @param iterations ReAct 循环实际轮数
+     * @param toolCallCount 累计发起的工具调用次数
+     * @param thinkingSteps 可见推理步骤（用于 plan_json 摘要）
+     * @return 轨迹编号
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public String recordReAct(AnalysisRequest request, ConversationSession session, String selectedAgent,
+            boolean success, String error, long durationMs, int iterations, int toolCallCount,
+            List<AnalysisResponse.ThinkingStep> thinkingSteps) {
+        if (request == null) {
+            return null;
+        }
+        AgentExecutionTrace trace = new AgentExecutionTrace();
+        String traceId = UUID.randomUUID().toString();
+        trace.setTraceId(traceId);
+        trace.setTenantId(securityContextHelper.getCurrentTenantId());
+        trace.setUserId(securityContextHelper.getCurrentUserId());
+        trace.setSessionId(resolveSessionId(request, session));
+        trace.setQuestion(truncate(request.getQuestion()));
+        trace.setSelectedAgent(selectedAgent);
+        trace.setSelectedType("REACT");
+        trace.setSuccess(success);
+        trace.setFallbackUsed(false);
+        trace.setTaskCount(toolCallCount);
+        trace.setDurationMs(durationMs);
+        trace.setReason("");
+        trace.setError(truncate(error));
+        trace.setPlanJson(writeJson(buildReActPlanPayload(iterations, toolCallCount, thinkingSteps), EMPTY_JSON_OBJECT));
+        trace.setTaskResultsJson(EMPTY_JSON_ARRAY);
+        trace.setSharedContextJson(EMPTY_JSON_OBJECT);
+        traceRepository.save(trace);
+        meterRegistry.counter(METRIC_AGENT_TRACE_TOTAL,
+                TAG_SUCCESS, String.valueOf(success),
+                TAG_SELECTED_TYPE, "REACT").increment();
+        structuredLogger.logEvent(StructuredLogger.TYPE_AGENT_TRACE, buildReActTraceLogPayload(trace));
+        return traceId;
+    }
+
+    /**
+     * 构造 ReAct 执行轨迹的 plan_json 载荷：迭代轮数 + 工具调用数 + 推理步骤摘要。
+     */
+    private Map<String, Object> buildReActPlanPayload(int iterations, int toolCallCount,
+            List<AnalysisResponse.ThinkingStep> thinkingSteps) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("reactIterations", iterations);
+        payload.put("toolCallCount", toolCallCount);
+        payload.put("thinkingSteps", thinkingSteps == null ? List.of() : thinkingSteps);
+        return payload;
+    }
+
+    private Map<String, Object> buildReActTraceLogPayload(AgentExecutionTrace trace) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(KEY_TRACE_ID, trace.getTraceId());
+        payload.put(KEY_TENANT_ID, trace.getTenantId());
+        payload.put(KEY_USER_ID, trace.getUserId());
+        payload.put(KEY_SESSION_ID, trace.getSessionId());
+        payload.put(KEY_SELECTED_AGENT, trace.getSelectedAgent());
+        payload.put(KEY_SELECTED_TYPE, trace.getSelectedType());
+        payload.put(KEY_SUCCESS, trace.isSuccess());
+        payload.put(KEY_TASK_COUNT, trace.getTaskCount());
+        payload.put(KEY_DURATION_MS, trace.getDurationMs());
+        payload.put(KEY_ERROR_LENGTH, trace.getError() == null ? 0 : trace.getError().length());
+        return payload;
     }
 
     /**

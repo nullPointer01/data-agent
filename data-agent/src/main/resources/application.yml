@@ -34,14 +34,15 @@ milvus:
   host: ${MILVUS_HOST:localhost}
   port: ${MILVUS_PORT:19530}
   collection-name: data_agent_vectors
-  dimension: ${EMBEDDING_DIMENSION:384}
   index-type: IVF_FLAT
-  metric-type: COSINE
 
 app:
   embedding:
     provider: ${EMBEDDING_PROVIDER:local}
     dimension: ${EMBEDDING_DIMENSION:384}
+    index-version: ${EMBEDDING_INDEX_VERSION:v1}
+    normalize: ${EMBEDDING_NORMALIZE:true}
+    metric: ${EMBEDDING_METRIC:COSINE}
     api:
       base-url: ${EMBEDDING_API_BASE_URL:http://localhost:11434/v1}
       api-key: ${EMBEDDING_API_KEY:}
@@ -87,7 +88,6 @@ app:
     max-plan-tasks: ${ORCHESTRATOR_MAX_PLAN_TASKS:6}
   rag:
     enabled: ${RAG_ENABLED:true}
-    full-text-provider: ${RAG_FULL_TEXT_PROVIDER:jpa}
     top-k: ${RAG_TOP_K:6}
     candidate-top-k: ${RAG_CANDIDATE_TOP_K:20}
     min-score: ${RAG_MIN_SCORE:0.45}
@@ -96,9 +96,13 @@ app:
       es-latency-threshold-ms: ${RAG_ES_LATENCY_THRESHOLD_MS:100}
       milvus-latency-threshold-ms: ${RAG_MILVUS_LATENCY_THRESHOLD_MS:50}
       rag-latency-threshold-ms: ${RAG_TOTAL_LATENCY_THRESHOLD_MS:2000}
+    benchmark:
+      dataset-path: ${RAG_BENCHMARK_DATASET_PATH:./config/rag-golden-dataset.json}
+      minimum-cases: ${RAG_BENCHMARK_MINIMUM_CASES:30}
+      maximum-cases: ${RAG_BENCHMARK_MAXIMUM_CASES:200}
     elasticsearch:
       base-url: ${RAG_ELASTICSEARCH_BASE_URL:http://localhost:9200}
-      index-name: ${RAG_ELASTICSEARCH_INDEX:data-agent-rag}
+      index-name: ${RAG_ELASTICSEARCH_INDEX:data-agent-rag-v2}
       username: ${RAG_ELASTICSEARCH_USERNAME:}
       password: ${RAG_ELASTICSEARCH_PASSWORD:}
       connect-timeout: ${RAG_ELASTICSEARCH_CONNECT_TIMEOUT:2s}

@@ -6040,7 +6040,7 @@ Phase 1 验收证据：
 ☑ 引用溯源功能正常
 
 性能验收：
-☑ 支持 JPA 全文回退和 Elasticsearch 全文实现，便于本地与生产环境分层验证
+☑ Elasticsearch BM25 是唯一全文召回路径；JPA LIKE 回退已于 2026-09-02 移除
 ☑ Milvus 向量库路径已成为唯一向量检索路径，内存向量路径已移除
 ☑ RAG 管道支持查询重写、混合检索、重排、父上下文和上下文压缩
 
@@ -6050,10 +6050,11 @@ Phase 1 验收证据：
 ```
 
 Phase 2 验收证据：
+- 以下测试记录是 2026-05-19 的历史证据；`src/test/java` 已按 2026-09-02 的项目决策整体移除，当前不再运行自动化测试。
 - `TextChunkerTest`、`SmartTextChunkerTest`、`SemanticChunkerTest`、`HierarchicalChunkerTest` 验证结构化分块。
 - `HybridRetrieverTest`、`RagRetrievalServiceTest`、`EnhancedRagPipelineTest` 验证增强 RAG 主链路。
 - `RagQueryRewriterTest`、`RagRerankerTest`、`RrfFusionRankerTest` 验证查询改写、重排和融合。
-- `ElasticsearchFullTextClientTest`、`ElasticsearchFullTextRetrieverTest`、`JpaFullTextRetrieverTest` 验证全文检索实现与回退。
+- `ElasticsearchFullTextClientTest`、`ElasticsearchFullTextRetrieverTest`、`JpaFullTextRetrieverTest` 曾验证全文检索实现与回退；JPA 路径后续已删除。
 - `RagParentContextResolverTest`、`RagContextCompressorTest`、`RagQualityEvaluationServiceTest` 验证父上下文、压缩和质量评估。
 - 2026-05-19 已执行聚焦测试：
   `mvn -q -Dtest=EnhancedRagPipelineTest,HybridRetrieverTest,RagRetrievalServiceTest,RagQueryRewriterTest,RagRerankerTest,TextChunkerTest,SmartTextChunkerTest,SemanticChunkerTest,HierarchicalChunkerTest test`

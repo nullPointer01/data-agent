@@ -31,6 +31,7 @@ import com.ai.agent.orchestrator.TaskPlanner;
 import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.agent.tool.AgentToolInvoker;
 import com.ai.memory.MemoryManager;
+import com.ai.service.AgentExecutionTraceService;
 
 /**
  * ReAct 风格的数据分析智能体（Agent）。
@@ -60,6 +61,7 @@ public class ReActAgent {
     private final AgentReasoningProperties reasoningProperties;
     private final MemoryManager memoryManager;
     private final ReActMetadataBuilder metadataBuilder;
+    private final AgentExecutionTraceService traceService;
 
     @Autowired
     public ReActAgent(SessionManager sessionManager,
@@ -74,7 +76,8 @@ public class ReActAgent {
             @Nullable ParallelPlanExecutor parallelPlanExecutor,
             @Nullable AgentReasoningProperties reasoningProperties,
             @Nullable MemoryManager memoryManager,
-            @Nullable ReActMetadataBuilder metadataBuilder) {
+            @Nullable ReActMetadataBuilder metadataBuilder,
+            @Nullable AgentExecutionTraceService traceService) {
         this.sessionManager = sessionManager;
         this.toolInvoker = toolInvoker;
         this.requestContextBuilder = requestContextBuilder;
@@ -88,6 +91,7 @@ public class ReActAgent {
         this.reasoningProperties = reasoningProperties;
         this.memoryManager = memoryManager;
         this.metadataBuilder = metadataBuilder;
+        this.traceService = traceService;
     }
 
     /**
@@ -98,13 +102,14 @@ public class ReActAgent {
      * @return 分析响应
      */
     public AnalysisResponse execute(AnalysisRequest request, String fileContent) {
+        long startedAt = System.currentTimeMillis();
         String modelId = request.hasModel() ? request.getModelId() : null;
         ConversationSession session = getSession(request);
         ReActRequestContext requestContext = requestContextBuilder.build(request, fileContent);
 
         // 自主模式：跳过分类/快路/规划/预检，直接进循环，决策权全交模型
         if (reasoningProperties != null && reasoningProperties.isAutonomousMode()) {
-            return executeAutonomous(request, fileContent, requestContext, session, modelId);
+            return executeAutonomous(request, fileContent, requestContext, session, modelId, startedAt);
         }
 
         // 任务分类（用于判断是否可直答）
@@ -128,6 +133,8 @@ public class ReActAgent {
                 if (metadataBuilder != null) {
                     response.setExecutionMetadata(metadataBuilder.buildFastPathMetadata(classification, thinkingSteps, memoryContext));
                 }
+                recordReActTrace(request, session, "ReAct 快速直答", true, null,
+                        System.currentTimeMillis() - startedAt, 0, 0, thinkingSteps, response);
                 return response;
             }
         }
@@ -172,6 +179,9 @@ public class ReActAgent {
         if (metadataBuilder != null) {
             response.setExecutionMetadata(metadataBuilder.buildReasoningMetadata(classification, executionPlan, precheck, executionResult, requestContext, thinkingSteps));
         }
+        recordReActTrace(request, session, "ReAct 工具 Agent", true, null,
+                System.currentTimeMillis() - startedAt, executionResult.iterations(),
+                executionResult.toolCallCount(), thinkingSteps, response);
         return response;
     }
 
@@ -183,6 +193,7 @@ public class ReActAgent {
      * @param eventEmitter JSON 事件消费者
      */
     public void executeStreaming(AnalysisRequest request, String fileContent, Consumer<String> eventEmitter) {
+        long startedAt = System.currentTimeMillis();
         String modelId = request.hasModel() ? request.getModelId() : null;
         ConversationSession session = getSession(request);
         final ConversationSession finalSession = session;
@@ -194,7 +205,7 @@ public class ReActAgent {
 
         // 自主模式：跳过分类/快路/规划/预检，直接进循环，决策权全交模型
         if (reasoningProperties != null && reasoningProperties.isAutonomousMode()) {
-            executeStreamingAutonomous(request, fileContent, requestContext, finalSession, eventEmitter);
+            executeStreamingAutonomous(request, fileContent, requestContext, finalSession, eventEmitter, startedAt);
             return;
         }
 
@@ -213,10 +224,15 @@ public class ReActAgent {
                         streamEventWriter.emitToken(eventEmitter, token);
                     });
                     conversationRecorder.recordSessionConversation(finalSession, request, finalAnswer, "fast-answer", null);
-                    streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null);
+                    String traceId = recordReActTrace(request, finalSession, "ReAct 快速直答", true, null,
+                            System.currentTimeMillis() - startedAt, 0, 0, null, null);
+                    streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null, traceId);
                 } catch (Exception e) {
                     LOGGER.error("快速直答流式输出出错", e);
+                    String errorTraceId = recordReActTrace(request, finalSession, "ReAct 快速直答", false, e.getMessage(),
+                            System.currentTimeMillis() - startedAt, 0, 0, null, null);
                     streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
+                    streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null, errorTraceId);
                 }
                 return;
             }
@@ -251,13 +267,18 @@ public class ReActAgent {
 
         try {
             String sessionId = finalSession != null ? finalSession.getSessionId() : null;
-            String result = loopRunner.runStreaming(messages, toolSpecs, modelId, sessionId,
+            ReActExecutionResult execResult = loopRunner.runStreaming(messages, toolSpecs, modelId, sessionId,
                     requestContext.userQuery(), eventEmitter);
-            conversationRecorder.recordReActConversation(finalSession, request, result, modelId);
-            streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null);
+            conversationRecorder.recordReActConversation(finalSession, request, execResult.answer(), modelId);
+            String traceId = recordReActTrace(request, finalSession, "ReAct 工具 Agent", execResult.success(), null,
+                    System.currentTimeMillis() - startedAt, execResult.iterations(), execResult.toolCallCount(), null, null);
+            streamEventWriter.emitDone(eventEmitter, sessionId, traceId);
         } catch (Exception e) {
             LOGGER.error("流式 ReAct 执行出错", e);
+            String errorTraceId = recordReActTrace(request, finalSession, "ReAct 工具 Agent", false, e.getMessage(),
+                    System.currentTimeMillis() - startedAt, 0, 0, null, null);
             streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
+            streamEventWriter.emitDone(eventEmitter, finalSession != null ? finalSession.getSessionId() : null, errorTraceId);
         }
     }
 
@@ -268,7 +289,7 @@ public class ReActAgent {
      * "用不用、用哪个、几轮、何时停"全由模型自己决定，而非代码预先裁决。</p>
      */
     private AnalysisResponse executeAutonomous(AnalysisRequest request, String fileContent,
-            ReActRequestContext requestContext, ConversationSession session, String modelId) {
+            ReActRequestContext requestContext, ConversationSession session, String modelId, long startedAt) {
         List<ToolSpecification> toolSpecs = toolInvoker.buildToolSpecifications();
         List<ChatMessage> messages = buildInitialMessages(session, requestContext);
         String sessionId = session != null ? session.getSessionId() : null;
@@ -284,6 +305,9 @@ public class ReActAgent {
         if (session != null) {
             response.setSessionId(session.getSessionId());
         }
+        recordReActTrace(request, session, "内置 ReAct（自主模式）", true, null,
+                System.currentTimeMillis() - startedAt, executionResult.iterations(),
+                executionResult.toolCallCount(), thinkingSteps, response);
         return response;
     }
 
@@ -291,20 +315,64 @@ public class ReActAgent {
      * 自主模式流式执行：构建消息后直接进流式循环，全部工具暴露给模型。
      */
     private void executeStreamingAutonomous(AnalysisRequest request, String fileContent,
-            ReActRequestContext requestContext, ConversationSession session, Consumer<String> eventEmitter) {
+            ReActRequestContext requestContext, ConversationSession session, Consumer<String> eventEmitter,
+            long startedAt) {
         String modelId = request.hasModel() ? request.getModelId() : null;
         List<ToolSpecification> toolSpecs = toolInvoker.buildToolSpecifications();
         List<ChatMessage> messages = buildInitialMessages(session, requestContext);
         String sessionId = session != null ? session.getSessionId() : null;
         LOGGER.info("Autonomous streaming execute | 模型全权决策 | tools={}", toolSpecs.size());
         try {
-            String result = loopRunner.runStreaming(messages, toolSpecs, modelId, sessionId,
+            ReActExecutionResult execResult = loopRunner.runStreaming(messages, toolSpecs, modelId, sessionId,
                     requestContext.userQuery(), eventEmitter);
-            conversationRecorder.recordReActConversation(session, request, result, modelId);
-            streamEventWriter.emitDone(eventEmitter, session != null ? session.getSessionId() : null);
+            conversationRecorder.recordReActConversation(session, request, execResult.answer(), modelId);
+            String traceId = recordReActTrace(request, session, "内置 ReAct（自主模式）", execResult.success(), null,
+                    System.currentTimeMillis() - startedAt, execResult.iterations(), execResult.toolCallCount(), null, null);
+            streamEventWriter.emitDone(eventEmitter, sessionId, traceId);
         } catch (Exception e) {
             LOGGER.error("自主流式执行出错", e);
+            String errorTraceId = recordReActTrace(request, session, "内置 ReAct（自主模式）", false, e.getMessage(),
+                    System.currentTimeMillis() - startedAt, 0, 0, null, null);
             streamEventWriter.emitError(eventEmitter, "分析出错: " + e.getMessage());
+            streamEventWriter.emitDone(eventEmitter, session != null ? session.getSessionId() : null, errorTraceId);
+        }
+    }
+
+    /**
+     * 记录 ReAct 执行轨迹并把 traceId 写回响应。
+     *
+     * <p>traceService 可为空（缺失时静默降级，不影响主流程）；成功落库后将 traceId
+     * 写回 {@code response}（非空时），让前端通过 SSE done 事件拿到 trace 编号。</p>
+     *
+     * @param request 用户请求
+     * @param session 当前会话（可为空）
+     * @param selectedAgent 选中的 Agent 名称
+     * @param success 是否成功完成
+     * @param error 错误信息（成功时为空）
+     * @param durationMs 执行耗时
+     * @param iterations ReAct 循环轮数
+     * @param toolCallCount 工具调用次数
+     * @param thinkingSteps 可见推理步骤（流式路径为空，循环内已自行收集）
+     * @param response 待回填 traceId 的响应（流式路径可为空）
+     * @return traceId（未落库时为空）
+     */
+    private String recordReActTrace(AnalysisRequest request, ConversationSession session, String selectedAgent,
+            boolean success, String error, long durationMs, int iterations, int toolCallCount,
+            List<AnalysisResponse.ThinkingStep> thinkingSteps, AnalysisResponse response) {
+        if (traceService == null) {
+            return null;
+        }
+        try {
+            String traceId = traceService.recordReAct(request, session, selectedAgent, success, error,
+                    durationMs, iterations, toolCallCount, thinkingSteps);
+            if (response != null && traceId != null) {
+                response.setTraceId(traceId);
+            }
+            return traceId;
+        } catch (Exception e) {
+            // 可观测性失败不影响主流程
+            LOGGER.warn("记录 ReAct 执行轨迹失败: {}", e.getMessage());
+            return null;
         }
     }
 

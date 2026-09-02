@@ -14,9 +14,20 @@
 - React + Vite
 - Apache POI / PDFBox
 - 可选 Redis
-- 可选 Elasticsearch
+- Elasticsearch 8
 
 ## 本地启动
+
+后端构建、测试和运行统一使用 JDK 17。macOS 当前终端切换方式：
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+mvn -version
+```
+
+Maven Enforcer 只接受 JDK 17；JDK 8、11 或 21 会在编译前失败。
 
 默认 profile 是 `local`，配置文件是 `src/main/resources/application-local.yml`。
 
@@ -74,8 +85,6 @@ http://localhost:8080
 - `dev`：共享开发环境，所有敏感配置通过环境变量注入。
 - `prod`：生产环境，要求显式配置数据库、JWT、加密密钥、模型 API、Milvus 等。
 
-H2 仅用于测试依赖，不再作为本地业务存储。
-
 ## 外部依赖
 
 `../docker-compose.yml` 提供：
@@ -86,7 +95,7 @@ H2 仅用于测试依赖，不再作为本地业务存储。
 - Elasticsearch：`9200`
 - Milvus 所需 etcd / MinIO
 
-当前应用启动时会校验 Milvus 可达。Milvus 是强依赖；Redis 和 Elasticsearch 是能力依赖，默认主流程不要求它们必须可用。
+当前应用启动时会校验 Milvus 可达。Milvus 和 Elasticsearch 是 RAG 混合检索依赖；Redis 是否必需取决于启用的记忆和缓存能力。Elasticsearch 不可用时不会回退到数据库模糊检索。
 
 ## 环境变量
 
@@ -228,12 +237,43 @@ SSE 输出由 `AnalysisStreamService` 负责，会输出 start、thinking steps�
 
 ## RAG、知识库和文件
 
-知识库、文件、记忆等内容会写入 MySQL，并根据类型写入 Milvus 向量索引。RAG 默认全文检索 provider 是 JPA，可切换到 Elasticsearch：
+知识库和文件内容以 MySQL 为事实源，同时写入 Milvus 向量索引和 Elasticsearch Chunk 全文索引。RAG 全文召回固定使用 Elasticsearch BM25：
 
 ```bash
-RAG_FULL_TEXT_PROVIDER=elasticsearch
 RAG_ELASTICSEARCH_BASE_URL=http://localhost:9200
+RAG_ELASTICSEARCH_INDEX=data-agent-rag-v2
 ```
+
+`data-agent-rag-v2` 使用显式 Mapping：租户、来源和 Chunk 标识为 `keyword`，正文、标题和章节为 `text`。旧的动态 Mapping 索引不会被自动删除，需要显式重建数据。
+
+管理员可以使用固定黄金集运行分阶段检索评测：
+
+```bash
+RAG_BENCHMARK_DATASET_PATH=./config/rag-golden-dataset.json
+RAG_BENCHMARK_MINIMUM_CASES=30
+RAG_BENCHMARK_MAXIMUM_CASES=200
+```
+
+黄金集由真实业务标注提供，仓库不会内置虚假的30条数据。JSON结构如下：
+
+```json
+{
+  "datasetId": "knowledge-v1-eval",
+  "corpusVersion": "knowledge-v1",
+  "cases": [
+    {
+      "caseId": "rag-001",
+      "query": "退款审批需要哪些材料？",
+      "expectedSourceIds": ["真实来源编号"],
+      "expectedChunkIds": ["真实分块编号"],
+      "relevanceGrades": {"真实分块编号": 2},
+      "tags": ["流程", "同义改写"]
+    }
+  ]
+}
+```
+
+数据集至少需要30条、`caseId`必须唯一，每条必须具有 query 以及 sourceId 或 chunkId 标注。`relevanceGrades` 中 `2` 表示直接回答问题的主片段，`1` 表示辅助片段。配置完成后，管理员调用 `POST /api/v1/rag/benchmark/run`，报告会同时输出 Vector、BM25、RRF 和规则重排四个阶段的 Recall@5/10/20、MRR@10、NDCG@10、Hit@6、P95 以及逐案排名。接口实现本身不代表质量达标，只有真实运行报告才能作为指标结论。
 
 文件上传后会进入异步处理队列，解析文本后写入文件表和知识/向量索引。支持 Office、PDF、普通文本等解析能力。
 
@@ -244,6 +284,9 @@ RAG_ELASTICSEARCH_BASE_URL=http://localhost:9200
 ```bash
 EMBEDDING_PROVIDER=local
 EMBEDDING_DIMENSION=384
+EMBEDDING_INDEX_VERSION=v1
+EMBEDDING_NORMALIZE=true
+EMBEDDING_METRIC=COSINE
 ```
 
 可切换 OpenAI 兼容 embedding API：
@@ -253,9 +296,12 @@ EMBEDDING_PROVIDER=api
 EMBEDDING_API_BASE_URL=http://localhost:11434/v1
 EMBEDDING_API_KEY=
 EMBEDDING_MODEL_NAME=bge-large-zh-v1.5
+EMBEDDING_DIMENSION=1024
 ```
 
-修改 embedding 维度时，必须同步处理 Milvus collection 维度和历史向量数据，否则会写入失败。
+应用启动时会真实调用一次 Embedding 模型校验输出维度，每次向量化后也会重复校验。provider 仅接受 `local` 或 `api`，拼写错误不会静默回退到本地模型。
+
+Milvus 的物理 Collection 名由基础名称和 `provider + modelId + dimension + metric + indexVersion` 自动生成，维度与 Metric 只读取当前 Embedding Profile。模型、维度、Metric 或向量处理策略发生变化时，应提升 `EMBEDDING_INDEX_VERSION` 并全量重建；旧 Collection 不会自动删除。上面的 `1024` 是该模型的常见配置示例，仍应以实际服务探测结果为准。
 
 ## 记忆系统
 
@@ -287,14 +333,19 @@ MEMORY_MODEL_COMPRESSION_ENABLED=false
 ## 常用验证
 
 ```bash
-mvn -Dfrontend.skip=true -DskipTests compile
-mvn -Dfrontend.skip=true test
+mvn -Dfrontend.skip=true validate
 
 cd frontend
 npm run build
 ```
 
-最近巡检时后端测试约 403 个。不要并发执行多个 Maven 命令写同一个 `target/`，否则资源复制可能互相冲突。
+不要并发执行多个 Maven 命令写同一个 `target/`，否则资源复制可能互相冲突。
+
+构建应用镜像时，构建阶段和运行阶段都固定为 Java 17：
+
+```bash
+docker build -t data-agent:local .
+```
 
 ## 常见问题
 

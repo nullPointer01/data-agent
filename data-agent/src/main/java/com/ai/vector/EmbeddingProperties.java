@@ -16,6 +16,12 @@ public class EmbeddingProperties {
 
     private int dimension = 384;
 
+    private String indexVersion = "v1";
+
+    private boolean normalize = true;
+
+    private String metric = "COSINE";
+
     private Api api = new Api();
 
     public String getProvider() {
@@ -32,6 +38,30 @@ public class EmbeddingProperties {
 
     public void setDimension(int dimension) {
         this.dimension = dimension;
+    }
+
+    public String getIndexVersion() {
+        return indexVersion;
+    }
+
+    public void setIndexVersion(String indexVersion) {
+        this.indexVersion = indexVersion;
+    }
+
+    public boolean isNormalize() {
+        return normalize;
+    }
+
+    public void setNormalize(boolean normalize) {
+        this.normalize = normalize;
+    }
+
+    public String getMetric() {
+        return metric;
+    }
+
+    public void setMetric(String metric) {
+        this.metric = metric;
     }
 
     public Api getApi() {

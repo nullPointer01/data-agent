@@ -1,0 +1,7 @@
+=== new OpenAiTokenizer 实例化点 ===
+agent/react/ReActPromptBuilder.java:31:    private static final Tokenizer TOKENIZER = new OpenAiTokenizer("gpt-4");
+mcp/McpContext.java:28:    private static final Tokenizer TOKENIZER = new OpenAiTokenizer("gpt-4");
+=== Tokenizer 字段/import ===
+agent/react/ReActPromptBuilder.java
+mcp/McpContext.java
+=== END ===

@@ -14,7 +14,7 @@ public class ElasticsearchProperties {
 
     private String baseUrl = "http://localhost:9200";
 
-    private String indexName = "data-agent-rag";
+    private String indexName = "data-agent-rag-v2";
 
     private String username = "";
 
