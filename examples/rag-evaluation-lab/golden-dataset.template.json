@@ -1,0 +1,264 @@
+{
+  "datasetId": "starbridge-rag-learning-v1",
+  "corpusVersion": "starbridge-learning-corpus-v1",
+  "cases": [
+    {
+      "caseId": "lab-001",
+      "query": "连续输错密码几次会被锁定，锁多久？",
+      "expectedSourceIds": ["REPLACE_WITH_ACCOUNT_SECURITY_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["精确数字", "账号安全"]
+    },
+    {
+      "caseId": "lab-002",
+      "query": "我在手机上输错三次，又在电脑上输错两次，会触发限制吗？",
+      "expectedSourceIds": ["REPLACE_WITH_ACCOUNT_SECURITY_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["跨句", "语义改写"]
+    },
+    {
+      "caseId": "lab-003",
+      "query": "启用双重验证后会给多少个备用恢复码？可以重复用吗？",
+      "expectedSourceIds": ["REPLACE_WITH_ACCOUNT_SECURITY_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["同义改写", "精确数字"]
+    },
+    {
+      "caseId": "lab-004",
+      "query": "一个个人账号最多登录多少台设备，第六台会自动踢掉旧设备吗？",
+      "expectedSourceIds": ["REPLACE_WITH_ACCOUNT_SECURITY_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["否定条件", "设备"]
+    },
+    {
+      "caseId": "lab-005",
+      "query": "手机丢了以后，账号安全方面应该马上做什么？",
+      "expectedSourceIds": ["REPLACE_WITH_ACCOUNT_SECURITY_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["语义改写", "流程"]
+    },
+    {
+      "caseId": "lab-006",
+      "query": "年付会员用了两小时，购买第六天申请退款可以吗？",
+      "expectedSourceIds": ["REPLACE_WITH_SUBSCRIPTION_REFUND_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["条件组合", "退款"]
+    },
+    {
+      "caseId": "lab-007",
+      "query": "年付会员累计刚好使用三小时，还满足七天无理由退款吗？",
+      "expectedSourceIds": ["REPLACE_WITH_SUBSCRIPTION_REFUND_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["边界值", "退款"]
+    },
+    {
+      "caseId": "lab-008",
+      "query": "月付订阅什么情况下可以走退款人工审核？",
+      "expectedSourceIds": ["REPLACE_WITH_SUBSCRIPTION_REFUND_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["例外规则", "退款"]
+    },
+    {
+      "caseId": "lab-009",
+      "query": "银行卡退款审核通过后一般多久到账？",
+      "expectedSourceIds": ["REPLACE_WITH_SUBSCRIPTION_REFUND_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["表格", "精确时间"]
+    },
+    {
+      "caseId": "lab-010",
+      "query": "用了优惠券买会员，退款时券和抵扣金额怎么处理？",
+      "expectedSourceIds": ["REPLACE_WITH_SUBSCRIPTION_REFUND_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["语义改写", "优惠券"]
+    },
+    {
+      "caseId": "lab-011",
+      "query": "Plus 套餐最多存多少个离线项目，又能同时下载几个？",
+      "expectedSourceIds": ["REPLACE_WITH_OFFLINE_CONTENT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["表格", "双字段"]
+    },
+    {
+      "caseId": "lab-012",
+      "query": "离线内容多久必须联网验证一次？",
+      "expectedSourceIds": ["REPLACE_WITH_OFFLINE_CONTENT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["精确时间", "离线授权"]
+    },
+    {
+      "caseId": "lab-013",
+      "query": "一个月完全没联网后，本地下载的内容会被删除吗？",
+      "expectedSourceIds": ["REPLACE_WITH_OFFLINE_CONTENT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["状态变化", "否定条件"]
+    },
+    {
+      "caseId": "lab-014",
+      "query": "离线中心支持导入哪些文档格式，版权电子书能导出原文件吗？",
+      "expectedSourceIds": ["REPLACE_WITH_OFFLINE_CONTENT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["列表", "版权限制"]
+    },
+    {
+      "caseId": "lab-015",
+      "query": "下载出现 E-207 是什么问题，正确处理顺序是什么？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_OFFLINE_CONTENT_ID",
+        "REPLACE_WITH_ERROR_CODES_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["错误码", "多来源"]
+    },
+    {
+      "caseId": "lab-016",
+      "query": "团队空间一共有哪四种角色？",
+      "expectedSourceIds": ["REPLACE_WITH_TEAM_WORKSPACE_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["枚举", "团队权限"]
+    },
+    {
+      "caseId": "lab-017",
+      "query": "团队管理员可以删除整个空间或者把所有权转给别人吗？",
+      "expectedSourceIds": ["REPLACE_WITH_TEAM_WORKSPACE_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["权限", "否定条件"]
+    },
+    {
+      "caseId": "lab-018",
+      "query": "转让团队所有权需要满足哪些身份条件？",
+      "expectedSourceIds": ["REPLACE_WITH_TEAM_WORKSPACE_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["条件组合", "所有权"]
+    },
+    {
+      "caseId": "lab-019",
+      "query": "删除团队空间后第几天开始无法恢复？",
+      "expectedSourceIds": ["REPLACE_WITH_TEAM_WORKSPACE_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["时间边界", "删除"]
+    },
+    {
+      "caseId": "lab-020",
+      "query": "Basic 和 Pro 的团队审计日志分别保留多久？",
+      "expectedSourceIds": ["REPLACE_WITH_TEAM_WORKSPACE_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["相似数字", "审计"]
+    },
+    {
+      "caseId": "lab-021",
+      "query": "个人数据导出包是什么格式，书签和阅读清单分别用什么文件？",
+      "expectedSourceIds": ["REPLACE_WITH_PRIVACY_EXPORT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["格式", "数据导出"]
+    },
+    {
+      "caseId": "lab-022",
+      "query": "数据导出要等多久，下载链接从什么时候开始计算有效期？",
+      "expectedSourceIds": ["REPLACE_WITH_PRIVACY_EXPORT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["时间区分", "数据导出"]
+    },
+    {
+      "caseId": "lab-023",
+      "query": "隐私导出里为什么找不到完整银行卡号和购买的音乐原文件？",
+      "expectedSourceIds": ["REPLACE_WITH_PRIVACY_EXPORT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["排除项", "隐私"]
+    },
+    {
+      "caseId": "lab-024",
+      "query": "申请注销账号后反悔，最晚什么时候还能撤销？",
+      "expectedSourceIds": ["REPLACE_WITH_PRIVACY_EXPORT_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["时间边界", "账号删除"]
+    },
+    {
+      "caseId": "lab-025",
+      "query": "账号还是团队唯一所有者时，可以直接注销吗？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_PRIVACY_EXPORT_ID",
+        "REPLACE_WITH_TEAM_WORKSPACE_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["跨文档", "前置条件"]
+    },
+    {
+      "caseId": "lab-026",
+      "query": "支付页面提示 P-409，应该立刻重新付款吗？",
+      "expectedSourceIds": ["REPLACE_WITH_ERROR_CODES_ID"],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["错误码", "精确匹配"]
+    },
+    {
+      "caseId": "lab-027",
+      "query": "哪个错误码表示密码尝试过多，用户应该怎样恢复登录？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_ERROR_CODES_ID",
+        "REPLACE_WITH_ACCOUNT_SECURITY_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["错误码", "多来源"]
+    },
+    {
+      "caseId": "lab-028",
+      "query": "W-301 是空间容量满了还是权限不够，至少需要什么角色？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_ERROR_CODES_ID",
+        "REPLACE_WITH_TEAM_WORKSPACE_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["消歧", "多来源"]
+    },
+    {
+      "caseId": "lab-029",
+      "query": "导出遇到 X-503 是否代表数据丢了，多久后再看？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_ERROR_CODES_ID",
+        "REPLACE_WITH_PRIVACY_EXPORT_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["消歧", "多来源"]
+    },
+    {
+      "caseId": "lab-030",
+      "query": "手机丢失后，怎样同时保护账号，并让该设备的离线内容尽快失效？",
+      "expectedSourceIds": [
+        "REPLACE_WITH_ACCOUNT_SECURITY_ID",
+        "REPLACE_WITH_OFFLINE_CONTENT_ID"
+      ],
+      "expectedChunkIds": [],
+      "relevanceGrades": {},
+      "tags": ["跨文档", "完整流程"]
+    }
+  ]
+}

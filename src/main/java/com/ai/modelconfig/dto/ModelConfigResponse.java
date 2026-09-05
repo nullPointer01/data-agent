@@ -1,0 +1,49 @@
+package com.ai.modelconfig.dto;
+
+import com.ai.mcp.ModelProviderCatalog;
+import com.ai.model.ModelConfig;
+import com.ai.util.CryptoUtil;
+
+import java.time.LocalDateTime;
+
+/**
+ * 模型配置响应。
+ *
+ * @author data-agent
+ */
+public record ModelConfigResponse(
+        String modelId,
+        String name,
+        String provider,
+        String apiKey,
+        String baseUrl,
+        String modelName,
+        Double temperature,
+        Integer maxTokens,
+        boolean enabled,
+        boolean isDefault,
+        String tenantId,
+        String createdBy,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt) {
+
+    public static ModelConfigResponse from(ModelConfig config) {
+        return new ModelConfigResponse(
+                config.getModelId(),
+                config.getName(),
+                ModelProviderCatalog.resolve(config.getProvider())
+                        .map(ModelProviderCatalog::key)
+                        .orElse(config.getProvider()),
+                CryptoUtil.maskApiKey(config.getApiKey()),
+                config.getBaseUrl(),
+                config.getModelName(),
+                config.getTemperature(),
+                config.getMaxTokens(),
+                config.isEnabled(),
+                config.isDefault(),
+                config.getTenantId(),
+                config.getCreatedBy(),
+                config.getCreatedAt(),
+                config.getUpdatedAt());
+    }
+}

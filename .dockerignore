@@ -1,0 +1,9 @@
+target/
+frontend/node_modules/
+frontend/dist/
+.m2/
+.env
+.env.*
+data/
+uploads/
+logs/

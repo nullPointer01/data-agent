@@ -1,0 +1,151 @@
+- generic [ref=f3e3]:
+  - complementary [ref=f3e4]:
+    - generic [ref=f3e15]:
+      - generic [ref=f3e16]: Data Agent
+      - generic [ref=f3e17]: Enterprise AI Platform
+    - generic [ref=f3e18]:
+      - generic [ref=f3e19]: 使用
+      - button "工作台" [ref=f3e20] [cursor=pointer]
+      - button "智能对话" [ref=f3e27] [cursor=pointer]
+      - button "资料中心" [ref=f3e31] [cursor=pointer]
+      - button "记忆中心" [ref=f3e35] [cursor=pointer]
+      - button "知识库" [ref=f3e49] [cursor=pointer]
+      - button "文件" [ref=f3e53] [cursor=pointer]
+      - button "管理员申请" [ref=f3e58] [cursor=pointer]
+    - generic [ref=f3e63]:
+      - generic [ref=f3e64]: 管理
+      - button "用户" [ref=f3e65] [cursor=pointer]
+      - button "角色权限" [ref=f3e72] [cursor=pointer]
+      - button "模型" [ref=f3e77] [cursor=pointer]
+      - button "技能" [ref=f3e82] [cursor=pointer]
+      - button "Agent" [ref=f3e86] [cursor=pointer]
+      - button "数据源" [ref=f3e91] [cursor=pointer]
+      - button "统计" [ref=f3e97] [cursor=pointer]
+      - button "质量" [ref=f3e101] [cursor=pointer]
+      - button "追踪" [ref=f3e106] [cursor=pointer]
+      - button "反馈" [ref=f3e112] [cursor=pointer]
+      - button "审计" [ref=f3e116] [cursor=pointer]
+  - main [ref=f3e121]:
+    - generic [ref=f3e122]:
+      - generic [ref=f3e123]:
+        - generic [ref=f3e124]: 模型
+        - generic [ref=f3e125]: Data Agent 控制台
+      - generic [ref=f3e126]:
+        - generic [ref=f3e127]:
+          - strong [ref=f3e128]: 管理员
+          - generic [ref=f3e129]: default
+          - generic [ref=f3e130]: ADMIN
+        - button "退出" [ref=f3e131] [cursor=pointer]
+    - generic [ref=f3e135]:
+      - generic [ref=f3e274]:
+        - generic [ref=f3e275]:
+          - heading "模型管理" [level=1] [ref=f3e276]
+          - paragraph [ref=f3e277]: 统一管理 GPT、国产模型和 OpenAI-compatible 端点
+        - generic [ref=f3e278]:
+          - textbox [ref=f3e283]:
+            - /placeholder: 搜索名称、厂商或模型
+          - button "刷新" [ref=f3e284] [cursor=pointer]
+          - button "新增模型" [active] [ref=f3e290] [cursor=pointer]
+      - generic "模型配置概览" [ref=f3e292]:
+        - generic [ref=f3e293]:
+          - generic [ref=f3e294]: 配置总数
+          - strong [ref=f3e295]: "0"
+        - generic [ref=f3e296]:
+          - generic [ref=f3e297]: 已启用
+          - strong [ref=f3e298]: "0"
+        - generic [ref=f3e299]:
+          - generic [ref=f3e300]: 厂商目录
+          - strong [ref=f3e301]: "7"
+        - generic [ref=f3e302]:
+          - generic [ref=f3e303]: 筛选结果
+          - strong [ref=f3e304]: "0"
+      - generic [ref=f3e305]:
+        - strong [ref=f3e308]: 暂无模型配置
+        - generic [ref=f3e309]: 新增模型后，这里会显示运行时配置。
+        - button "新增模型" [ref=f3e311] [cursor=pointer]
+      - generic [ref=f3e314]:
+        - generic [ref=f3e315]:
+          - heading "新增模型接入" [level=2] [ref=f3e316]
+          - button [ref=f3e317] [cursor=pointer]
+        - generic [ref=f3e321]:
+          - complementary "模型供应商" [ref=f3e322]:
+            - generic [ref=f3e324]:
+              - heading "选择供应商" [level=3] [ref=f3e325]
+              - paragraph [ref=f3e326]: 7 个兼容接入
+            - textbox [ref=f3e331]:
+              - /placeholder: 搜索 OpenAI、DeepSeek...
+            - generic [ref=f3e332]:
+              - generic [ref=f3e333]:
+                - heading "常用接入" [level=4] [ref=f3e334]
+                - generic [ref=f3e335]:
+                  - button [ref=f3e336] [cursor=pointer]:
+                    - generic [ref=f3e341]:
+                      - strong [ref=f3e342]: OpenAI / GPT
+                      - generic [ref=f3e343]: OpenAI 官方 API
+                  - button "自定义 GPT / OpenAI-compatible GPT / 兼容网关" [pressed] [ref=f3e347] [cursor=pointer]:
+                    - generic [ref=f3e353]:
+                      - strong [ref=f3e354]: 自定义 GPT / OpenAI-compatible
+                      - generic [ref=f3e355]: GPT / 兼容网关
+              - generic [ref=f3e358]:
+                - heading "国内厂商" [level=4] [ref=f3e359]
+                - generic [ref=f3e360]:
+                  - button [ref=f3e361] [cursor=pointer]:
+                    - generic [ref=f3e366]:
+                      - strong [ref=f3e367]: DeepSeek 深度求索
+                      - generic [ref=f3e368]: 需要 API Key
+                  - button [ref=f3e372] [cursor=pointer]:
+                    - generic [ref=f3e377]:
+                      - strong [ref=f3e378]: 通义千问
+                      - generic [ref=f3e379]: 需要 API Key
+                  - button [ref=f3e383] [cursor=pointer]:
+                    - generic [ref=f3e388]:
+                      - strong [ref=f3e389]: Kimi 月之暗面
+                      - generic [ref=f3e390]: 需要 API Key
+                  - button [ref=f3e394] [cursor=pointer]:
+                    - generic [ref=f3e399]:
+                      - strong [ref=f3e400]: 智谱 GLM
+                      - generic [ref=f3e401]: 需要 API Key
+              - generic [ref=f3e405]:
+                - heading "聚合平台" [level=4] [ref=f3e406]
+                - button [ref=f3e408] [cursor=pointer]:
+                  - generic [ref=f3e415]:
+                    - strong [ref=f3e416]: 硅基流动
+                    - generic [ref=f3e417]: 需要 API Key
+          - generic [ref=f3e421]:
+            - generic [ref=f3e422]:
+              - generic [ref=f3e428]:
+                - heading "自定义 GPT / OpenAI-compatible" [level=3] [ref=f3e429]
+                - paragraph [ref=f3e430]: OpenAI 官方、GPT 代理或兼容网关
+              - generic [ref=f3e431]: OpenAI-compatible
+            - generic [ref=f3e432]:
+              - generic [ref=f3e433]: 连接信息
+              - generic [ref=f3e438]:
+                - generic [ref=f3e439]:
+                  - generic [ref=f3e440]: 配置名称
+                  - textbox "配置名称" [ref=f3e441]:
+                    - /placeholder: 例如：生产 GPT
+                - generic [ref=f3e442]:
+                  - generic [ref=f3e443]: API Key（可选）
+                  - generic [ref=f3e444]:
+                    - textbox "API Key（可选）" [ref=f3e448]:
+                      - /placeholder: 无鉴权服务可留空
+                    - button "显示 API Key" [ref=f3e449] [cursor=pointer]
+                - generic [ref=f3e453]:
+                  - generic [ref=f3e454]: Base URL
+                  - textbox "Base URL" [ref=f3e460]:
+                    - /placeholder: https://api.openai.com/v1
+                - generic [ref=f3e461]:
+                  - generic [ref=f3e462]: 模型 ID
+                  - generic [ref=f3e463]:
+                    - combobox "模型 ID 获取模型" [ref=f3e464]
+                    - button "获取模型" [disabled] [ref=f3e465]
+            - generic [ref=f3e472]:
+              - strong [ref=f3e478]: 连接尚未验证
+              - button "测试连接" [disabled] [ref=f3e479]
+            - button "高级设置 生成参数与运行状态" [ref=f3e484] [cursor=pointer]:
+              - generic [ref=f3e485]:
+                - strong [ref=f3e487]: 高级设置
+                - generic [ref=f3e488]: 生成参数与运行状态
+        - generic [ref=f3e491]:
+          - button "取消" [ref=f3e492] [cursor=pointer]
+          - button "保存配置" [disabled] [ref=f3e493] [cursor=pointer]

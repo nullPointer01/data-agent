@@ -17,15 +17,13 @@ Data Agent 是一个数据分析智能体系统，后端基于 Spring Boot 3.2�
 - 模型配置与 Kimi/OpenAI 兼容接入
 - RBAC、管理员申请、审计、质量反馈、执行追踪
 
-Maven 工程在 `data-agent/` 子目录。仓库根目录包含 `docker-compose.yml`，用于启动 Milvus、Redis、Elasticsearch 等本地依赖。
+Maven 工程、前端和 `docker-compose.yml` 都位于仓库根目录。
 
 ## 常用命令
 
-所有 Maven 命令在 `data-agent/` 子目录执行：
+所有 Maven 命令都在仓库根目录执行：
 
 ```bash
-cd data-agent
-
 # 后端启动，默认 local profile
 mvn spring-boot:run
 
@@ -54,7 +52,7 @@ docker-compose up -d
 
 ## 当前运行依赖
 
-local profile 默认配置在 `data-agent/src/main/resources/application-local.yml`。
+local profile 默认配置在 `src/main/resources/application-local.yml`。
 
 - MySQL 是业务主库，默认连接 `jdbc:mysql://localhost:3306/data_agent`，用户名 `root`。
 - Milvus 是强依赖，默认 `localhost:19530`，collection 为 `data_agent_vectors`。应用启动会校验 Milvus 可达；向量写入/检索使用懒加载的 embedding store，避免启动阶段被 collection load 卡住。
@@ -76,7 +74,7 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 
 ## 前端
 
-前端源码在 `data-agent/frontend/src`，Vite 构建产物输出到 `data-agent/src/main/resources/static`，由 Spring Boot 托管。
+前端源码在 `frontend/src`，Vite 构建产物输出到 `src/main/resources/static`，由 Spring Boot 托管。
 
 当前导航功能包括：
 
@@ -102,7 +100,7 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 修改前端后需要跑：
 
 ```bash
-cd data-agent/frontend
+cd frontend
 npm run build
 ```
 
@@ -137,16 +135,17 @@ RBAC 已经落表：
 
 ## 模型接入
 
-模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 会保证同一租户只有一个默认模型。模型变更会发布 `ModelConfigChangeEvent`，`McpModelService` 监听后清理缓存。
+模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 保证同一租户只有一个默认模型，变更后通过事件清理同步、JSON 和 Streaming 客户端缓存。
 
-OpenAI 兼容 HTTP 调用在 `com.ai.mcp.ModelHttpClient`。当前已支持 Kimi 两类常见配置：
+模型接入统一经过 `ModelProviderCatalog -> ModelEndpointResolver -> ModelClientFactory`：
 
-- Moonshot 开放平台：`https://api.moonshot.cn/v1`，模型名如 `kimi-k2.6`
-- Kimi Coding：`https://api.kimi.com/coding/v1`，模型名 `kimi-for-coding`
+- Catalog 是前后端唯一厂商目录，包含 OpenAI/GPT、13 个国内/聚合入口和 Custom，共 15 个入口。
+- Resolver 负责厂商别名、默认值、URL 规范化、鉴权规则和 `OutboundUrlGuard`；运行时、`/models` 发现和连接探测不得自行拼端点。
+- Factory 使用 LangChain4j 1.19 构建 OpenAI-compatible 同步、JSON 和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。
+- `ModelHttpClient` 只负责可选的 `GET /models`。发现失败不阻止手动填写模型 ID，也不作为保存门禁。
+- `POST /api/v1/models/probe` 会真实执行一次最多 32 输出 token 的 Chat 请求，临时客户端不缓存、不重试、不保存提示词或回复；每次探测可能产生少量厂商费用。
 
-Kimi Coding 场景下，`kimi-2.6`、`kimi-k2.6` 等别名会被归一为 `kimi-for-coding`。401/403 通常是 API Key 与 Base URL 不匹配，404 通常是模型名或接口路径错误。
-
-模型调用有重试和熔断：`ModelRetryExecutor` 不会重试 401/403/404，避免无意义重试；429 和 5xx 会重试。
+OpenAI-compatible 只表示当前项目复用 Chat 基线协议，不代表各厂商的 Tool Calling、JSON Schema、多模态或推理参数完全一致，也不覆盖 Claude Native、Bedrock、Vertex AI、盘古等专有协议。Custom 可连接 OpenAI 官方、GPT 代理网关或其他兼容端点，并允许无鉴权的自托管服务不填 API Key；公网目录厂商按目录要求必须提供。私网端点仍受 SSRF 防护控制，仅在受控环境显式设置 `app.security.outbound.allow-private-network=true`。
 
 ## Agent 执行链路
 
@@ -155,7 +154,7 @@ Kimi Coding 场景下，`kimi-2.6`、`kimi-k2.6` 等别名会被归一为 `kimi-
 - `POST /api/v1/analysis/analyze`
 - `POST /api/v1/analysis/analyze/stream`
 
-核心路由在 `AgentRuntimeService`：
+`AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver` 解析一次路线，再创建唯一 `runId` 和 `AgentRunContext`：
 
 1. 斜杠命令：`SkillManager.processWithCommand`
 2. 指定 `agentId`：`MultiAgentRuntimeService`
@@ -163,7 +162,13 @@ Kimi Coding 场景下，`kimi-2.6`、`kimi-k2.6` 等别名会被归一为 `kimi-
 4. 默认优先 `OrchestratorAgent`
 5. Orchestrator 不可用时回退 `ReActAgent`
 
-SSE 由 `AnalysisStreamService` 协调。它不是底层模型 token 直通，而是执行完成后把 thinking steps、result、done 等事件结构化发给前端。
+同步和流式共享路线与生命周期。Run 使用 timeout、iteration、model-call、tool-call、Token 五类服务端预算；深层模型/工具通过 `AgentRunScope` 准入。SSE 由 `AnalysisStreamService` 协调，通过类型化 `AgentEventSink` 保留旧事件协议，并在断开、超时或显式停止时协作式取消节点内 Run。`runId` 同时作为现有 Trace 的 `traceId`。
+
+每个 Run 创建时还会根据持久化用户、租户和启用 RBAC 权限固化工具授权快照，并创建有界 Tool Journal。模型提出的工具名和参数一律视为不可信；实际执行必须通过 Registry、Run 权限、当前 Agent 精确白名单和风险策略的交集。
+
+`app.agent.durable.enabled` 默认关闭。开启后，ReAct 审批工具可以将 Run 暂停为 `WAITING_APPROVAL`，把版本化消息和剩余预算使用 AES-GCM 加密写入 MySQL；批准后由数据库租约 worker 领取为 `RESUMING`，重读当前双方 RBAC、Tool Registry、allowlist 与风险策略，再通过原 Tool Pipeline 执行并继续循环。人工等待不消耗 active timeout，审批 TTL 独立计算；旧 SSE 不回放，客户端通过 Run 查询接口获取恢复结果。
+
+`updateHotelPrice` 是默认关闭的隔离演示工具，只写 `hotel_rate_sandbox`。它用 `approvalId + toolCallId` 唯一键防止本地重复写入，不代表真实酒店改价，也不证明跨系统 exactly-once。`APP_ENCRYPTION_KEY` 变化会让旧 Checkpoint 无法解密，生产密钥轮换必须使用后续的多版本密钥方案。
 
 ## ReAct 与工具
 
@@ -180,7 +185,9 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 - `AgentChartToolService`
 - `AgentUtilityToolService`
 
-新增工具时先看现有 service 的职责边界，通常需要同步更新工具定义、调用分发、测试和前端展示。
+`com.ai.agent.tool.governance` 是唯一工具执行控制面。新增 `@Tool` 必须同时提供 `@AgentToolPolicy`，声明风险、只读、幂等、重试、timeout、权限和结果长度；禁止绕过 `AgentToolExecutionPipeline` 直接调用模型工具执行器。Profile 空工具列表仍兼容“服务端全部启用工具”，但执行期 RBAC 和风险策略仍会收窄。
+
+工具的一次模型请求对应一个 `toolCallId`，内部每次真实 attempt 都消耗 Run 工具预算。只有只读、幂等、声明可重试且属于明确瞬时故障的工具允许有限重试。工具输出必须先统一脱敏和截断，再进入模型、SSE、日志和 Trace。详细语义见 `docs/核心逻辑详解/Agent工具治理.md`。
 
 ## Orchestrator 与专家
 
@@ -215,7 +222,7 @@ Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据�
 
 支持常见文本、Office、PDF、图片 OCR/解析扩展点。文件和知识库内容会进入 MySQL，同时由 Milvus 建向量索引。
 
-RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25，向量召回使用 Milvus，两路通过 RRF 融合，再执行规则重排、父上下文解析、压缩和引用生成。当前 `RagReranker` 是可解释的规则重排，不是 Cross-Encoder 模型。
+RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25，向量召回使用 Milvus，两路通过 RRF 融合，再由外部 HTTP Cross-Encoder 对候选精排，最后执行父上下文解析、压缩和引用生成。Cross-Encoder 默认模型为 `BAAI/bge-reranker-v2-m3`；超时、限流、上游异常或响应契约错误时按 `RERANK_FAIL_OPEN` 决定是否降级到规则 Provider。真实黄金集对比尚未运行前，不得宣称模型精排已经提升指标。
 
 ## 记忆系统
 
@@ -230,13 +237,18 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 
 向量代码在 `com.ai.vector`。
 
-- 默认 embedding provider 是 `local`，使用本地 AllMiniLmL6V2，维度 384。
-- 可切换 `EMBEDDING_PROVIDER=api`，走 OpenAI 兼容 embedding API。
-- `app.embedding.*` 形成 provider、modelId、indexVersion、dimension、normalize、metric 的统一 Profile；启动时真实探测模型维度，每次向量化后再次校验。
+- Embedding 只通过外部 OpenAI-compatible 服务生成，JVM 不加载本地 Embedding 模型，也没有本地回退。
+- `EMBEDDING_API_BASE_URL`、`EMBEDDING_MODEL_NAME` 和 `EMBEDDING_DIMENSION` 必须显式配置；内网无鉴权服务的 `EMBEDDING_API_KEY` 可以为空。
+- `EMBEDDING_API_TIMEOUT` 必须为正数；文档批大小限定 `1..128`，最大逻辑尝试次数限定 `1..5`。
+- `EMBEDDING_DIMENSION` 是 Profile 的期望返回维度；可选 `EMBEDDING_API_OUTPUT_DIMENSIONS` 仅在服务支持请求裁剪时发送，配置后必须等于期望维度。
+- 查询和文档分别通过 `EMBEDDING_QUERY_PREFIX`、`EMBEDDING_DOCUMENT_PREFIX` 格式化；启动 probe 不使用业务前缀。
+- `app.embedding.*` 形成固定 provider `api`、modelId、indexVersion、dimension、normalize、metric 的统一 Profile；启动时真实探测服务输出维度，每次向量化后再次校验。
+- 知识和文件使用配置大小的串行批量 Embedding/Milvus 写入；查询仍是单条调用。批量响应数量或任一向量不兼容时，该批次在写 Milvus 前失败。
+- Embedding 专用执行器仅重试 429、5xx 和明确瞬时网络异常，使用指数退避与 JVM 内 per-Profile 熔断；不会复用 Chat Model 重试器或切换模型。
 - `milvus.*` 只保留连接、Collection 基础名称和索引类型；物理 Collection 名按 Embedding 身份自动版本化，维度和 Metric 只读取当前 Profile。
 - `MilvusVectorStoreGateway` 启动阶段只初始化客户端和索引，`MilvusEmbeddingStore` 首次 add/search 时懒加载。
 
-修改模型、维度、Metric 或向量处理策略时必须提升 `EMBEDDING_INDEX_VERSION` 并全量重建，新旧 Collection 不会混写，旧 Collection 也不会自动删除。
+Embedding 服务负责生成向量，Milvus 负责向量存储和语义召回，Elasticsearch 负责 BM25 全文召回。修改模型、期望/请求维度、query/document 前缀、Metric、归一化或其他向量处理策略时必须提升 `EMBEDDING_INDEX_VERSION` 并全量重建，新旧 Collection 不会混写；新 API Collection 验证前不得删除旧 Collection。模板中的 timeout、batch、重试和熔断值均为未实测起点，不能宣称是最优配置。
 
 ## 数据库与租户
 
@@ -252,7 +264,7 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 
 ## 配置和密钥
 
-`.env.example` 是环境变量模板。生产或共享环境必须配置：
+环境变量入口定义在 `src/main/resources/application.yml`。生产或共享环境必须配置：
 
 - `DB_URL`
 - `DB_USERNAME`
@@ -270,7 +282,6 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 按当前项目决策，自动化开发 Agent 不主动运行单测、编译、打包、`verify` 或 Docker 构建；只有用户后续明确要求时才执行。供人工需要时使用的命令：
 
 ```bash
-cd data-agent
 mvn -Dfrontend.skip=true validate
 cd frontend && npm run build
 ```

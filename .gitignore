@@ -28,6 +28,8 @@ target/
 node_modules/
 dist/
 .vite/
+.m2/
+.mvn/wrapper/maven-wrapper.jar
 
 # Runtime and local data
 data/
@@ -47,6 +49,11 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
 .cursor/
 .continue/
 .claude/
@@ -61,7 +68,6 @@ logs/
 .agent/
 .codebuddy/
 .codegraph/
-data-agent/.codegraph/
 
 # Generated local artifacts
 pet-builds/
