@@ -1,5 +1,7 @@
 package com.ai.config;
 
+import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
+import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunScope;
 import org.slf4j.MDC;
@@ -21,22 +23,28 @@ public class ContextPropagatingTaskDecorator implements TaskDecorator {
         Map<String, String> capturedMdcContext = MDC.getCopyOfContextMap();
         SecurityContext capturedSecurityContext = SecurityContextHolder.getContext();
         AgentRunContext capturedRunContext = AgentRunScope.current().orElse(null);
+        AgentCapabilityBindingSnapshot capturedCapabilitySnapshot = AgentCapabilityScope.current().orElse(null);
         return () -> runWithCapturedContext(runnable, capturedMdcContext, capturedSecurityContext,
-                capturedRunContext);
+                capturedRunContext, capturedCapabilitySnapshot);
     }
 
     private void runWithCapturedContext(Runnable runnable, Map<String, String> capturedMdcContext,
-            SecurityContext capturedSecurityContext, AgentRunContext capturedRunContext) {
+            SecurityContext capturedSecurityContext,
+            AgentRunContext capturedRunContext,
+            AgentCapabilityBindingSnapshot capturedCapabilitySnapshot) {
         Map<String, String> previousMdcContext = MDC.getCopyOfContextMap();
         SecurityContext previousSecurityContext = SecurityContextHolder.getContext();
         try {
             restoreMdcContext(capturedMdcContext);
             SecurityContextHolder.setContext(capturedSecurityContext);
+            Runnable capabilityScoped = capturedCapabilitySnapshot == null
+                    ? runnable
+                    : () -> AgentCapabilityScope.run(capturedCapabilitySnapshot, runnable);
             if (capturedRunContext == null) {
-                runnable.run();
-            } else {
-                AgentRunScope.run(capturedRunContext, runnable);
+                capabilityScoped.run();
+                return;
             }
+            AgentRunScope.run(capturedRunContext, capabilityScoped);
         } finally {
             restoreMdcContext(previousMdcContext);
             SecurityContextHolder.setContext(previousSecurityContext);

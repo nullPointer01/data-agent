@@ -27,22 +27,25 @@ Data Agent 是一个面向企业数据分析场景的智能体平台。用户可
 
 1. 接入层：React 控制台 + Spring MVC API，支持登录、模型配置、知识库、文件、Agent 配置、数据源、审计和追踪。
 2. 安全层：JWT 无状态认证、RBAC 角色权限、管理员初始化、租户隔离、管理员接口保护。
-3. Agent Runtime 层：根据用户请求决定走命令、指定 Agent、指定 Skill、Orchestrator 或 ReAct 兜底。
+3. Agent Runtime 层：Coordinator 固化请求计划、运行预算和权限快照，再选择 Chat、ReAct 或 Orchestrated 策略。
 4. 能力层：模型网关、RAG 管道、工具系统、文件解析、数据源查询、记忆系统、图表生成。
 5. 存储与观测层：MySQL 存业务数据，Milvus 存向量，结构化日志和执行轨迹记录 Agent 的关键步骤。
 
 一张口述链路：
 
-> 用户从前端发起分析请求，后端 `AnalysisController` 进入 `DataAnalysisAgentImpl`。这里先校验问题、加载会话和文件内容，然后交给 `AgentRuntimeService`。Runtime 会判断请求类型，如果没有指定 Skill 或 Agent，就优先进入 `OrchestratorAgent`。编排器会做复杂度分类、意图识别、专家路由和多任务计划；如果没有匹配到专家，就回退到内置 `ReActAgent`。ReAct 执行前会通过 `ReActRequestContextBuilder` 注入 RAG 上下文和记忆上下文，随后在 `ReActLoopRunner` 中进行最多 8 轮“模型思考 - 工具调用 - 观察结果 - 最终回答”的循环。
+> 用户从前端发起请求后，`DataAnalysisAgentImpl` 只负责校验以及会话、文件准备，随后交给 `AgentRuntimeService`。真正的治理入口是 `AgentRunCoordinator`：它只解析一次 Profile 和请求计划，创建 runId、预算、权限快照和 Trace，再选择 Chat、ReAct 或 Orchestrated 策略。三种策略最终都把配置化 Agent 交给 `ConfigurableAgentExecutor`；ReAct 在服务端预算内循环调用工具，Orchestrated 只允许委派 Profile 显式绑定的子 Agent。
+
+Agent 配置不提供旁路试运行；保存并设为默认配置后直接从正式对话验证，结果、证据、审批和 Trace 都来自同一条 Run 链路。
 
 ## 4. 请求主链路
 
 关键类：
 
 - `DataAnalysisAgentImpl`：分析入口，负责请求校验、会话解析、文件内容加载和截断。
-- `AgentRuntimeService`：运行时路由，决定走 command、指定 Agent、Skill、Orchestrator 或 ReAct。
-- `OrchestratorAgent`：多 Agent 编排和专家路由。
-- `ReActAgent`：内置 ReAct 智能体。
+- `AgentRuntimeService`：不包含业务判断的薄入口。
+- `AgentRunCoordinator`：唯一顶层运行入口，管理路由、生命周期、预算、事件和 Trace。
+- `AgentRunRouteResolver`：固化 AgentProfile 和 RequestExecutionPlan。
+- `ConfigurableAgentExecutor`：在 AgentRunScope 内执行 Chat、ReAct 或受控委派。
 - `ReActLoopRunner`：同步/流式 ReAct 循环执行器。
 
 主流程：
@@ -52,15 +55,17 @@ Data Agent 是一个面向企业数据分析场景的智能体平台。用户可
   -> AnalysisController
   -> DataAnalysisAgentImpl.analyze()
   -> AgentRuntimeService.execute()
-  -> OrchestratorAgent.executeStructured()
-  -> ReActAgent.execute() 或专家 Agent
+  -> AgentRunCoordinator.execute()
+  -> Chat / ReAct / OrchestratedExecutionStrategy
+  -> ConfiguredAgentExecutionService
+  -> ConfigurableAgentExecutor
   -> McpModelService / AgentToolInvoker / RAG / Memory
   -> AnalysisResponse
 ```
 
 这里可以强调一个设计点：
 
-> 我没有把所有逻辑堆在 Controller 里，而是拆成入口校验、Runtime 路由、编排器、ReAct 循环、工具调用、模型网关这些模块。这样后续新增 Agent 类型、工具或模型供应商时，不需要重写主流程。
+> 我没有把所有逻辑堆在 Controller 里，而是拆成入口校验、Runtime 路由、请求规划、ReAct 循环、工具治理和模型网关。Agent 也不预设为数据、知识或报告类型，而是组合模型、Prompt、Capabilities 和运行模式；后续新增工具、Skill、子 Agent 或模型供应商时，不需要重写主流程。
 
 ## 5. Agent 实现细节
 
@@ -127,37 +132,25 @@ app:
 
 讲法：
 
-> 我把 Agent 分成“简单问题直答”和“复杂问题推理执行”两条路径。简单问题直接走 Fast Path，降低成本和延迟；复杂问题再进入 ReAct 或 Orchestrator，保证复杂任务的工具调用能力。
+> 请求规划器先决定本次 Run 需要哪些资源。简单问题走 Chat Fast Path，降低成本和延迟；需要工具时进入 ReAct，只有存在有效子 Agent 绑定的多步骤任务才进入 Orchestrated。模式选择不能扩大 Profile 的能力权限。
 
 ## 6. 多 Agent 编排怎么讲
 
-`OrchestratorAgent` 是这个项目比普通 ReAct 更进一步的地方。它负责：
+当前顶层编排由请求规划器选择 `ORCHESTRATED`，再让配置化 Agent 通过 `delegateToAgent`
+委派显式绑定的子 Agent：
 
-- 用 `TaskComplexityClassifier` 判断任务复杂度；
-- 用 `IntentAnalyzer` 判断用户意图和推荐 Agent 类型；
-- 从 `AgentProfileService` 获取已启用的 Agent 配置；
-- 先按名称/描述做文本匹配，再按意图类型匹配；
-- 对复杂任务生成 `OrchestrationPlan`；
-- 按阶段执行多个 `OrchestrationTask`；
-- 通过 `CollaborationManager` 注入共享上下文；
-- 最后用 `ResultIntegrator` 汇总结果。
+- 规划结果本身不能扩大权限，只能从 Profile 已绑定能力中收窄候选；
+- `delegateToAgent` 仍经过 Tool Pipeline、RBAC、风险策略、预算和超时；
+- 子 Agent 使用自己的模型、Prompt 和能力快照，但共享根 Run 的预算与取消信号；
+- 委派深度和重复 Agent 路径受限，避免递归死循环。
 
 可以这样讲：
 
-> Orchestrator 不是替代 ReAct，而是在 ReAct 外面加了一层任务路由和协作调度。比如一个问题同时涉及数据查询、知识检索和报告总结，它可以拆成多个专家任务，先执行数据专家，再执行知识专家，最后整合答案。如果没有匹配到专家配置，就兜底到内置 ReAct，保证系统可用性。
-
-项目中有这些专家类型：
-
-- `DataAgentSpecialist`
-- `KnowledgeExpertSpecialist`
-- `ChartExpertSpecialist`
-- `ReportExpertSpecialist`
-- `SkillAgentSpecialist`
-- `ChatAgentSpecialist`
+> Orchestrated 不是再启动一套绕过 Harness 的编排器，而是在同一个 ReAct 工具循环中加入受治理的子 Agent 能力。父子 Agent 共用根 Run 的 timeout、Token、模型调用和工具调用预算，权限则按父绑定、当前 RBAC 与子 Agent 自身绑定逐层收窄。
 
 面试亮点：
 
-> 我这里没有把专家 Agent 写死在代码里，而是有 `AgentProfile` 配置和 `AgentSpecialistRegistry` 注册机制。配置层面可以维护 Agent 名称、类型、提示词、模型、技能和数据源，运行时再动态路由。
+> 我没有把“数据专家、图表专家”写死成一组 Java Bean，而是把子 Agent 也建模为 `AgentProfile`。用户给父 Agent 显式绑定哪些子 Agent，模型本次就只能看到哪些委派目标；执行时再叠加 RBAC、深度限制、共享预算和 Trace。
 
 ## 7. RAG 实现细节
 
@@ -400,7 +393,7 @@ Agent 工具包括：
 
 答：
 
-普通套壳是把用户问题直接发给模型。我这个项目有完整 Agent Runtime：进入模型前会做会话、文件、RAG、记忆上下文构建；执行时可以调用工具查询文件、知识库、数据库、计算器和图表；复杂任务还可以由 Orchestrator 拆成多个专家任务；执行过程有轨迹、反馈和审计。因此它更像一个可治理的数据分析 Agent 平台。
+普通套壳是把用户问题直接发给模型。我这个项目有完整 Agent Runtime：请求规划器按需开启 RAG、记忆和工具，Run 统一限制超时、迭代、模型调用、工具调用和 Token；复杂任务只能委派给 Profile 显式绑定的子 Agent，影响性动作先审批；执行过程会留下结果依据、Tool Journal 和 Trace。因此它是以个人 Agent 为参考应用的可治理 Agent Harness。
 
 ### Q2：ReAct 是怎么实现的？
 
@@ -432,11 +425,11 @@ RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然
 
 当前项目定位是强依赖向量检索的数据分析平台，所以启动时会检查 Milvus 可用性。运行时向量写入和查询有异常捕获、collection 刷新和重试逻辑。对 RAG 查询来说，如果检索失败，`ReActRequestContextBuilder` 会回退到无上下文模式，并记录告警，保证主流程不会因为一次检索失败直接崩掉。
 
-### Q7：为什么要做 Orchestrator？
+### Q7：为什么要做 Orchestrated 模式？
 
 答：
 
-单个 ReAct 适合通用任务，但复杂数据分析经常包含多个子目标，例如查数据、找知识、生成图表、写报告。Orchestrator 可以先做意图和复杂度分析，再匹配 AgentProfile 或拆成多个专家任务，通过共享上下文协作，最后整合结果。它让系统从“一个 Agent 做所有事”升级成“多个专家协作”。
+单个 ReAct 适合多数任务，但复杂任务可能需要不同模型、Prompt 和能力边界。Orchestrated 模式没有另起一套编排器，而是把 `delegateToAgent` 作为受治理能力：父 Agent 只能委派显式绑定的子 Agent，子 Agent 使用自己的 Profile，并共享根 Run 的预算、取消和 Trace。这样能组合能力，同时限制递归、越权和成本失控。
 
 ### Q8：项目有哪些可以继续优化的地方？
 
@@ -455,7 +448,7 @@ RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然
 
 > 我做的是一个企业数据分析 Agent 平台，后端用 Spring Boot，前端用 React，MySQL 存业务数据，Milvus 存向量。用户可以上传文件、维护知识库、配置模型和数据源，然后通过 Agent 做数据分析。
 >
-> 核心链路是：请求进来后由 `DataAnalysisAgentImpl` 做校验和文件加载，再交给 `AgentRuntimeService` 路由。如果是复杂任务，先进入 `OrchestratorAgent` 做意图识别、复杂度判断和专家路由；如果没有匹配到专家，就回退到内置 `ReActAgent`。ReAct 会在最多 8 轮内循环执行“模型思考、工具调用、观察结果、最终回答”。
+> 核心链路是：请求由 `DataAnalysisAgentImpl` 做校验和上下文准备，再交给 `AgentRunCoordinator`。Coordinator 固化一次请求计划并创建 runId、预算与权限快照，然后选择 Chat、ReAct 或 Orchestrated 策略。配置化执行器不能自行推断模式，也不能脱离 AgentRunScope；复杂任务通过受治理的 `delegateToAgent` 使用显式绑定的子 Agent。
 >
 > 为了让回答基于真实资料，我做了 RAG 管道：问题先改写，再走 Milvus 向量检索和全文检索，RRF 融合后重排，补父级上下文，压缩后注入 prompt，并生成引用。为了让 Agent 能操作真实数据，我做了工具系统，包括知识搜索、文件分析、SQL 查询、图表生成、计算器等。
 >
@@ -463,4 +456,4 @@ RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然
 
 ## 17. 一分钟极简版
 
-> 这个项目是一个企业数据分析 Agent 平台。它不是简单调模型，而是有完整的 Agent Runtime：请求进来后会加载会话、文件、RAG 和记忆上下文，再由 Orchestrator 判断是否需要多专家协作，最后通过 ReAct 循环调用知识库、文件、SQL、计算和图表等工具完成分析。模型接入是 OpenAI-compatible 的配置化设计，支持 Kimi、Qwen、DeepSeek 等供应商。安全上有 JWT、RBAC、首个管理员初始化、租户隔离和 SQL 只读限制；可观测性上有执行轨迹、结构化日志、RAG 健康和反馈质量看板。
+> 这个项目是一套可配置的个人 Agent Harness。它不是简单调模型，而是把请求规划、Chat/ReAct/Orchestrated 执行、RAG、记忆和工具都放进统一 Agent Run；每次运行都有预算、取消、权限快照、审批和 Trace。多 Agent 协作只允许使用 Profile 显式绑定的子 Agent，并共享根 Run 的资源上限。模型接入兼容多家 OpenAI-compatible 服务，安全上有 JWT、RBAC、租户隔离和工具风险策略。

@@ -25,6 +25,15 @@ public final class AgentRunScope {
     }
 
     /**
+     * 获取当前运行上下文；不在统一 Harness 内时拒绝继续执行。
+     *
+     * @return 当前运行上下文
+     */
+    public static AgentRunContext requireCurrent() {
+        return current().orElseThrow(() -> new IllegalStateException("当前线程没有 Agent Run 作用域"));
+    }
+
+    /**
      * 在指定运行上下文中执行并返回结果，退出时恢复上层上下文。
      *
      * @param context 运行上下文

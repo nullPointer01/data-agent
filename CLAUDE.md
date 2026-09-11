@@ -8,14 +8,14 @@ Data Agent 是一个数据分析智能体系统，后端基于 Spring Boot 3.2�
 
 - 智能对话与 SSE 输出
 - ReAct 工具调用
-- Orchestrator 多专家编排
+- Orchestrated 受控子 Agent 委派
 - 自定义 Agent 配置
 - 动态 Skill
 - 文件解析与知识库
 - RAG 检索
 - 长短期记忆
 - 模型配置与 Kimi/OpenAI 兼容接入
-- RBAC、管理员申请、审计、质量反馈、执行追踪
+- RBAC、管理员控制台、审计、质量反馈、执行追踪
 
 Maven 工程、前端和 `docker-compose.yml` 都位于仓库根目录。
 
@@ -52,13 +52,13 @@ docker-compose up -d
 
 ## 当前运行依赖
 
-local profile 默认配置在 `src/main/resources/application-local.yml`。
+local profile 默认配置在 `src/main/resources/application-local.yml`。`application.yml`、`application-local.yml` 和 `application-prod.yml` 均使用显式字面值，不依赖 IDEA Environment variables 或部署变量。
 
 - MySQL 是业务主库，默认连接 `jdbc:mysql://localhost:3306/data_agent`，用户名 `root`。
 - Milvus 是强依赖，默认 `localhost:19530`，collection 为 `data_agent_vectors`。应用启动会校验 Milvus 可达；向量写入/检索使用懒加载的 embedding store，避免启动阶段被 collection load 卡住。
 - Redis 依赖存在，但 local profile 关闭 Redis repository 扫描；当前主链路不要求 Redis 必须先启动。
 - Elasticsearch 是 RAG 唯一的 BM25/全文检索实现，默认地址 `localhost:9200`。不可用时健康检查明确失败，不回退到 SQL LIKE。
-- 模型 API 需要在后台模型配置或环境变量中配置。local profile 里的默认 key 是占位值，只能用于启动，不能保证真实模型调用成功。
+- 模型 API 需要在后台模型配置中配置。Profile 里的默认 key 是占位值，只能用于启动，不能保证真实模型调用成功。
 
 本地 MySQL 初始化：
 
@@ -69,28 +69,30 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 ## Profile 约定
 
 - `local`：默认 profile，本地 MySQL + Milvus。适合 IDE 直接启动。
-- `dev`：共享开发环境，数据库、Redis、Milvus、JWT、模型等通过环境变量注入。
-- `prod`：生产环境，`JWT_SECRET`、`APP_ENCRYPTION_KEY`、数据库和模型凭据必须显式配置。
+- `prod`：线上 profile，当前与 local 使用相同的固定连接、密钥和功能开关。
 
 ## 前端
 
 前端源码在 `frontend/src`，Vite 构建产物输出到 `src/main/resources/static`，由 Spring Boot 托管。
 
-当前导航功能包括：
+普通用户工作区只保留：
 
-- 工作台
-- 智能对话
-- 资料中心
-- 记忆中心
-- 知识库
-- 文件
-- 管理员申请
+- 我的 Agent
+- 知识
+- 上下文
+
+文件作为知识来源进入“知识”页面，不再单独占用一级导航。
+
+管理员通过独立的“管理控制台”入口访问：
+
 - 用户
 - 角色权限
 - 模型
 - 技能
-- Agent
-- 数据源
+- 用户 Agent（查看归属、角色、状态和运行追踪；不代用户修改个性化配置）
+- 数据源与连接
+- 动作审批
+- RAG 调试
 - 统计
 - 质量
 - 追踪
@@ -129,9 +131,22 @@ RBAC 已经落表：
 - `*:*` 权限
 - `BOOTSTRAP_ADMIN_USERS` 指定的已有用户自动补 ADMIN，local 默认是 `super`
 
-如果系统里没有任何管理员，可以调用 `/api/v1/auth/bootstrap-admin` 创建或提权第一个管理员。已有管理员后，用户应走管理员申请流程，由管理员审核。
+如果系统里没有任何管理员，可以调用 `/api/v1/auth/bootstrap-admin` 创建或提权第一个管理员。系统不允许用户自助申请管理员；已有管理员在管理控制台中主动分配角色。
 
 管理员相关接口被 `ADMIN` 角色保护。`/actuator/health` 和 `/actuator/info` 放行，其他 `/actuator/**` 需要 ADMIN。
+
+HTTP 认证只把 JWT subject 当作用户查询键。每个受保护请求都会重新读取 `sys_user` 的当前启用状态、租户和启用角色；
+令牌中的旧 username、tenantId 和 roles 不能继续提供授权。账号禁用后，访问令牌和刷新令牌都不能再建立有效会话。
+
+权限边界约定：
+
+- `/api/v1/resources/**`、租户级 Token 统计/明细/重置、RAG 设置/健康/评估/benchmark 属于管理控制面，要求 `ADMIN`。
+- `/api/v1/rag/retrieve`、个人 Token 汇总/剩余额度和 `/api/v1/my/**` 保持普通登录用户可用。
+- `/api/v1/my/models` 是个人 Agent 的模型选择目录，只返回模型标识、展示名、模型名、厂商和默认标记，不返回 API Key 或 Base URL。
+- 普通注册由 `app.security.registration.enabled` 控制，租户固定读取 `app.security.registration.tenant-id`；客户端传入的 tenantId 不生效。基础配置默认关闭，local 显式开启。
+- 个人知识同步的读取、保存、删除和手动触发必须同时匹配 `knowledgeId + tenantId + createdBy`。
+
+当前 `ADMIN` 仍是平台级治理角色，尚未拆分 `PLATFORM_ADMIN` 和 `TENANT_ADMIN`；不要把它解释成已经完成组织级管理员隔离。
 
 ## 模型接入
 
@@ -156,19 +171,25 @@ OpenAI-compatible 只表示当前项目复用 Chat 基线协议，不代表各�
 
 `AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver` 解析一次路线，再创建唯一 `runId` 和 `AgentRunContext`：
 
-1. 斜杠命令：`SkillManager.processWithCommand`
-2. 指定 `agentId`：`MultiAgentRuntimeService`
-3. 指定 `skillId`：`SkillExecutionService`
-4. 默认优先 `OrchestratorAgent`
-5. Orchestrator 不可用时回退 `ReActAgent`
+1. 斜杠命令：`ChatExecutionStrategy -> SkillManager.processWithCommand`
+2. 指定 `skillId`：`ChatExecutionStrategy -> SkillExecutionService`
+3. 指定或默认个人 Agent：`Chat/ReAct/OrchestratedExecutionStrategy -> ConfiguredAgentExecutionService -> ConfigurableAgentExecutor`
+
+`ConfiguredAgentExecutionService` 仅包内可见，只接受已经固化的 `AgentRunRoute`；`ConfigurableAgentExecutor`
+必须运行在 `AgentRunScope` 内并接收完整 `RequestExecutionPlan`，不再自行推断模式或创建 compatibility 路线。
+Agent 配置不提供独立试运行入口。保存并设为默认配置后，从正式对话链路验证，执行结果、证据和 Trace
+均来自同一个 Run；写工具继续接受风险策略与人工审批。
+
+`AgentProfile` 没有固定业务类型。模型、System Prompt、Capability 绑定和 execution mode 是权威配置；
+“知识 Agent”“数据 Agent”“报告 Agent”只描述用户如何组合和使用能力，不能在代码中引入互斥类型分支。
 
 同步和流式共享路线与生命周期。Run 使用 timeout、iteration、model-call、tool-call、Token 五类服务端预算；深层模型/工具通过 `AgentRunScope` 准入。SSE 由 `AnalysisStreamService` 协调，通过类型化 `AgentEventSink` 保留旧事件协议，并在断开、超时或显式停止时协作式取消节点内 Run。`runId` 同时作为现有 Trace 的 `traceId`。
 
 每个 Run 创建时还会根据持久化用户、租户和启用 RBAC 权限固化工具授权快照，并创建有界 Tool Journal。模型提出的工具名和参数一律视为不可信；实际执行必须通过 Registry、Run 权限、当前 Agent 精确白名单和风险策略的交集。
 
-`app.agent.durable.enabled` 默认关闭。开启后，ReAct 审批工具可以将 Run 暂停为 `WAITING_APPROVAL`，把版本化消息和剩余预算使用 AES-GCM 加密写入 MySQL；批准后由数据库租约 worker 领取为 `RESUMING`，重读当前双方 RBAC、Tool Registry、allowlist 与风险策略，再通过原 Tool Pipeline 执行并继续循环。人工等待不消耗 active timeout，审批 TTL 独立计算；旧 SSE 不回放，客户端通过 Run 查询接口获取恢复结果。
+`app.agent.durable` 在 local/prod 中均显式开启持久化审批和隔离沙箱工具。开启后，ReAct 审批工具可以将 Run 暂停为 `WAITING_APPROVAL`，把版本化消息和剩余预算使用 AES-GCM 加密写入 MySQL；批准后由数据库租约 worker 领取为 `RESUMING`，重读当前双方 RBAC、Tool Registry、allowlist 与风险策略，再通过原 Tool Pipeline 执行并继续循环。人工等待不消耗 active timeout，审批 TTL 独立计算；旧 SSE 不回放，客户端通过 Run 查询接口获取恢复结果。
 
-`updateHotelPrice` 是默认关闭的隔离演示工具，只写 `hotel_rate_sandbox`。它用 `approvalId + toolCallId` 唯一键防止本地重复写入，不代表真实酒店改价，也不证明跨系统 exactly-once。`APP_ENCRYPTION_KEY` 变化会让旧 Checkpoint 无法解密，生产密钥轮换必须使用后续的多版本密钥方案。
+`updateHotelPrice` 是 local/prod 默认启用的隔离演示工具，只写 `hotel_rate_sandbox`。它用 `approvalId + toolCallId` 唯一键防止重复写入，不代表真实酒店改价，也不证明跨系统 exactly-once。`app.encryption.key` 变化会让旧 Checkpoint 无法解密，密钥轮换必须使用后续的多版本密钥方案。
 
 ## ReAct 与工具
 
@@ -185,15 +206,15 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 - `AgentChartToolService`
 - `AgentUtilityToolService`
 
-`com.ai.agent.tool.governance` 是唯一工具执行控制面。新增 `@Tool` 必须同时提供 `@AgentToolPolicy`，声明风险、只读、幂等、重试、timeout、权限和结果长度；禁止绕过 `AgentToolExecutionPipeline` 直接调用模型工具执行器。Profile 空工具列表仍兼容“服务端全部启用工具”，但执行期 RBAC 和风险策略仍会收窄。
+`com.ai.agent.tool.governance` 是唯一工具执行控制面。新增 `@Tool` 必须同时提供 `@AgentToolPolicy`，声明风险、只读、幂等、重试、timeout、权限和结果长度；禁止绕过 `AgentToolExecutionPipeline` 直接调用模型工具执行器。Profile 只使用 `capabilityBindings` 精确授权，显式 `[]` 表示零能力；新增 Tool 不会自动进入已有 Agent。
 
 工具的一次模型请求对应一个 `toolCallId`，内部每次真实 attempt 都消耗 Run 工具预算。只有只读、幂等、声明可重试且属于明确瞬时故障的工具允许有限重试。工具输出必须先统一脱敏和截断，再进入模型、SSE、日志和 Trace。详细语义见 `docs/核心逻辑详解/Agent工具治理.md`。
 
-## Orchestrator 与专家
+## Orchestrated 子 Agent 委派
 
-编排器相关代码在 `com.ai.agent.orchestrator`，专家在 `com.ai.agent.specialist`。当前有数据、知识、图表、报告、聊天、技能、ReAct 等专家类型。
+个人 Agent 的 Orchestrated 模式通过统一 Capability 和 `delegateToAgent` 完成受控委派，不扫描系统专家，也不维护第二套顶层执行器。父 Agent 只能看到 Profile 显式绑定的子 Agent；子 Agent 使用自己的模型、Prompt 和能力快照，同时共享根 Run 的预算、取消、工具治理和 Trace。
 
-配置位于 `app.orchestrator.*` 和 `app.agent.reasoning.*`。默认关闭 LLM 意图识别和 LLM 规划，优先使用确定性分类和规划，避免启动后必须依赖可用模型。
+`com.ai.agent.orchestrator` 仅保留 ReAct 内部使用的执行计划和并行预检结构。请求级模式选择由 `PersonalAgentRequestPlanner` 负责，运行推理开关位于 `app.agent.reasoning.*`；预检工具上下文使用 `react:precheck` 标识，不属于顶层 Orchestrated 模式。
 
 执行轨迹会写入 `agent_execution_trace`，质量和反馈相关数据写入 `agent_feedback` 等表。
 
@@ -231,7 +252,9 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 - `memory_entry`
 - `user_profile`
 
-记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。模型压缩默认关闭：`MEMORY_MODEL_COMPRESSION_ENABLED=false`。
+记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。短期摘要不参与画像；长期 `PREFERENCE / ENTITY / CONCLUSION` 使用稳定 `semanticKey` 幂等写入。显式“记住”同步提取，普通对话通过独立线程池异步调用 JSON 模型提取，并校验证据原文、置信度和敏感信息。`user_profile` 只是 `PREFERENCE / ENTITY` 的可重建投影，用户修正或删除语义记忆后必须完整重建。详细链路见 `docs/核心逻辑详解/用户语义记忆.md`。
+
+模型压缩默认关闭，语义提取默认开启：`app.memory.model-compression-enabled=false`、`app.memory.semantic-extraction-enabled=true`。
 
 ## 向量和 Embedding
 
@@ -264,18 +287,9 @@ Embedding 服务负责生成向量，Milvus 负责向量存储和语义召回，
 
 ## 配置和密钥
 
-环境变量入口定义在 `src/main/resources/application.yml`。生产或共享环境必须配置：
+公共值定义在 `src/main/resources/application.yml`，环境差异只放在 `application-local.yml` 和 `application-prod.yml`。三个文件都使用可见的固定值，不使用环境变量占位符；模型 API 凭据优先通过后台模型配置维护。
 
-- `DB_URL`
-- `DB_USERNAME`
-- `DB_PASSWORD`
-- `JWT_SECRET`
-- `APP_ENCRYPTION_KEY`
-- `MILVUS_HOST`
-- `MILVUS_PORT`
-- 模型 API 相关变量或后台模型配置
-
-`APP_ENCRYPTION_KEY` 用于数据库敏感字段加密。改这个值会影响已加密字段解密，不能随意轮换。
+`app.encryption.key` 用于数据库敏感字段加密。改这个值会影响已加密字段解密，不能随意轮换。
 
 ## 测试和验证
 

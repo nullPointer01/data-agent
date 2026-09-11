@@ -182,7 +182,7 @@ public class SkillServiceImpl implements SkillService {
 
         SkillConfig config = existingOptional.get();
         skillConfigRepository.delete(config);
-        skillManager.unregisterSkill(config.getName());
+        skillManager.unregisterSkill(config.getSkillId(), config.getName());
         LOGGER.info("技能已删除: {}", skillId);
         return SkillMutationResponse.deleted();
     }
@@ -204,7 +204,7 @@ public class SkillServiceImpl implements SkillService {
         if (config.isEnabled()) {
             registerToSkillManager(config);
         } else {
-            skillManager.unregisterSkill(config.getName());
+            skillManager.unregisterSkill(config.getSkillId(), config.getName());
         }
 
         return SkillMutationResponse.toggled(skillId, config.isEnabled());
@@ -235,7 +235,7 @@ public class SkillServiceImpl implements SkillService {
                         CONFIG_KEY_KEYWORDS, nullToEmpty(config.getKeywords()),
                         CONFIG_KEY_STEPS, nullToEmpty(config.getSteps()),
                         CONFIG_KEY_AUTO_ATTACH, nullToEmpty(config.getAutoAttach())));
-        skillManager.registerSkill(dynamicSkill);
+        skillManager.registerSkill(config.getSkillId(), dynamicSkill);
     }
 
     @Transactional(readOnly = true)

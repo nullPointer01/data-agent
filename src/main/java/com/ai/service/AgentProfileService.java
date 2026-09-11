@@ -1,33 +1,20 @@
 package com.ai.service;
 
-import com.ai.agent.AgentType;
-import com.ai.agent.specialist.AgentSpecialistRegistry;
-import com.ai.agent.specialist.SpecialistFactory;
-import com.ai.agent.dto.AgentTestRequest;
+import com.ai.agent.capability.AgentCapabilityConfigurationCodec;
+import com.ai.agent.capability.AgentCapabilityService;
+import com.ai.agent.capability.AgentCapabilityType;
 import com.ai.agent.dto.AgentProfileListResponse;
 import com.ai.agent.dto.AgentProfileMutationResponse;
 import com.ai.agent.dto.AgentProfileRequest;
 import com.ai.agent.dto.AgentProfileResponse;
-import com.ai.agent.dto.AgentRegistryCapabilityResponse;
-import com.ai.agent.dto.AgentRegistryEntryResponse;
-import com.ai.agent.dto.AgentRegistryResponse;
-import com.ai.memory.MemoryManager;
-import com.ai.memory.dto.MemoryContext;
 import com.ai.model.AgentProfile;
-import com.ai.model.AnalysisRequest;
-import com.ai.model.AnalysisResponse;
 import com.ai.repository.AgentProfileRepository;
 import com.ai.security.SecurityContextHelper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -38,24 +25,24 @@ import java.util.stream.Collectors;
 @Service
 public class AgentProfileService {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AgentProfileService.class);
+    private static final String DEFAULT_AGENT_NAME = "我的 Agent";
+    private static final String DEFAULT_AGENT_DESCRIPTION = "会使用知识、记忆和工具完成任务，并在结果中给出依据。";
+    private static final String DEFAULT_AGENT_PROMPT = "你是用户的长期个人 Agent。先判断是否需要知识或工具，"
+            + "需要时调用获准的能力；回答要准确、简洁、可核验。涉及有副作用的动作时必须等待用户确认。";
 
     private final AgentProfileRepository agentProfileRepository;
     private final SecurityContextHelper securityContextHelper;
-    private final AgentSpecialistRegistry specialistRegistry;
-    private final SpecialistFactory specialistFactory;
-    private final MemoryManager memoryManager;
+    private final AgentCapabilityService capabilityService;
+    private final AgentCapabilityConfigurationCodec capabilityConfigurationCodec;
 
     public AgentProfileService(AgentProfileRepository agentProfileRepository,
             SecurityContextHelper securityContextHelper,
-            AgentSpecialistRegistry specialistRegistry,
-            SpecialistFactory specialistFactory,
-            MemoryManager memoryManager) {
+            AgentCapabilityService capabilityService,
+            AgentCapabilityConfigurationCodec capabilityConfigurationCodec) {
         this.agentProfileRepository = agentProfileRepository;
         this.securityContextHelper = securityContextHelper;
-        this.specialistRegistry = specialistRegistry;
-        this.specialistFactory = specialistFactory;
-        this.memoryManager = memoryManager;
+        this.capabilityService = capabilityService;
+        this.capabilityConfigurationCodec = capabilityConfigurationCodec;
     }
 
     @Transactional(readOnly = true)
@@ -89,7 +76,7 @@ public class AgentProfileService {
 
     private AgentProfileListResponse toListResponse(List<AgentProfile> agents) {
         List<AgentProfileResponse> responses = agents.stream()
-                .map(AgentProfileResponse::from)
+                .map(this::toResponse)
                 .collect(Collectors.toList());
         return new AgentProfileListResponse(true, responses);
     }
@@ -102,7 +89,7 @@ public class AgentProfileService {
      */
     @Transactional(readOnly = true)
     public AgentProfileResponse getAgent(String agentId) {
-        return AgentProfileResponse.from(requireCurrentTenantAgent(agentId));
+        return toResponse(requireCurrentTenantAgent(agentId));
     }
 
     /**
@@ -113,7 +100,56 @@ public class AgentProfileService {
      */
     @Transactional(readOnly = true)
     public AgentProfileResponse getMyAgent(String agentId) {
-        return AgentProfileResponse.from(requireCurrentUserAgent(agentId));
+        return toResponse(requireCurrentUserAgent(agentId));
+    }
+
+    /**
+     * 获取当前用户的默认个人 Agent；首次使用时自动创建。
+     *
+     * @return 默认个人 Agent
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentProfileResponse getOrCreateMyDefaultAgent() {
+        return toResponse(requireMyDefaultAgent());
+    }
+
+    /**
+     * 获取当前用户可执行的默认个人 Agent。
+     *
+     * @return 默认个人 Agent 实体
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentProfile requireMyDefaultAgent() {
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        String userId = securityContextHelper.getCurrentUserId();
+        AgentProfile profile = agentProfileRepository
+                .findFirstByTenantIdAndCreatedByAndDefaultAgentTrueOrderByUpdatedAtDesc(tenantId, userId)
+                .orElseGet(() -> createDefaultAgent(tenantId, userId));
+        if (!profile.isEnabled()) {
+            throw new IllegalStateException("默认个人 Agent 已停用，请联系管理员");
+        }
+        return profile;
+    }
+
+    /**
+     * 将指定配置设为当前用户的默认 Agent。
+     *
+     * @param agentId Agent 编号
+     * @return 更新后的默认 Agent
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentProfileResponse setMyDefaultAgent(String agentId) {
+        AgentProfile selected = requireCurrentUserAgent(agentId);
+        if (!selected.isEnabled()) {
+            throw new IllegalArgumentException("已停用的 Agent 不能设为默认 Agent");
+        }
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        String userId = securityContextHelper.getCurrentUserId();
+        List<AgentProfile> profiles = agentProfileRepository
+                .findByTenantIdAndCreatedByOrderByUpdatedAtDesc(tenantId, userId);
+        profiles.forEach(profile -> profile.setDefaultAgent(profile.getAgentId().equals(agentId)));
+        agentProfileRepository.saveAll(profiles);
+        return toResponse(selected);
     }
 
     /**
@@ -124,14 +160,14 @@ public class AgentProfileService {
      */
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse createAgent(AgentProfileRequest request) {
-        validate(request);
+        List<String> capabilityBindings = validate(request, null);
         String tenantId = securityContextHelper.getCurrentTenantId();
         String userId = securityContextHelper.getCurrentUserId();
 
         AgentProfile profile = new AgentProfile();
         profile.setTenantId(tenantId);
         profile.setCreatedBy(userId);
-        applyProfileRequest(profile, request);
+        applyProfileRequest(profile, request, capabilityBindings);
 
         agentProfileRepository.save(profile);
         return AgentProfileMutationResponse.saved(profile.getAgentId());
@@ -157,9 +193,12 @@ public class AgentProfileService {
      */
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse updateAgent(String agentId, AgentProfileRequest request) {
-        validate(request);
         AgentProfile profile = requireCurrentTenantAgent(agentId);
-        applyProfileRequest(profile, request);
+        List<String> capabilityBindings = validate(request, profile);
+        if (profile.isDefaultAgent() && Boolean.FALSE.equals(request.enabled())) {
+            throw new IllegalArgumentException("默认 Agent 不能停用");
+        }
+        applyProfileRequest(profile, request, capabilityBindings);
 
         agentProfileRepository.save(profile);
         return AgentProfileMutationResponse.saved(profile.getAgentId());
@@ -174,9 +213,12 @@ public class AgentProfileService {
      */
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse updateMyAgent(String agentId, AgentProfileRequest request) {
-        validate(request);
         AgentProfile profile = requireCurrentUserAgent(agentId);
-        applyProfileRequest(profile, request);
+        List<String> capabilityBindings = validate(request, profile);
+        applyProfileRequest(profile, request, capabilityBindings);
+        if (profile.isDefaultAgent() && !profile.isEnabled()) {
+            throw new IllegalArgumentException("默认 Agent 不能停用，请先切换默认 Agent");
+        }
         agentProfileRepository.save(profile);
         return AgentProfileMutationResponse.saved(profile.getAgentId());
     }
@@ -184,6 +226,9 @@ public class AgentProfileService {
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse toggle(String agentId) {
         AgentProfile profile = requireCurrentTenantAgent(agentId);
+        if (profile.isDefaultAgent() && profile.isEnabled()) {
+            throw new IllegalArgumentException("默认 Agent 不能停用");
+        }
         profile.setEnabled(!profile.isEnabled());
         agentProfileRepository.save(profile);
         return AgentProfileMutationResponse.toggled(profile.isEnabled());
@@ -198,6 +243,9 @@ public class AgentProfileService {
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse toggleMyAgent(String agentId) {
         AgentProfile profile = requireCurrentUserAgent(agentId);
+        if (profile.isDefaultAgent() && profile.isEnabled()) {
+            throw new IllegalArgumentException("默认 Agent 不能停用，请先切换默认 Agent");
+        }
         profile.setEnabled(!profile.isEnabled());
         agentProfileRepository.save(profile);
         return AgentProfileMutationResponse.toggled(profile.isEnabled());
@@ -206,6 +254,10 @@ public class AgentProfileService {
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse delete(String agentId) {
         AgentProfile profile = requireCurrentTenantAgent(agentId);
+        if (profile.isDefaultAgent()) {
+            throw new IllegalArgumentException("默认 Agent 不能删除");
+        }
+        removeDeletedAgentBindings(profile);
         agentProfileRepository.delete(profile);
         return AgentProfileMutationResponse.deleted();
     }
@@ -219,42 +271,42 @@ public class AgentProfileService {
     @Transactional(rollbackFor = Exception.class)
     public AgentProfileMutationResponse deleteMyAgent(String agentId) {
         AgentProfile profile = requireCurrentUserAgent(agentId);
+        if (profile.isDefaultAgent()) {
+            throw new IllegalArgumentException("默认 Agent 不能删除，请先切换默认 Agent");
+        }
+        removeDeletedAgentBindings(profile);
         agentProfileRepository.delete(profile);
         return AgentProfileMutationResponse.deleted();
     }
 
     /**
-     * 使用指定 Agent 执行一次试运行，便于前端保存前后验证配置效果。
+     * 删除 Agent 前清理同租户父 Agent 中的委派绑定，避免留下不可执行的悬空引用。
      *
-     * @param agentId Agent 编号
-     * @param request 试运行请求
-     * @return Agent 执行结果
+     * @param deletedProfile 即将删除的 Agent
      */
-    public AnalysisResponse testAgent(String agentId, AgentTestRequest request) {
-        AgentProfile profile = requireEnabledAgent(agentId);
-        AnalysisRequest analysisRequest = buildTestAnalysisRequest(request);
-        MemoryContext memoryContext = buildMemoryContext(analysisRequest);
-        AnalysisResponse response = specialistFactory.execute(profile, analysisRequest, request.fileContent(), null,
-                memoryContext);
-        response.setSkillUsed("agent:" + profile.getName());
-        return response;
+    private void removeDeletedAgentBindings(AgentProfile deletedProfile) {
+        String deletedIdentity = AgentCapabilityType.SUB_AGENT.identity(deletedProfile.getAgentId());
+        List<AgentProfile> referencingProfiles = agentProfileRepository
+                .findByTenantIdOrderByUpdatedAtDesc(deletedProfile.getTenantId()).stream()
+                .filter(profile -> !profile.getAgentId().equals(deletedProfile.getAgentId()))
+                .filter(profile -> removeCapabilityBinding(profile, deletedIdentity))
+                .toList();
+        if (!referencingProfiles.isEmpty()) {
+            agentProfileRepository.saveAll(referencingProfiles);
+        }
     }
 
-    /**
-     * 试运行当前登录用户创建的 Agent。
-     *
-     * @param agentId Agent 编号
-     * @param request 试运行请求
-     * @return Agent 执行结果
-     */
-    public AnalysisResponse testMyAgent(String agentId, AgentTestRequest request) {
-        AgentProfile profile = requireEnabledCurrentUserAgent(agentId);
-        AnalysisRequest analysisRequest = buildTestAnalysisRequest(request);
-        MemoryContext memoryContext = buildMemoryContext(analysisRequest);
-        AnalysisResponse response = specialistFactory.execute(profile, analysisRequest, request.fileContent(), null,
-                memoryContext);
-        response.setSkillUsed("agent:" + profile.getName());
-        return response;
+    private boolean removeCapabilityBinding(AgentProfile profile, String deletedIdentity) {
+        List<String> currentBindings = capabilityConfigurationCodec.decodeCapabilityBindings(
+                profile.getCapabilityBindings(), profile.getAgentId());
+        List<String> retainedBindings = currentBindings.stream()
+                .filter(identity -> !deletedIdentity.equals(identity))
+                .toList();
+        if (retainedBindings.size() == currentBindings.size()) {
+            return false;
+        }
+        profile.setCapabilityBindings(capabilityConfigurationCodec.encodeCapabilityBindings(retainedBindings));
+        return true;
     }
 
     @Transactional(readOnly = true)
@@ -266,51 +318,23 @@ public class AgentProfileService {
         return profile;
     }
 
-    /**
-     * 查询当前租户下可启用的 Agent 配置，供编排器路由使用。
-     *
-     * @return 按更新时间倒序排列的启用配置
-     */
-    @Transactional(readOnly = true)
-    public List<AgentProfile> listEnabledProfiles() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        return agentProfileRepository.findByTenantIdAndEnabledTrueOrderByUpdatedAtDesc(tenantId);
-    }
-
-    /**
-     * 查询当前租户可用于编排的 Agent 注册快照。
-     *
-     * @return Agent 注册中心快照
-     */
-    @Transactional(readOnly = true)
-    public AgentRegistryResponse getRegistry() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        List<AgentProfile> agents = agentProfileRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId);
-        List<AgentRegistryEntryResponse> entries = new ArrayList<>();
-        entries.addAll(systemEntries());
-        entries.addAll(agents.stream().map(this::tenantEntry).toList());
-        List<AgentRegistryCapabilityResponse> capabilities = capabilityResponses(agents);
-        int enabledTenantAgentCount = (int) agents.stream().filter(AgentProfile::isEnabled).count();
-        return new AgentRegistryResponse(true,
-                specialistRegistry.size(),
-                agents.size(),
-                enabledTenantAgentCount,
-                capabilities,
-                entries);
-    }
-
-    private void applyProfileRequest(AgentProfile profile, AgentProfileRequest request) {
-        AgentType type = AgentType.fromCode(request.type());
+    private void applyProfileRequest(AgentProfile profile,
+            AgentProfileRequest request,
+            List<String> capabilityBindings) {
         profile.setName(request.name().trim());
-        profile.setType(type);
         profile.setDescription(blankToNull(request.description()));
         profile.setSystemPrompt(blankToNull(request.systemPrompt()));
         profile.setModelId(blankToNull(request.modelId()));
-        profile.setSkillId(resolveSkillId(type, request.skillId()));
-        profile.setDatasourceId(resolveDatasourceId(type, request.datasourceId()));
-        profile.setExecutionMode(blankToNull(request.executionMode()) != null ? request.executionMode().trim() : "react");
-        profile.setToolList(request.tools());
+        profile.setExecutionMode(blankToNull(request.executionMode()) != null ? request.executionMode().trim() : "auto");
+        profile.setCapabilityBindings(capabilityConfigurationCodec.encodeCapabilityBindings(capabilityBindings));
         profile.setEnabled(request.enabled() == null || request.enabled());
+    }
+
+    private AgentProfileResponse toResponse(AgentProfile profile) {
+        List<String> capabilityBindings =
+                capabilityConfigurationCodec.decodeCapabilityBindings(
+                        profile.getCapabilityBindings(), profile.getAgentId());
+        return AgentProfileResponse.from(profile, capabilityBindings);
     }
 
     private AgentProfile requireCurrentTenantAgent(String agentId) {
@@ -326,171 +350,47 @@ public class AgentProfileService {
                 .orElseThrow(() -> new IllegalArgumentException("Agent 不存在或无权限"));
     }
 
-    private AgentProfile requireEnabledCurrentUserAgent(String agentId) {
-        AgentProfile profile = requireCurrentUserAgent(agentId);
-        if (!profile.isEnabled()) {
-            throw new IllegalArgumentException("Agent 已禁用");
-        }
-        return profile;
-    }
-
-    private void validate(AgentProfileRequest request) {
+    private List<String> validate(AgentProfileRequest request, AgentProfile existingProfile) {
         if (request == null) {
             throw new IllegalArgumentException("Agent 请求不能为空");
         }
         if (!StringUtils.hasText(request.name())) {
             throw new IllegalArgumentException("Agent 名称不能为空");
         }
-        AgentType type = AgentType.fromCode(request.type());
-        validateRequiredBinding(type, request);
+        validateExecutionMode(request.executionMode());
+        return capabilityService.resolveBindingsForSave(
+                existingProfile,
+                request.capabilityBindings());
     }
 
-    private void validateRequiredBinding(AgentType type, AgentProfileRequest request) {
-        if (AgentType.DATA == type && !StringUtils.hasText(request.datasourceId())) {
-            throw new IllegalArgumentException("数据源 Agent 必须绑定数据源");
+    private void validateExecutionMode(String executionMode) {
+        if (!StringUtils.hasText(executionMode)) {
+            return;
         }
-        if (AgentType.SKILL == type && !StringUtils.hasText(request.skillId())) {
-            throw new IllegalArgumentException("技能 Agent 必须绑定技能");
+        String normalizedMode = executionMode.trim().toLowerCase();
+        if (!"auto".equals(normalizedMode) && !"chat".equals(normalizedMode)
+                && !"react".equals(normalizedMode) && !"orchestrated".equals(normalizedMode)) {
+            throw new IllegalArgumentException("执行模式仅支持 auto、chat、react 或 orchestrated");
         }
     }
 
-    private String resolveSkillId(AgentType type, String skillId) {
-        if (AgentType.SKILL != type) {
-            return null;
-        }
-        return blankToNull(skillId);
-    }
-
-    private String resolveDatasourceId(AgentType type, String datasourceId) {
-        if (AgentType.DATA != type && AgentType.REACT != type && AgentType.SKILL != type) {
-            return null;
-        }
-        return blankToNull(datasourceId);
+    private AgentProfile createDefaultAgent(String tenantId, String userId) {
+        AgentProfile profile = new AgentProfile();
+        profile.setName(DEFAULT_AGENT_NAME);
+        profile.setDescription(DEFAULT_AGENT_DESCRIPTION);
+        profile.setSystemPrompt(DEFAULT_AGENT_PROMPT);
+        profile.setExecutionMode("auto");
+        profile.setCapabilityBindings(capabilityConfigurationCodec.encodeCapabilityBindings(
+                capabilityService.snapshotDefaultToolBindings()));
+        profile.setEnabled(true);
+        profile.setDefaultAgent(true);
+        profile.setTenantId(tenantId);
+        profile.setCreatedBy(userId);
+        return agentProfileRepository.save(profile);
     }
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private AnalysisRequest buildTestAnalysisRequest(AgentTestRequest request) {
-        if (request == null || !StringUtils.hasText(request.question())) {
-            throw new IllegalArgumentException("测试问题不能为空");
-        }
-        AnalysisRequest analysisRequest = new AnalysisRequest();
-        analysisRequest.setQuestion(request.question().trim());
-        analysisRequest.setModelId(blankToNull(request.modelId()));
-        analysisRequest.setSessionId(blankToNull(request.sessionId()));
-        return analysisRequest;
-    }
-
-    private MemoryContext buildMemoryContext(AnalysisRequest request) {
-        try {
-            if (memoryManager == null) {
-                return MemoryContext.empty();
-            }
-            return memoryManager.buildContext(request.getSessionId(), request.getQuestion());
-        } catch (Exception e) {
-            LOGGER.warn("Agent 试运行记忆上下文构建失败: {}", e.getMessage());
-            return MemoryContext.empty();
-        }
-    }
-
-    private List<AgentRegistryEntryResponse> systemEntries() {
-        return specialistRegistry.registeredTypes().stream()
-                .map(type -> new AgentRegistryEntryResponse(
-                        "system:" + type.getCode(),
-                        type.getDisplayName(),
-                        type.getCode(),
-                        "SYSTEM",
-                        type.getCapability(),
-                        type.getDescription(),
-                        true,
-                        true,
-                        null,
-                        null,
-                        null,
-                        List.of("system", "orchestrator")))
-                .toList();
-    }
-
-    private AgentRegistryEntryResponse tenantEntry(AgentProfile profile) {
-        AgentType type = profile.getType() == null ? AgentType.REACT : profile.getType();
-        return new AgentRegistryEntryResponse(
-                "tenant:" + profile.getAgentId(),
-                profile.getName(),
-                type.getCode(),
-                "TENANT",
-                type.getCapability(),
-                StringUtils.hasText(profile.getDescription()) ? profile.getDescription() : type.getDescription(),
-                profile.isEnabled(),
-                specialistRegistry.isRuntimeAvailable(type),
-                profile.getModelId(),
-                profile.getSkillId(),
-                profile.getDatasourceId(),
-                tenantTags(profile, type));
-    }
-
-    private List<String> tenantTags(AgentProfile profile, AgentType type) {
-        List<String> tags = new ArrayList<>();
-        tags.add("tenant");
-        tags.add(type.getCapability());
-        if (StringUtils.hasText(profile.getModelId())) {
-            tags.add("model");
-        }
-        if (StringUtils.hasText(profile.getSkillId())) {
-            tags.add("skill");
-        }
-        if (StringUtils.hasText(profile.getDatasourceId())) {
-            tags.add("datasource");
-        }
-        return List.copyOf(tags);
-    }
-
-    private List<AgentRegistryCapabilityResponse> capabilityResponses(List<AgentProfile> agents) {
-        Map<AgentType, CapabilityCounter> counterMap = new EnumMap<>(AgentType.class);
-        for (AgentType type : AgentType.values()) {
-            counterMap.put(type, new CapabilityCounter());
-        }
-        for (AgentProfile agent : agents) {
-            AgentType type = agent.getType() == null ? AgentType.REACT : agent.getType();
-            counterMap.computeIfAbsent(type, ignored -> new CapabilityCounter()).add(agent);
-        }
-        return counterMap.entrySet().stream()
-                .map(entry -> toCapabilityResponse(entry.getKey(), entry.getValue()))
-                .toList();
-    }
-
-    private AgentRegistryCapabilityResponse toCapabilityResponse(AgentType type, CapabilityCounter counter) {
-        return new AgentRegistryCapabilityResponse(type.getCode(),
-                type.getDisplayName(),
-                type.getCapability(),
-                type.getDescription(),
-                specialistRegistry.isRuntimeAvailable(type),
-                counter.totalCount(),
-                counter.enabledCount());
-    }
-
-    /**
-     * Agent 能力分组计数器。
-     */
-    private static final class CapabilityCounter {
-
-        private long totalCount;
-        private long enabledCount;
-
-        private void add(AgentProfile profile) {
-            totalCount++;
-            if (profile.isEnabled()) {
-                enabledCount++;
-            }
-        }
-
-        private long totalCount() {
-            return totalCount;
-        }
-
-        private long enabledCount() {
-            return enabledCount;
-        }
-    }
 }

@@ -14,6 +14,8 @@ import com.ai.modelconfig.dto.ModelConfigListResponse;
 import com.ai.modelconfig.dto.ModelConfigMutationResponse;
 import com.ai.modelconfig.dto.ModelConfigRequest;
 import com.ai.modelconfig.dto.ModelConfigResponse;
+import com.ai.modelconfig.dto.PersonalModelOptionResponse;
+import com.ai.modelconfig.dto.PersonalModelOptionsResponse;
 import com.ai.repository.ModelConfigRepository;
 import com.ai.security.SecurityContextHelper;
 import org.slf4j.Logger;
@@ -27,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -201,6 +205,27 @@ public class ModelConfigService {
                 .collect(Collectors.toList()));
     }
 
+    /**
+     * 返回个人 Agent 可选择的启用模型，不暴露连接地址和凭据。
+     *
+     * @return 当前租户及共享租户的模型选项
+     */
+    @Transactional(readOnly = true)
+    public PersonalModelOptionsResponse listPersonalModelOptions() {
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        Map<String, ModelConfig> models = new LinkedHashMap<>();
+        if (StringUtils.hasText(tenantId)) {
+            addEnabledModels(models, tenantId);
+        }
+        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
+            addEnabledModels(models, DEFAULT_TENANT_ID);
+        }
+        List<PersonalModelOptionResponse> options = models.values().stream()
+                .map(PersonalModelOptionResponse::from)
+                .toList();
+        return new PersonalModelOptionsResponse(true, options);
+    }
+
     @Cacheable(value = CacheNames.MODEL_DETAIL, key = "#modelId + ':' + @securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public ModelConfigDetailResponse getModelDetail(String modelId) {
@@ -253,6 +278,11 @@ public class ModelConfigService {
     @Transactional(readOnly = true)
     public List<ModelConfig> getEnabledModels(String tenantId) {
         return modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId);
+    }
+
+    private void addEnabledModels(Map<String, ModelConfig> models, String tenantId) {
+        modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId)
+                .forEach(model -> models.putIfAbsent(model.getModelId(), model));
     }
 
     private ModelConfig findModelById(String modelId) {

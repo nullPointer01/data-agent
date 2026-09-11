@@ -8,6 +8,7 @@ import java.util.List;
  * @param referenceId 引用编号
  * @param sourceType 来源类型
  * @param sourceId 来源编号
+ * @param sourceName 来源名称
  * @param chunkId 片段编号
  * @param score 检索分数
  * @param vectorScore 向量检索原始分数
@@ -27,6 +28,7 @@ public record RagCitation(
         String referenceId,
         String sourceType,
         String sourceId,
+        String sourceName,
         String chunkId,
         double score,
         Double vectorScore,
@@ -43,13 +45,13 @@ public record RagCitation(
 
     public RagCitation(String referenceId, String sourceType, String sourceId, String chunkId, double score,
             String snippet) {
-        this(referenceId, sourceType, sourceId, chunkId, score, null, null, List.of(), snippet, "", 0, 0,
+        this(referenceId, sourceType, sourceId, "", chunkId, score, null, null, List.of(), snippet, "", 0, 0,
                 false, false, false, false);
     }
 
     public RagCitation(String referenceId, String sourceType, String sourceId, String chunkId, double score,
             String snippet, String sectionPath, int charStart, int charEnd) {
-        this(referenceId, sourceType, sourceId, chunkId, score, null, null, List.of(), snippet, sectionPath,
+        this(referenceId, sourceType, sourceId, "", chunkId, score, null, null, List.of(), snippet, sectionPath,
                 charStart, charEnd, false, false, false, false);
     }
 }

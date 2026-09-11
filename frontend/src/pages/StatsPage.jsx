@@ -28,7 +28,7 @@ export function StatsPage({ api }) {
       const [tenant, user, usage] = await Promise.all([
         api.get('/api/v1/token/tenant-summary'),
         api.get('/api/v1/token/user-summary'),
-        api.get('/api/v1/token/usage-records?page=0&size=50')
+        api.get('/api/v1/token/usage-records?page=0&size=500')
       ]);
       setSummary(tenant);
       setUserSummary(user);
@@ -41,7 +41,7 @@ export function StatsPage({ api }) {
   useEffect(() => { load(); }, []);
 
   const byModel = useMemo(() => normalizePairs(summary.byModel), [summary]);
-  const bySkill = useMemo(() => normalizePairs(summary.bySkill), [summary]);
+  const bySkill = useMemo(() => normalizePairs(summary.bySkill).filter((item) => item.value > 0), [summary]);
   const totalPrompt = records.reduce((sum, item) => sum + Number(item.promptTokens || 0), 0);
   const totalCompletion = records.reduce((sum, item) => sum + Number(item.completionTokens || 0), 0);
 
@@ -52,11 +52,6 @@ export function StatsPage({ api }) {
     yAxis: { type: 'value' },
     series: [{ type: 'bar', data: byModel.map((item) => item.value), itemStyle: { color: '#1e40af', borderRadius: [4, 4, 0, 0] } }]
   };
-  const skillOption = {
-    tooltip: { trigger: 'item' },
-    series: [{ type: 'pie', radius: ['48%', '72%'], data: bySkill, label: { formatter: '{b}' }, itemStyle: { borderRadius: 4 } }]
-  };
-
   return (
     <>
       <PageHeader title="Token 统计" desc="按租户、模型、技能和请求明细查看 Token 消耗" actions={<button className="btn" onClick={load}><RefreshCw size={16} />刷新</button>} />
@@ -68,7 +63,7 @@ export function StatsPage({ api }) {
       </div>
       <div className="grid grid-2 chart-grid">
         <section className="card"><div className="section-title">模型消耗</div><Chart option={modelOption} /></section>
-        <section className="card"><div className="section-title">技能消耗</div><Chart option={skillOption} /></section>
+        <section className="card"><div className="section-title">技能消耗</div><SkillConsumption items={bySkill} /></section>
       </div>
       <DataTable loading={loading} columns={[
         { key: 'createdAt', title: '时间', render: (item) => formatTime(item.createdAt) },
@@ -80,5 +75,27 @@ export function StatsPage({ api }) {
         { key: 'totalTokens', title: '合计' }
       ]} rows={records} rowKey="id" />
     </>
+  );
+}
+
+function SkillConsumption({ items }) {
+  if (!items.length) {
+    return <div className="chart-empty">暂无技能 Token 消耗</div>;
+  }
+  const maxValue = Math.max(...items.map((item) => item.value));
+  return (
+    <div className="skill-distribution" style={{ height: 260 }}>
+      {items.slice(0, 6).map((item) => (
+        <div className="skill-distribution-row" key={item.name}>
+          <div className="skill-distribution-head">
+            <span>{item.name}</span>
+            <strong>{item.value.toLocaleString()}</strong>
+          </div>
+          <div className="skill-distribution-track">
+            <span style={{ width: `${Math.max(2, (item.value / maxValue) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

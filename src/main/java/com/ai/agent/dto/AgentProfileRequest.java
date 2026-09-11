@@ -10,13 +10,10 @@ import java.util.List;
 public record AgentProfileRequest(
         String agentId,
         String name,
-        String type,
         String description,
         String systemPrompt,
         String modelId,
-        String skillId,
-        String datasourceId,
         String executionMode,
-        List<String> tools,
+        List<String> capabilityBindings,
         Boolean enabled) {
 }

@@ -4,6 +4,7 @@ import com.ai.agent.approval.AgentToolApprovalRepository;
 import com.ai.agent.durable.dto.AgentDurableRunResponse;
 import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.runtime.AgentRunTerminationReason;
+import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,13 +24,16 @@ public class AgentDurableRunService {
     private final AgentDurableRunStore runStore;
     private final AgentToolApprovalRepository approvalRepository;
     private final SecurityContextHelper securityContextHelper;
+    private final AgentConversationRecorder conversationRecorder;
 
     public AgentDurableRunService(AgentDurableRunStore runStore,
             AgentToolApprovalRepository approvalRepository,
-            SecurityContextHelper securityContextHelper) {
+            SecurityContextHelper securityContextHelper,
+            AgentConversationRecorder conversationRecorder) {
         this.runStore = runStore;
         this.approvalRepository = approvalRepository;
         this.securityContextHelper = securityContextHelper;
+        this.conversationRecorder = conversationRecorder;
     }
 
     @Transactional(readOnly = true)
@@ -53,6 +57,8 @@ public class AgentDurableRunService {
                         "用户取消等待审批的运行"));
         if (cancelled) {
             approvalRepository.cancelPendingByRun(entity.getTenantId(), runId, Instant.now());
+            conversationRecorder.updateRunConversation(
+                    entity.getRunId(), "已取消等待审批，工具操作未执行。", null, null);
         }
         return toResponse(findOwned(runId));
     }

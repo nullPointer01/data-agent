@@ -52,24 +52,26 @@ public class FileMetadataLifecycleService {
     }
 
     /**
-     * Lists files visible to the current tenant.
+     * Lists files owned by the current user.
      *
      * @return tenant files
      */
     @Transactional(readOnly = true)
     public List<FileMetadata> listCurrentTenant() {
-        return fileMetadataRepository.findByTenantId(securityContextHelper.getCurrentTenantId());
+        return fileMetadataRepository.findByTenantIdAndUploadedBy(
+                securityContextHelper.getCurrentTenantId(), securityContextHelper.getCurrentUserId());
     }
 
     /**
-     * Finds one file visible to the current tenant.
+     * Finds one file owned by the current user.
      *
      * @param fileId file id
      * @return matched metadata
      */
     @Transactional(readOnly = true)
     public Optional<FileMetadata> findCurrentTenantFile(String fileId) {
-        return fileMetadataRepository.findByFileIdAndTenantId(fileId, securityContextHelper.getCurrentTenantId());
+        return fileMetadataRepository.findByFileIdAndTenantIdAndUploadedBy(
+                fileId, securityContextHelper.getCurrentTenantId(), securityContextHelper.getCurrentUserId());
     }
 
     /**
@@ -83,8 +85,9 @@ public class FileMetadataLifecycleService {
         if (contentHash == null || contentHash.isBlank()) {
             return Optional.empty();
         }
-        return fileMetadataRepository.findFirstByContentHashAndTenantIdAndProcessingStatus(
-                contentHash, securityContextHelper.getCurrentTenantId(), FileProcessingStatus.COMPLETED);
+        return fileMetadataRepository.findFirstByContentHashAndTenantIdAndUploadedByAndProcessingStatus(
+                contentHash, securityContextHelper.getCurrentTenantId(), securityContextHelper.getCurrentUserId(),
+                FileProcessingStatus.COMPLETED);
     }
 
     /**

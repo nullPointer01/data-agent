@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Agent 编排执行轨迹。
+ * 统一 Agent Run 执行轨迹。
  *
  * @author data-agent
  */
@@ -39,6 +39,7 @@ public class AgentExecutionTrace {
     @Column(name = "selected_agent", length = 128)
     private String selectedAgent;
 
+    /** 历史字段名，当前记录 Chat、ReAct 或 Orchestrated 运行模式。 */
     @Column(name = "selected_type", length = 32)
     private String selectedType;
 

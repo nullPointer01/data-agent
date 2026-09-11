@@ -1,5 +1,6 @@
 package com.ai.agent.durable;
 
+import com.ai.agent.outcome.AgentTaskContract;
 import com.ai.agent.runtime.AgentExecutionMode;
 
 import java.time.Instant;
@@ -21,6 +22,7 @@ import java.util.Set;
  * @param messages 可移植消息序列
  * @param pendingTool 待审批工具动作
  * @param allowedToolsAtRequest 发起执行时的工具白名单，仅用于恢复时收窄，不能替代重新授权
+ * @param taskContract 创建 Run 时固化的可选任务合同
  * @param budget 冻结预算
  * @param capturedAt 捕获时间
  * @author data-agent
@@ -38,6 +40,7 @@ public record AgentRunCheckpoint(
         List<AgentCheckpointMessage> messages,
         AgentPendingToolCheckpoint pendingTool,
         Set<String> allowedToolsAtRequest,
+        AgentTaskContract taskContract,
         AgentRunBudgetCheckpoint budget,
         Instant capturedAt) {
 

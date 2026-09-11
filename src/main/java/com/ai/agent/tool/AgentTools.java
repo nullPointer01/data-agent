@@ -6,6 +6,8 @@ import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 /**
  * 供 ReAct Agent 调用的工具门面。
  *
@@ -14,7 +16,30 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgentTools {
 
+    public static final String LIST_AVAILABLE_SKILLS_TOOL = "listAvailableSkills";
+    public static final String USE_SKILL_TOOL = "useSkill";
+    public static final String DELEGATE_TO_AGENT_TOOL = "delegateToAgent";
+    private static final Set<String> CAPABILITY_ADAPTER_TOOLS = Set.of(
+            LIST_AVAILABLE_SKILLS_TOOL,
+            USE_SKILL_TOOL,
+            DELEGATE_TO_AGENT_TOOL);
+
+    /**
+     * 判断工具是否属于 Harness 根据能力绑定自动暴露的内部适配器。
+     *
+     * @param toolName 工具名称
+     * @return 内部能力适配器返回 true
+     */
+    public static boolean isCapabilityAdapter(String toolName) {
+        return toolName != null && CAPABILITY_ADAPTER_TOOLS.contains(toolName);
+    }
+
+    public static boolean isDelegationAdapter(String toolName) {
+        return DELEGATE_TO_AGENT_TOOL.equals(toolName);
+    }
+
     private final AgentSkillToolService agentSkillToolService;
+    private final AgentDelegationToolService agentDelegationToolService;
     private final AgentFileToolService agentFileToolService;
     private final AgentKnowledgeToolService agentKnowledgeToolService;
     private final AgentConversationToolService agentConversationToolService;
@@ -24,6 +49,7 @@ public class AgentTools {
     private final AgentSandboxToolService agentSandboxToolService;
 
     public AgentTools(AgentSkillToolService agentSkillToolService,
+            AgentDelegationToolService agentDelegationToolService,
             AgentFileToolService agentFileToolService,
             AgentKnowledgeToolService agentKnowledgeToolService,
             AgentConversationToolService agentConversationToolService,
@@ -32,6 +58,7 @@ public class AgentTools {
             AgentChartToolService agentChartToolService,
             AgentSandboxToolService agentSandboxToolService) {
         this.agentSkillToolService = agentSkillToolService;
+        this.agentDelegationToolService = agentDelegationToolService;
         this.agentFileToolService = agentFileToolService;
         this.agentKnowledgeToolService = agentKnowledgeToolService;
         this.agentConversationToolService = agentConversationToolService;
@@ -41,18 +68,25 @@ public class AgentTools {
         this.agentSandboxToolService = agentSandboxToolService;
     }
 
-    @Tool("列出所有可用的数据分析技能(Skill)，返回技能名称和描述")
+    @Tool("列出当前 Agent 已绑定且本次运行可用的 Skill，返回稳定ID、名称和描述")
     @AgentToolPolicy(risk = AgentToolRiskLevel.LOW, readOnly = true, idempotent = true, retryable = true,
             timeoutMs = 10000, maxAttempts = 2, requiredPermission = "app:use", maxResultLength = 8000)
     public String listAvailableSkills() {
         return agentSkillToolService.listAvailableSkills();
     }
 
-    @Tool("使用指定技能分析问题")
+    @Tool("使用当前 Agent 已绑定的指定 Skill 分析问题；skillId 必须来自 listAvailableSkills")
     @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = true, idempotent = false, retryable = false,
             timeoutMs = 60000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 16000)
-    public String useSkill(@P("技能名称") String skillName, @P("要分析的问题") String query) {
-        return agentSkillToolService.useSkill(skillName, query);
+    public String useSkill(@P("Skill稳定ID") String skillId, @P("要分析的问题") String query) {
+        return agentSkillToolService.useSkill(skillId, query);
+    }
+
+    @Tool("将明确任务委派给当前 Agent 已绑定的子 Agent；agentId 必须来自当前系统提示中的稳定ID")
+    @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = false, idempotent = false, retryable = false,
+            timeoutMs = 120000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 20000)
+    public String delegateToAgent(@P("子Agent稳定ID") String agentId, @P("委派给子Agent的明确任务") String task) {
+        return agentDelegationToolService.delegateToAgent(agentId, task);
     }
 
     @Tool("获取已上传文件的内容")
@@ -161,7 +195,8 @@ public class AgentTools {
         return agentChartToolService.generateChart(chartType, dataJson, title);
     }
 
-    @Tool("在隔离演示沙箱中修改指定酒店房型日期的价格。该动作不连接真实酒店系统，必须先经管理员审批")
+    @Tool("在隔离演示沙箱中修改指定酒店房型日期的价格。用户明确要求执行且参数齐全时直接调用；"
+            + "服务端会自动创建管理员审批，不要在聊天中要求用户再次确认。该动作不连接真实酒店系统")
     @AgentToolPolicy(risk = AgentToolRiskLevel.HIGH, readOnly = false, idempotent = true, retryable = false,
             timeoutMs = 10000, maxAttempts = 1, requiredPermission = "app:use",
             approvalRequired = true, approvalPermission = "agent:approval:review", maxResultLength = 8000)

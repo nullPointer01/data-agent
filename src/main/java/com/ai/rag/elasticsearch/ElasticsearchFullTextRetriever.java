@@ -27,12 +27,12 @@ public class ElasticsearchFullTextRetriever implements FullTextRetriever {
     }
 
     @Override
-    public List<FullTextSearchResult> retrieve(RagQueryAnalysis analysis, String tenantId, int topK,
+    public List<FullTextSearchResult> retrieve(RagQueryAnalysis analysis, String tenantId, String userId, int topK,
             List<String> sourceTypes) {
-        if (analysis == null || !StringUtils.hasText(tenantId) || topK <= 0) {
+        if (analysis == null || !StringUtils.hasText(tenantId) || !StringUtils.hasText(userId) || topK <= 0) {
             return List.of();
         }
-        JsonNode response = client.search(analysis, tenantId, topK, sourceTypes);
+        JsonNode response = client.search(analysis, tenantId, userId, topK, sourceTypes);
         return parseHits(response);
     }
 

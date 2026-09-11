@@ -15,6 +15,7 @@ import java.util.List;
  * @param frequentlyAskedTopics 高频话题
  * @param dataSources 常用数据源
  * @param confidence 画像置信度
+ * @param evidenceCount 实际参与画像投影的证据数量
  * @author data-agent
  */
 public record UserMemoryProfileSnapshotResponse(String displayName,
@@ -26,7 +27,8 @@ public record UserMemoryProfileSnapshotResponse(String displayName,
         List<String> expertiseAreas,
         List<String> frequentlyAskedTopics,
         List<String> dataSources,
-        double confidence) {
+        double confidence,
+        int evidenceCount) {
 
     /**
      * 创建空画像。
@@ -35,6 +37,6 @@ public record UserMemoryProfileSnapshotResponse(String displayName,
      */
     public static UserMemoryProfileSnapshotResponse empty() {
         return new UserMemoryProfileSnapshotResponse(null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), 0D);
+                List.of(), List.of(), List.of(), 0D, 0);
     }
 }

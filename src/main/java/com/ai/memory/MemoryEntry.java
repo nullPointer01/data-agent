@@ -63,6 +63,12 @@ public class MemoryEntry {
     @Column(name = "metadata_json", columnDefinition = "TEXT")
     private String metadataJson;
 
+    @Column(name = "semantic_key", length = 160)
+    private String semanticKey;
+
+    @Column(name = "confidence")
+    private double confidence;
+
     @Column(name = "key_entities_json", columnDefinition = "TEXT")
     private String keyEntitiesJson;
 
@@ -200,6 +206,22 @@ public class MemoryEntry {
 
     public void setMetadataJson(String metadataJson) {
         this.metadataJson = metadataJson;
+    }
+
+    public String getSemanticKey() {
+        return semanticKey;
+    }
+
+    public void setSemanticKey(String semanticKey) {
+        this.semanticKey = semanticKey;
+    }
+
+    public double getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(double confidence) {
+        this.confidence = confidence;
     }
 
     public String getKeyEntitiesJson() {

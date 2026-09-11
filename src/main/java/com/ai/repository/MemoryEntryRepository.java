@@ -90,6 +90,44 @@ public interface MemoryEntryRepository extends JpaRepository<MemoryEntry, String
             MemoryTier tier, Pageable pageable);
 
     /**
+     * 查询当前用户指定层级和类型的记忆。
+     *
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param tier 记忆层级
+     * @param type 记忆类型
+     * @param pageable 分页参数
+     * @return 按更新时间倒序排列的记忆
+     */
+    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeOrderByUpdatedAtDesc(
+            String tenantId, String userId, MemoryTier tier, MemoryType type, Pageable pageable);
+
+    /**
+     * 查询用于构建用户画像的长期语义记忆。
+     *
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param tier 记忆层级
+     * @param types 语义类型集合
+     * @param pageable 分页参数
+     * @return 按更新时间倒序排列的语义记忆
+     */
+    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc(
+            String tenantId, String userId, MemoryTier tier, List<MemoryType> types, Pageable pageable);
+
+    /**
+     * 根据稳定语义键查找可覆盖的记忆。
+     *
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param type 记忆类型
+     * @param semanticKey 语义键
+     * @return 已存在的语义记忆
+     */
+    Optional<MemoryEntry> findByTenantIdAndUserIdAndTypeAndSemanticKey(
+            String tenantId, String userId, MemoryType type, String semanticKey);
+
+    /**
      * 查询指定层级下需要进行衰减维护的记忆。
      *
      * @param tier 记忆层级

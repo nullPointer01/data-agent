@@ -42,6 +42,11 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
     Optional<FileMetadata> findByFileIdAndTenantId(String fileId, String tenantId);
 
     /**
+     * 按租户和上传人查询单个文件。
+     */
+    Optional<FileMetadata> findByFileIdAndTenantIdAndUploadedBy(String fileId, String tenantId, String uploadedBy);
+
+    /**
      * 按内容哈希和租户查询已完成处理的文件（用于上传去重）。
      *
      * @param contentHash SHA-256 hex digest
@@ -51,5 +56,11 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
      */
     Optional<FileMetadata> findFirstByContentHashAndTenantIdAndProcessingStatus(
             String contentHash, String tenantId, FileProcessingStatus status);
+
+    /**
+     * 按内容哈希、租户和上传人查询已处理完成的文件。
+     */
+    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndUploadedByAndProcessingStatus(
+            String contentHash, String tenantId, String uploadedBy, FileProcessingStatus status);
 
 }

@@ -1,8 +1,11 @@
 package com.ai.agent.react;
 
+import com.ai.agent.context.AgentContextGovernor.ContextLimitException;
+import com.ai.agent.runtime.planning.AgentToolChoice;
 import com.ai.mcp.McpModelService;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,11 +28,9 @@ public class ReActModelCaller {
     private static final Logger LOGGER = LoggerFactory.getLogger(ReActModelCaller.class);
 
     private final McpModelService mcpModelService;
-    private final ReActPromptBuilder promptBuilder;
 
-    public ReActModelCaller(McpModelService mcpModelService, ReActPromptBuilder promptBuilder) {
+    public ReActModelCaller(McpModelService mcpModelService) {
         this.mcpModelService = mcpModelService;
-        this.promptBuilder = promptBuilder;
     }
 
     /**
@@ -42,9 +43,26 @@ public class ReActModelCaller {
      */
     public ChatResponse callWithTools(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
             String modelId) {
+        return callWithTools(messages, toolSpecs, modelId, AgentToolChoice.AUTO);
+    }
+
+    /**
+     * 使用指定工具选择约束调用模型。
+     *
+     * @param messages ReAct 消息历史
+     * @param toolSpecs 可用工具规格
+     * @param modelId 选中的模型 ID
+     * @param toolChoice 当前模型轮次的工具选择约束
+     * @return 模型响应
+     */
+    public ChatResponse callWithTools(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
+            String modelId, AgentToolChoice toolChoice) {
         try {
-            List<ChatMessage> prepared = promptBuilder.prepareNativeMessages(messages);
-            return mcpModelService.callMessages(prepared, toolSpecs, modelId);
+            ToolChoice modelToolChoice = toolChoice == AgentToolChoice.REQUIRED
+                    ? ToolChoice.REQUIRED : ToolChoice.AUTO;
+            return mcpModelService.callMessages(messages, toolSpecs, modelId, modelToolChoice);
+        } catch (ContextLimitException e) {
+            throw e;
         } catch (Exception e) {
             LOGGER.error("ReAct 循环中 LLM 调用失败", e);
             return null;
@@ -62,8 +80,7 @@ public class ReActModelCaller {
      */
     public ChatResponse callStreamingWithTools(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
             String modelId, Consumer<String> tokenConsumer) {
-        List<ChatMessage> prepared = promptBuilder.prepareNativeMessages(messages);
-        return mcpModelService.callMessagesStreaming(prepared, toolSpecs, modelId, tokenConsumer);
+        return mcpModelService.callMessagesStreaming(messages, toolSpecs, modelId, tokenConsumer);
     }
 
     /**
@@ -76,8 +93,7 @@ public class ReActModelCaller {
      */
     public String callStreamingSummary(List<ChatMessage> messages, String modelId,
             Consumer<String> tokenConsumer) {
-        List<ChatMessage> prepared = promptBuilder.prepareNativeMessages(messages);
-        ChatResponse response = mcpModelService.callMessagesStreaming(prepared, null, modelId, tokenConsumer);
+        ChatResponse response = mcpModelService.callMessagesStreaming(messages, null, modelId, tokenConsumer);
         if (response == null || response.aiMessage() == null) {
             return null;
         }

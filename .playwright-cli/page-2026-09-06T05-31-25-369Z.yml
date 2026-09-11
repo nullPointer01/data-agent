@@ -1,0 +1,72 @@
+- generic [ref=f2e3]:
+  - complementary [ref=f2e4]:
+    - generic [ref=f2e5]: Data Agent
+    - generic [ref=f2e17]:
+      - generic [ref=f2e18]: REFERENCE APP
+      - button "我的 Agent" [ref=f2e19] [cursor=pointer]
+      - button "知识" [ref=f2e23] [cursor=pointer]
+      - button "上下文" [ref=f2e27] [cursor=pointer]
+  - main [ref=f2e41]:
+    - generic [ref=f2e42]:
+      - generic [ref=f2e43]: 我的 Agent
+      - generic [ref=f2e45]:
+        - generic [ref=f2e46]:
+          - strong [ref=f2e47]: 演示用户
+          - generic [ref=f2e48]: default
+        - button "退出" [ref=f2e49] [cursor=pointer]
+    - generic [ref=f2e53]:
+      - generic [ref=f2e54]:
+        - generic [ref=f2e55]:
+          - heading "Agent 工作台" [level=1] [ref=f2e56]
+          - paragraph [ref=f2e57]: 整合知识、工具和专家能力完成可核验任务
+        - generic [ref=f2e58]:
+          - button "刷新" [ref=f2e59] [cursor=pointer]
+          - button "设置" [ref=f2e65] [cursor=pointer]
+          - button "新对话" [ref=f2e69] [cursor=pointer]
+      - region "Agent Harness 当前状态" [ref=f2e71]:
+        - generic [ref=f2e76]:
+          - strong [ref=f2e77]: Agent Harness
+          - generic [ref=f2e78]: 当前 Agent：我的研究 Agent
+        - generic [ref=f2e79]:
+          - generic [ref=f2e80]:
+            - strong [ref=f2e85]: AUTO
+            - text: 路由
+          - generic [ref=f2e86]:
+            - strong [ref=f2e90]: "5"
+            - text: 类预算
+          - generic [ref=f2e91]:
+            - strong [ref=f2e94]: "2"
+            - text: 个工具
+          - generic [ref=f2e95]: 策略准入
+        - generic [ref=f2e99]:
+          - generic [ref=f2e100]: 最新 Run
+          - strong [ref=f2e101]: 等待任务
+          - code [ref=f2e102]: 尚未运行
+      - generic [ref=f2e103]:
+        - generic [ref=f2e104]:
+          - generic [ref=f2e105]:
+            - strong [ref=f2e106]: 会话
+            - generic [ref=f2e107]: "1"
+          - generic [ref=f2e109]:
+            - button "能力目录演示 0 条 · -" [ref=f2e110] [cursor=pointer]:
+              - strong [ref=f2e111]: 能力目录演示
+              - generic [ref=f2e112]: 0 条 · -
+            - button [ref=f2e113] [cursor=pointer]
+        - generic [ref=f2e117]:
+          - generic [ref=f2e118]:
+            - generic [ref=f2e123]:
+              - strong [ref=f2e124]: 我的研究 Agent
+              - generic [ref=f2e125]: GPT Compatible
+            - generic [ref=f2e126]: 2 个工具
+            - button "配置我的 Agent" [ref=f2e130] [cursor=pointer]
+          - generic [ref=f2e135]:
+            - strong [ref=f2e138]: 今天想完成什么？
+            - generic [ref=f2e139]: 直接提出问题或任务，我会决定是否检索知识、使用工具或直接回答。
+          - generic [ref=f2e144]:
+            - button "成功标准 未设置" [ref=f2e146] [cursor=pointer]:
+              - generic [ref=f2e150]:
+                - strong [ref=f2e151]: 成功标准
+                - generic [ref=f2e152]: 未设置
+            - generic [ref=f2e155]:
+              - textbox "告诉我的 Agent 你想完成什么" [ref=f2e156]
+              - button "发送" [ref=f2e157] [cursor=pointer]

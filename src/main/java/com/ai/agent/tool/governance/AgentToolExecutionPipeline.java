@@ -6,6 +6,7 @@ import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.runtime.AgentRunTerminatedException;
 import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventType;
+import com.ai.agent.tool.AgentTools;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -31,7 +32,8 @@ public class AgentToolExecutionPipeline {
     private final AgentToolOutputSanitizer outputSanitizer;
     private final AgentToolTelemetry telemetry;
     private final AgentToolGovernanceProperties properties;
-    private final AsyncTaskExecutor executor;
+    private final AsyncTaskExecutor toolExecutor;
+    private final AsyncTaskExecutor delegationExecutor;
 
     public AgentToolExecutionPipeline(AgentToolAdmissionService admissionService,
             AgentToolRetryPolicy retryPolicy,
@@ -39,14 +41,16 @@ public class AgentToolExecutionPipeline {
             AgentToolOutputSanitizer outputSanitizer,
             AgentToolTelemetry telemetry,
             AgentToolGovernanceProperties properties,
-            @Qualifier("agentToolExecutor") AsyncTaskExecutor executor) {
+            @Qualifier("agentToolExecutor") AsyncTaskExecutor toolExecutor,
+            @Qualifier("agentDelegationExecutor") AsyncTaskExecutor delegationExecutor) {
         this.admissionService = admissionService;
         this.retryPolicy = retryPolicy;
         this.failureClassifier = failureClassifier;
         this.outputSanitizer = outputSanitizer;
         this.telemetry = telemetry;
         this.properties = properties;
-        this.executor = executor;
+        this.toolExecutor = toolExecutor;
+        this.delegationExecutor = delegationExecutor;
     }
 
     public AgentToolExecutionResult execute(ToolExecutionRequest request,
@@ -148,7 +152,7 @@ public class AgentToolExecutionPipeline {
             Future<String> future = null;
             try {
                 Duration timeout = effectiveTimeout(runContext, descriptor);
-                future = executor.submit(() -> registered.executor().execute(request, null));
+                future = executorFor(descriptor).submit(() -> registered.executor().execute(request, null));
                 String rawResult = future.get(Math.max(1L, timeout.toMillis()), TimeUnit.MILLISECONDS);
                 recordAttempt(runContext, descriptor, "success");
                 return finish(runContext, invocationContext, descriptor, toolCallId, descriptor.name(),
@@ -189,12 +193,18 @@ public class AgentToolExecutionPipeline {
     }
 
     private Duration effectiveTimeout(AgentRunContext context, AgentToolDescriptor descriptor) {
-        Duration configured = min(descriptor.timeout(), properties.getDefaultTimeout());
+        Duration configured = AgentTools.isDelegationAdapter(descriptor.name())
+                ? descriptor.timeout()
+                : min(descriptor.timeout(), properties.getDefaultTimeout());
         Duration remaining = context.control().remainingTime();
         if (remaining.isZero() || remaining.isNegative()) {
             context.control().ensureActive();
         }
         return min(configured, remaining);
+    }
+
+    private AsyncTaskExecutor executorFor(AgentToolDescriptor descriptor) {
+        return AgentTools.isDelegationAdapter(descriptor.name()) ? delegationExecutor : toolExecutor;
     }
 
     private boolean awaitBackoff(AgentRunContext context, Duration requested) {

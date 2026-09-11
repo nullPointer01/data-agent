@@ -1,45 +1,55 @@
 spring:
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: zym190457
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      timeout: 3000ms
+      repositories:
+        enabled: false
 
 langchain4j:
   open-ai:
-    api-key: ${LANGCHAIN_API_KEY}
-    model-name: ${LANGCHAIN_MODEL_NAME}
-    base-url: ${LANGCHAIN_BASE_URL}
-
-jwt:
-  secret: ${JWT_SECRET}
-
-milvus:
-  host: ${MILVUS_HOST}
-  port: ${MILVUS_PORT:19530}
+    api-key: local-development-placeholder-key
+    model-name: qwen-plus
+    base-url: https://api.openai.com/v1
 
 app:
+  embedding:
+    dimension: 1024
+    index-version: bge-m3-v1
+    api:
+      base-url: https://api.siliconflow.cn/v1
+      model-name: BAAI/bge-m3
   cors:
-    allowed-origins: ${APP_CORS_ORIGINS}
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173
   encryption:
-    key: ${APP_ENCRYPTION_KEY}
-  rate-limit:
-    requests-per-minute: ${RATE_LIMIT_RPM:60}
-  token-quota:
-    daily-limit-per-user: ${TOKEN_QUOTA_DAILY:1000000}
+    key: local-development-encryption-key-32chars
+  agent:
+    context:
+      # 线上暂与本地保持一致：先观察治理证据，再显式打开压缩。
+      compaction:
+        enabled: false
+        model-summary-enabled: false
+    durable:
+      # 当前线上配置与本地验收环境一致，直接开启审批恢复和隔离沙箱工具。
+      enabled: true
+      sandbox-tool-enabled: true
+      enabled-approval-tools: updateHotelPrice
   security:
-    bootstrap-admin-users: ${BOOTSTRAP_ADMIN_USERS:}
+    registration:
+      enabled: true
+      tenant-id: default
+    outbound:
+      allow-private-network: true
+
+jwt:
+  secret: local-development-jwt-secret-at-least-32-chars
 
 logging:
   level:
-    com.ai: INFO
-    org.hibernate.SQL: WARN
+    com.ai: DEBUG

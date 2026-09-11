@@ -4,28 +4,27 @@ import com.ai.agent.SkillExecutionService;
 import com.ai.model.ConversationSession;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
-import com.ai.service.MultiAgentRuntimeService;
 import com.ai.skill.SkillManager;
 import org.springframework.stereotype.Component;
 
 /**
- * 执行配置 Agent 的纯对话模式。
+ * 执行命令、显式 Skill 或配置化 Agent 的 Chat 模式。
  *
  * @author data-agent
  */
 @Component
-public class ChatExecutionStrategy implements AgentExecutionStrategy {
+final class ChatExecutionStrategy implements AgentExecutionStrategy {
 
     private static final String COMMAND_SKILL_NAME = "command";
 
-    private final MultiAgentRuntimeService multiAgentRuntimeService;
+    private final ConfiguredAgentExecutionService configuredAgentExecutionService;
     private final SkillExecutionService skillExecutionService;
     private final SkillManager skillManager;
 
-    public ChatExecutionStrategy(MultiAgentRuntimeService multiAgentRuntimeService,
+    ChatExecutionStrategy(ConfiguredAgentExecutionService configuredAgentExecutionService,
             SkillExecutionService skillExecutionService,
             SkillManager skillManager) {
-        this.multiAgentRuntimeService = multiAgentRuntimeService;
+        this.configuredAgentExecutionService = configuredAgentExecutionService;
         this.skillExecutionService = skillExecutionService;
         this.skillManager = skillManager;
     }
@@ -43,13 +42,14 @@ public class ChatExecutionStrategy implements AgentExecutionStrategy {
         AnalysisResponse response = switch (route.target()) {
             case COMMAND -> executeCommand(request, fileContent);
             case SKILL -> skillExecutionService.execute(request, fileContent, session);
-            case CONFIGURED_AGENT -> executeConfiguredAgent(route, request, fileContent);
-            case DEFAULT -> throw new IllegalStateException("默认路线不能使用 Chat 执行策略");
+            case CONFIGURED_AGENT -> configuredAgentExecutionService.execute(context, route);
         };
         if (response == null) {
             throw new IllegalStateException("Chat 执行结果为空");
         }
-        return new Result(response, false);
+        boolean processEventsEmitted = route.target() == AgentRunRoute.Target.CONFIGURED_AGENT
+                && context.eventSink().isStreaming();
+        return new Result(response, processEventsEmitted);
     }
 
     private AnalysisResponse executeCommand(AnalysisRequest request, String fileContent) {
@@ -60,13 +60,5 @@ public class ChatExecutionStrategy implements AgentExecutionStrategy {
         AnalysisResponse response = AnalysisResponse.ok(commandResult);
         response.setSkillUsed(COMMAND_SKILL_NAME);
         return response;
-    }
-
-    private AnalysisResponse executeConfiguredAgent(AgentRunRoute route, AnalysisRequest request,
-            String fileContent) {
-        if (route.profile() == null) {
-            throw new IllegalStateException("Chat 执行策略缺少 AgentProfile");
-        }
-        return multiAgentRuntimeService.execute(route.profile(), request, fileContent);
     }
 }

@@ -1,5 +1,7 @@
 package com.ai.model;
 
+import com.ai.agent.outcome.AgentTaskContract;
+
 /**
  * 分析 Agent 执行请求。
  *
@@ -13,6 +15,7 @@ public class AnalysisRequest {
     private String modelId;
     private String sessionId;
     private String agentId;
+    private AgentTaskContract taskContract;
 
     public AnalysisRequest() {
     }
@@ -65,6 +68,14 @@ public class AnalysisRequest {
         this.agentId = agentId;
     }
 
+    public AgentTaskContract getTaskContract() {
+        return taskContract;
+    }
+
+    public void setTaskContract(AgentTaskContract taskContract) {
+        this.taskContract = taskContract;
+    }
+
     /**
      * 创建当前请求的浅拷贝，供运行时追加默认配置时隔离副作用。
      *
@@ -78,6 +89,7 @@ public class AnalysisRequest {
         copiedRequest.setModelId(modelId);
         copiedRequest.setSessionId(sessionId);
         copiedRequest.setAgentId(agentId);
+        copiedRequest.setTaskContract(taskContract);
         return copiedRequest;
     }
 
@@ -99,6 +111,10 @@ public class AnalysisRequest {
 
     public boolean hasAgent() {
         return agentId != null && !agentId.isEmpty();
+    }
+
+    public boolean hasTaskContract() {
+        return taskContract != null;
     }
 
     public boolean isCommand() {

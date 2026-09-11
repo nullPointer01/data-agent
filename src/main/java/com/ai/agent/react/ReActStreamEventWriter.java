@@ -6,6 +6,7 @@ import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentRunEventBridge;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.rag.dto.RagCitation;
+import com.ai.rag.dto.RagContextResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ public class ReActStreamEventWriter {
     private static final String KEY_ITERATION = "iteration";
     private static final String KEY_HIT_COUNT = "hitCount";
     private static final String KEY_CITATIONS = "citations";
+    private static final String KEY_RETRIEVAL_AVAILABLE = "retrievalAvailable";
     private static final String KEY_SESSION_ID = "sessionId";
     private static final String KEY_TRACE_ID = "traceId";
     private static final String KEY_TITLE = "title";
@@ -67,9 +69,24 @@ public class ReActStreamEventWriter {
      * @param citations 命中的引用
      */
     public void emitRagContext(Consumer<String> emitter, int hitCount, List<RagCitation> citations) {
+        emitRagContext(emitter, hitCount, citations, true);
+    }
+
+    /**
+     * 发送完整 RAG 检索结果，显式区分零命中和检索服务降级。
+     */
+    public void emitRagContext(Consumer<String> emitter, RagContextResponse response) {
+        RagContextResponse safeResponse = response == null ? RagContextResponse.unavailable() : response;
+        emitRagContext(emitter, safeResponse.getHitCount(), safeResponse.getCitations(),
+                safeResponse.isRetrievalAvailable());
+    }
+
+    private void emitRagContext(Consumer<String> emitter, int hitCount, List<RagCitation> citations,
+            boolean retrievalAvailable) {
         emitProcess(emitter, AgentEventType.RAG_CONTEXT, Map.of(
                 KEY_TYPE, TYPE_RAG_CONTEXT,
                 KEY_HIT_COUNT, hitCount,
+                KEY_RETRIEVAL_AVAILABLE, retrievalAvailable,
                 KEY_CITATIONS, citations == null ? List.of() : citations));
     }
 

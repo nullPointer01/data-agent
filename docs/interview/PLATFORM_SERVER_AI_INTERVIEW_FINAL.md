@@ -55,7 +55,7 @@
 
 > 您好，我目前在同程旅行做酒店商品库和促销相关的 Java 后端开发，做过千万级数据拉取、多进程任务、Kafka 实时变更，以及 JVM Full GC、OOM 等稳定性治理。这些经历让我形成了比较扎实的服务端工程意识。
 >
-> AI 方面，我先在酒店收益预测项目中接入 DeepSeek，根据 27 个核心指标，通过固定 Prompt 和 HTML 模板生成结构化经营分析报告。为了进一步理解 Agent，我又独立做了 Data Agent，系统性实践了 ReAct 工具循环、Orchestrator 多专家编排、RAG 混合检索、分层记忆、模型重试熔断、Token 配额、RBAC、多租户和执行追踪。
+> AI 方面，我先在酒店收益预测项目中接入 DeepSeek，根据 27 个核心指标，通过固定 Prompt 和 HTML 模板生成结构化经营分析报告。为了进一步理解 Agent，我又独立做了 Data Agent，系统性实践了 ReAct 工具循环、受控子 Agent 委派、RAG 混合检索、分层记忆、模型重试熔断、Token 配额、RBAC、多租户和执行追踪。
 >
 > 我希望长期深耕 Java 服务端加 AI 应用工程。贵团队既做浏览器和矩阵产品的后台服务，也建设 Agent、知识库和研发 Workflow，和我的经验及长期方向比较匹配。
 
@@ -169,14 +169,14 @@ ReAct：执行层，面对开放问题，动态决定调用哪个工具、调用
 
 为什么同时存在：
 
-> 全部使用 ReAct 会导致路径、成本和交付物不稳定；全部使用 Orchestrator 又需要提前知道流程，无法处理探索性任务。所以已知、稳定、可拆分的流程交给 Orchestrator，未知或路径依赖中间结果的问题交给 ReAct，没有合适专家时也由 ReAct 兜底。本质是“外层确定性编排，内层概率性执行”。
+> Chat 用于无需工具的直接回答，ReAct 用于模型需要根据中间结果继续决策的任务，Orchestrated 则是在同一个受控循环里开放显式绑定的子 Agent。三种模式共用一个 Run，不再各自维护执行入口。
 
 当前真实情况：
 
-- 普通同步请求优先走 Orchestrator。
-- 默认流式请求目前直接走 ReAct，两条路由尚未完全统一。
-- Orchestrator 默认以规则做意图识别和规划，LLM 意图识别、LLM 规划默认关闭。
-- 编排计划支持阶段和并行描述，但主多任务循环当前仍然顺序执行，不能宣称已经完成真正的多专家并行。
+- 同步和流式请求共用一次 `RequestExecutionPlan` 和相同路线。
+- AUTO 模式先由可解释规则选择 Chat、ReAct 或 Orchestrated，并按需开启 RAG、记忆和工具。
+- Orchestrated 只开放 Profile 显式绑定的子 Agent，委派仍经过 Tool Pipeline。
+- 父子 Agent 共享根 Run 预算与取消信号，委派路径限制深度并拒绝重复 Agent ID。
 
 ### 3.4 ReAct 轮数
 

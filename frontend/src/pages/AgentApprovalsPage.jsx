@@ -12,6 +12,19 @@ function tone(status) {
   return 'amber';
 }
 
+function ApprovalUser({ item }) {
+  const displayName = item.requesterNickname || item.requesterUsername || '未知用户';
+  const account = item.requesterUsername
+    ? `@${item.requesterUsername}`
+    : item.requesterUserId ? `用户 ID：${item.requesterUserId}` : '缺少申请人信息';
+  return (
+    <div className="approval-user-identity">
+      <strong>{displayName}</strong>
+      <span>{account}</span>
+    </div>
+  );
+}
+
 export function AgentApprovalsPage({ api, toast }) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('PENDING');
@@ -116,7 +129,7 @@ export function AgentApprovalsPage({ api, toast }) {
             { key: 'requestedAt', title: '申请时间', render: (item) => formatTime(item.requestedAt) },
             { key: 'toolName', title: '工具', render: (item) => <strong>{item.toolName}</strong> },
             { key: 'risk', title: '风险', render: (item) => <Badge tone={item.risk === 'HIGH' ? 'red' : 'amber'}>{item.risk}</Badge> },
-            { key: 'requesterUserId', title: '申请人' },
+            { key: 'requesterUserId', title: '申请人', render: (item) => <ApprovalUser item={item} /> },
             { key: 'safeArgumentSummary', title: '参数摘要', render: (item) => <span className="approval-table-summary">{truncate(item.safeArgumentSummary, 72)}</span> },
             { key: 'decisionStatus', title: '决定', render: (item) => <Badge tone={tone(item.decisionStatus)}>{item.decisionStatus}</Badge> },
             { key: 'executionStatus', title: '执行', render: (item) => <Badge tone="gray">{item.executionStatus}</Badge> },
@@ -133,6 +146,7 @@ export function AgentApprovalsPage({ api, toast }) {
           loading={detailLoading}
           now={now}
           submitting={submitting}
+          toast={toast}
           onClose={() => { setSelectedId(''); setDetail(null); }}
           onDecision={decide}
         />

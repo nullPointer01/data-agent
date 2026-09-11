@@ -1,12 +1,11 @@
 package com.ai.agent.runtime;
 
 import com.ai.agent.AgentExecutionContext;
-import com.ai.agent.orchestrator.OrchestratorAgent;
 import com.ai.model.AgentProfile;
 import com.ai.model.AnalysisRequest;
+import com.ai.agent.runtime.planning.RequestExecutionPlan;
 import com.ai.service.AgentProfileService;
 import com.ai.skill.SkillManager;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,14 +18,14 @@ public class AgentRunRouteResolver {
 
     private final AgentProfileService agentProfileService;
     private final SkillManager skillManager;
-    private final OrchestratorAgent orchestratorAgent;
+    private final PersonalAgentExecutionModeResolver personalModeResolver;
 
     public AgentRunRouteResolver(AgentProfileService agentProfileService,
             SkillManager skillManager,
-            @Nullable OrchestratorAgent orchestratorAgent) {
+            PersonalAgentExecutionModeResolver personalModeResolver) {
         this.agentProfileService = agentProfileService;
         this.skillManager = skillManager;
-        this.orchestratorAgent = orchestratorAgent;
+        this.personalModeResolver = personalModeResolver;
     }
 
     /**
@@ -38,19 +37,20 @@ public class AgentRunRouteResolver {
     public AgentRunRoute resolve(AgentExecutionContext executionContext) {
         AnalysisRequest request = executionContext.getRequest();
         if (request.isCommand() && skillManager.canProcessCommand(request.getQuestion())) {
-            return new AgentRunRoute(AgentRunRoute.Target.COMMAND, AgentExecutionMode.CHAT, null);
+            RequestExecutionPlan plan = RequestExecutionPlan.explicitRoute("斜杠命令已由命令路由精确匹配");
+            return AgentRunRoute.command(plan);
         }
         if (request.hasAgent()) {
             AgentProfile profile = agentProfileService.requireEnabledAgent(request.getAgentId());
-            AgentExecutionMode mode = profile.isChatMode() ? AgentExecutionMode.CHAT : AgentExecutionMode.REACT;
-            return new AgentRunRoute(AgentRunRoute.Target.CONFIGURED_AGENT, mode, profile);
+            RequestExecutionPlan plan = personalModeResolver.plan(profile, executionContext);
+            return AgentRunRoute.configured(profile, plan);
         }
         if (request.hasSkill()) {
-            return new AgentRunRoute(AgentRunRoute.Target.SKILL, AgentExecutionMode.CHAT, null);
+            RequestExecutionPlan plan = RequestExecutionPlan.explicitRoute("请求显式指定 Skill，由 Skill 路由执行");
+            return AgentRunRoute.skill(plan);
         }
-        AgentExecutionMode defaultMode = orchestratorAgent == null
-                ? AgentExecutionMode.REACT
-                : AgentExecutionMode.ORCHESTRATED;
-        return new AgentRunRoute(AgentRunRoute.Target.DEFAULT, defaultMode, null);
+        AgentProfile personalAgent = agentProfileService.requireMyDefaultAgent();
+        RequestExecutionPlan plan = personalModeResolver.plan(personalAgent, executionContext);
+        return AgentRunRoute.configured(personalAgent, plan);
     }
 }

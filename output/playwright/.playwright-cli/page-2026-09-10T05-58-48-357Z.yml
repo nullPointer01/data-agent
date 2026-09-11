@@ -1,0 +1,87 @@
+- generic [ref=e2]:
+  - generic [ref=e1135]:
+    - complementary [ref=e1136]:
+      - generic [ref=e1147]:
+        - generic [ref=e1148]: Data Agent
+        - generic [ref=e1149]: Java Agent Harness
+      - generic [ref=e1150]:
+        - generic [ref=e1151]: REFERENCE APP
+        - button "我的 Agent" [ref=e1152] [cursor=pointer]
+        - button "专家助手" [ref=e1156] [cursor=pointer]
+        - button "知识" [ref=e1161] [cursor=pointer]
+        - button "上下文" [ref=e1165] [cursor=pointer]
+    - main [ref=e1179]:
+      - generic [ref=e1180]:
+        - generic [ref=e1181]:
+          - generic [ref=e1182]: 我的 Agent
+          - generic [ref=e1183]: Reference App · 由 Agent Harness 驱动
+        - generic [ref=e1184]:
+          - generic [ref=e1185]:
+            - strong [ref=e1186]: testuser2
+            - generic [ref=e1187]: default
+          - button "退出" [ref=e1188] [cursor=pointer]
+      - generic [ref=e1192]:
+        - generic [ref=e1193]:
+          - generic [ref=e1194]:
+            - heading "我的 Agent" [level=1] [ref=e1195]
+            - paragraph [ref=e1196]: 会使用知识、记忆和工具完成任务，并在结果中给出依据。
+          - generic [ref=e1197]:
+            - button "刷新" [ref=e1198] [cursor=pointer]
+            - button "设置" [ref=e1204] [cursor=pointer]
+            - button "新对话" [ref=e1208] [cursor=pointer]
+        - generic [ref=e1210]:
+          - generic [ref=e1211]:
+            - generic [ref=e1212]:
+              - strong [ref=e1213]: 会话
+              - generic [ref=e1214]: "1"
+            - generic [ref=e1216]:
+              - button "把演示酒店 HZ-001 的豪华大床房在 2026... 2 条 · 2026/9/10 13:38:32" [ref=e1217] [cursor=pointer]:
+                - strong [ref=e1218]: 把演示酒店 HZ-001 的豪华大床房在 2026...
+                - generic [ref=e1219]: 2 条 · 2026/9/10 13:38:32
+              - generic [ref=e1220]:
+                - button "重命名会话" [ref=e1221] [cursor=pointer]
+                - button "删除会话" [ref=e1225] [cursor=pointer]
+          - generic [ref=e1229]:
+            - generic [ref=e1230]:
+              - generic [ref=e1235]:
+                - strong [ref=e1236]: 我的 Agent
+                - generic [ref=e1237]: 系统默认模型
+              - generic [ref=e1238]:
+                - generic [ref=e1239]: 知识与记忆
+                - generic [ref=e1240]: 文件理解
+                - generic [ref=e1241]: 数据分析
+                - generic [ref=e1242]: 1 位专家
+              - button "配置我的 Agent" [ref=e1246] [cursor=pointer]
+            - generic [ref=e1250]:
+              - generic [ref=e1251]: 把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。
+              - generic [ref=e1252]:
+                - generic [ref=e1253]:
+                  - paragraph [ref=e1254]:
+                    - text: 已提交价格调整：演示酒店
+                    - strong [ref=e1255]: HZ-001
+                    - text: 的
+                    - strong [ref=e1256]: 豪华大床房
+                    - text: 在
+                    - strong [ref=e1257]: 2026-09-15
+                    - text: 的价格由
+                    - strong [ref=e1258]: ¥399
+                    - text: 改为
+                    - strong [ref=e1259]: ¥699
+                    - text: 。
+                  - paragraph [ref=e1260]:
+                    - text: 已自动创建管理员审批，审批单号：
+                    - code [ref=e1261]: 7f4eedaf-6191-449d-8fec-16e74884cb0d
+                    - text: 。
+                - status [ref=e1263]:
+                  - generic [ref=e1267]:
+                    - strong [ref=e1268]: 操作执行成功
+                    - generic [ref=e1269]: Agent Run 恢复完成
+                - generic [ref=e1270]:
+                  - button "回答有帮助" [ref=e1271] [cursor=pointer]
+                  - button "回答需要改进" [ref=e1274] [cursor=pointer]
+            - generic [ref=e1278]:
+              - textbox "告诉我的 Agent 你想完成什么" [ref=e1279]
+              - button "发送" [ref=e1280] [cursor=pointer]
+  - generic [ref=e1285]:
+    - generic [ref=e1289]: 登录成功
+    - button [ref=e1290] [cursor=pointer]

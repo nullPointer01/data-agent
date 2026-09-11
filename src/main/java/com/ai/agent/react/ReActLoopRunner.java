@@ -3,6 +3,7 @@ package com.ai.agent.react;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.runtime.AgentRuntimeProperties;
+import com.ai.agent.runtime.planning.AgentToolChoice;
 import com.ai.logging.StructuredLogger;
 import com.ai.model.AnalysisResponse;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -108,6 +109,22 @@ public class ReActLoopRunner {
             String userQuery,
             List<AnalysisResponse.ThinkingStep> thinkingSteps,
             AgentToolInvocationContext invocationContext) {
+        return run(messages, toolSpecs, modelId, sessionId, userQuery, thinkingSteps,
+                invocationContext, AgentToolChoice.AUTO);
+    }
+
+    /**
+     * 按请求计划指定的首轮工具选择约束执行同步 ReAct 循环。
+     */
+    public ReActExecutionResult run(List<ChatMessage> messages,
+            List<ToolSpecification> toolSpecs,
+            String modelId,
+            String sessionId,
+            String userQuery,
+            List<AnalysisResponse.ThinkingStep> thinkingSteps,
+            AgentToolInvocationContext invocationContext,
+            AgentToolChoice initialToolChoice) {
+        validateInitialToolChoice(toolSpecs, initialToolChoice);
         StringBuilder finalAnswer = new StringBuilder();
         int iterations = currentIterations();
         int maxIterations = resolveMaxIterations();
@@ -116,6 +133,7 @@ public class ReActLoopRunner {
         boolean continuationRequested = false;
         boolean suspended = false;
         String approvalId = null;
+        boolean firstModelTurn = true;
         ReActRecoveryTracker recoveryTracker = new ReActRecoveryTracker();
         workingMemoryService.recordStart(sessionId, userQuery);
         logStart(sessionId, userQuery, modelId, toolSpecs, false);
@@ -126,7 +144,11 @@ public class ReActLoopRunner {
                     preview(userQuery, LOG_QUERY_PREVIEW_LENGTH));
             logIterationStart(sessionId, modelId, toolSpecs, iterations, maxIterations, false);
 
-            ChatResponse response = modelCaller.callWithTools(messages, toolSpecs, modelId);
+            AgentToolChoice currentToolChoice = firstModelTurn
+                    ? initialToolChoice : AgentToolChoice.AUTO;
+            firstModelTurn = false;
+            ChatResponse response = modelCaller.callWithTools(
+                    messages, toolSpecs, modelId, currentToolChoice);
             AiMessage aiMessage = response == null ? null : response.aiMessage();
             if (isEmptyResponse(aiMessage)) {
                 finalAnswer.append(MODEL_FAILURE_MESSAGE);
@@ -196,6 +218,22 @@ public class ReActLoopRunner {
             String userQuery,
             Consumer<String> eventEmitter,
             AgentToolInvocationContext invocationContext) {
+        return runStreaming(messages, toolSpecs, modelId, sessionId, userQuery, eventEmitter,
+                invocationContext, AgentToolChoice.AUTO);
+    }
+
+    /**
+     * 按请求计划指定的首轮工具选择约束执行流式 ReAct 循环。
+     */
+    public ReActExecutionResult runStreaming(List<ChatMessage> messages,
+            List<ToolSpecification> toolSpecs,
+            String modelId,
+            String sessionId,
+            String userQuery,
+            Consumer<String> eventEmitter,
+            AgentToolInvocationContext invocationContext,
+            AgentToolChoice initialToolChoice) {
+        validateInitialToolChoice(toolSpecs, initialToolChoice);
         StringBuilder finalAnswer = new StringBuilder();
         List<AnalysisResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
         int iterations = currentIterations();
@@ -206,6 +244,7 @@ public class ReActLoopRunner {
         boolean continuationRequested = false;
         boolean suspended = false;
         String approvalId = null;
+        boolean firstModelTurn = true;
         ReActRecoveryTracker recoveryTracker = new ReActRecoveryTracker();
         workingMemoryService.recordStart(sessionId, userQuery);
         logStart(sessionId, userQuery, modelId, toolSpecs, true);
@@ -217,7 +256,11 @@ public class ReActLoopRunner {
             streamEventWriter.emitThinkingStart(eventEmitter, iterations);
             // [B] 工具决策轮改用非流式调用：返回完整的 {content, tool_calls} 对象，跨模型一致，
             // 规避流式增量拼接导致部分模型（如先吐旁白的）丢失 tool_call 的失败模式
-            ChatResponse response = modelCaller.callWithTools(messages, toolSpecs, modelId);
+            AgentToolChoice currentToolChoice = firstModelTurn
+                    ? initialToolChoice : AgentToolChoice.AUTO;
+            firstModelTurn = false;
+            ChatResponse response = modelCaller.callWithTools(
+                    messages, toolSpecs, modelId, currentToolChoice);
             AiMessage aiMessage = response == null ? null : response.aiMessage();
             if (isEmptyResponse(aiMessage)) {
                 streamEventWriter.emitError(eventEmitter, MODEL_FAILURE_MESSAGE);
@@ -281,6 +324,14 @@ public class ReActLoopRunner {
             logCompletion(sessionId, modelId, iterations, answer, thinkingSteps, true);
         }
         return new ReActExecutionResult(answer, iterations, toolCallCount, success, suspended, approvalId);
+    }
+
+    private void validateInitialToolChoice(List<ToolSpecification> toolSpecs,
+            AgentToolChoice initialToolChoice) {
+        if (initialToolChoice == AgentToolChoice.REQUIRED
+                && (toolSpecs == null || toolSpecs.isEmpty())) {
+            throw new IllegalArgumentException("强制工具调用缺少可用工具规格");
+        }
     }
 
     private void logStart(String sessionId, String userQuery, String modelId, List<ToolSpecification> toolSpecs,

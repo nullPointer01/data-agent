@@ -4,15 +4,19 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const DEFAULT_COLORS = ['#1e40af', '#0f766e', '#f59e0b', '#dc2626', '#64748b'];
+
 function normalizeSeries(option) {
   if (!option || !Array.isArray(option.series) || option.series.length === 0) {
     return [];
   }
+  const palette = Array.isArray(option.color) && option.color.length ? option.color : DEFAULT_COLORS;
   return option.series.map((series, index) => ({
     name: series.name || `系列 ${index + 1}`,
     type: series.type || 'bar',
     data: Array.isArray(series.data) ? series.data : [],
-    color: series.lineStyle?.color || series.itemStyle?.color || ['#1e40af', '#0f766e', '#f59e0b', '#dc2626'][index % 4]
+    color: series.lineStyle?.color || series.itemStyle?.color || palette[index % palette.length],
+    palette
   }));
 }
 
@@ -34,7 +38,7 @@ function toNumeric(value) {
   return 0;
 }
 
-function buildPieSlices(series, size, radius, center) {
+function buildPieSlices(series, radius, centerX, centerY) {
   const values = series.data.map((item) => toNumeric(item));
   const total = values.reduce((sum, item) => sum + item, 0);
   if (total <= 0) {
@@ -46,44 +50,63 @@ function buildPieSlices(series, size, radius, center) {
     const sweep = ratio * Math.PI * 2;
     const end = start + sweep;
     const largeArc = sweep > Math.PI ? 1 : 0;
-    const x1 = center + Math.cos(start) * radius;
-    const y1 = center + Math.sin(start) * radius;
-    const x2 = center + Math.cos(end) * radius;
-    const y2 = center + Math.sin(end) * radius;
+    const x1 = centerX + Math.cos(start) * radius;
+    const y1 = centerY + Math.sin(start) * radius;
+    const x2 = centerX + Math.cos(end) * radius;
+    const y2 = centerY + Math.sin(end) * radius;
     const path = [
-      `M ${center} ${center}`,
+      `M ${centerX} ${centerY}`,
       `L ${x1} ${y1}`,
       `A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`,
       'Z'
     ].join(' ');
-    const slice = { path, color: series.color || '#1e40af', ratio, value };
+    const slice = { path, color: series.palette[index % series.palette.length], ratio, value };
     start = end;
-    return { ...slice, color: Array.isArray(series.color) ? series.color[index % series.color.length] : slice.color };
+    return slice;
   });
 }
 
+function categoryLabel(value) {
+  const label = String(value ?? '-');
+  const dateMatch = label.match(/^\d{4}-(\d{2}-\d{2})$/);
+  if (dateMatch) {
+    return dateMatch[1];
+  }
+  return label.length > 10 ? `${label.slice(0, 9)}...` : label;
+}
+
+function axisLabel(value, maximum) {
+  if (maximum < 4) {
+    return Number(value.toFixed(2)).toString();
+  }
+  return Math.round(value).toLocaleString();
+}
+
 export function Chart({ option, height = 260 }) {
-  const width = 420;
+  const width = 640;
   const viewBox = `0 0 ${width} ${height}`;
   const categories = useMemo(() => normalizeCategoryData(option), [option]);
   const seriesList = useMemo(() => normalizeSeries(option), [option]);
   const barSeries = seriesList.find((series) => series.type === 'bar');
-  const lineSeries = seriesList.find((series) => series.type === 'line');
+  const lineSeries = seriesList.filter((series) => series.type === 'line');
   const pieSeries = seriesList.find((series) => series.type === 'pie');
   const maxValue = Math.max(
     1,
     ...seriesList.flatMap((series) => series.data.map((item) => toNumeric(item)))
   );
-  const chartHeight = height - 40;
-  const chartWidth = width - 48;
-  const paddingLeft = 28;
-  const paddingBottom = 30;
-  const plotHeight = chartHeight - paddingBottom;
-  const plotWidth = chartWidth - paddingLeft;
+  const hasLegend = lineSeries.length > 1;
+  const paddingTop = hasLegend ? 48 : 16;
+  const paddingLeft = 58;
+  const paddingRight = 20;
+  const paddingBottom = 42;
+  const plotHeight = Math.max(80, height - paddingTop - paddingBottom);
+  const plotWidth = width - paddingLeft - paddingRight;
   const barWidth = categories.length > 0 ? plotWidth / categories.length : plotWidth;
-  const pieRadius = Math.min(width, height) * 0.28;
-  const pieCenter = Math.min(width, height) / 2;
-  const pieSlices = pieSeries ? buildPieSlices(pieSeries, width, pieRadius, pieCenter) : [];
+  const pieRadius = Math.min(width * 0.25, height * 0.32);
+  const pieCenterX = width / 2;
+  const pieCenterY = height / 2;
+  const pieSlices = pieSeries ? buildPieSlices(pieSeries, pieRadius, pieCenterX, pieCenterY) : [];
+  const labelStep = Math.max(1, Math.ceil(categories.length / 7));
 
   return (
     <div className="chart" style={{ height }}>
@@ -96,12 +119,22 @@ export function Chart({ option, height = 260 }) {
           </>
         ) : (
           <>
-            <g transform={`translate(${paddingLeft}, 12)`}>
+            {hasLegend && (
+              <g transform="translate(18, 16)">
+                {lineSeries.map((series, index) => (
+                  <g key={series.name} transform={`translate(${index * 118}, 0)`}>
+                    <line x1="0" x2="18" y1="6" y2="6" stroke={series.color} strokeWidth="3" />
+                    <text x="24" y="10" fontSize="11" fill="#475569">{series.name}</text>
+                  </g>
+                ))}
+              </g>
+            )}
+            <g transform={`translate(${paddingLeft}, ${paddingTop})`}>
               {Array.from({ length: 5 }, (_, index) => {
                 const y = (plotHeight / 4) * index;
-                const label = Math.round(maxValue - (maxValue / 4) * index);
+                const label = axisLabel(maxValue - (maxValue / 4) * index, maxValue);
                 return (
-                  <g key={label}>
+                  <g key={`tick-${index}`}>
                     <line x1="0" x2={plotWidth} y1={y} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                     <text x="-8" y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">{label}</text>
                   </g>
@@ -116,35 +149,51 @@ export function Chart({ option, height = 260 }) {
                 return (
                   <g key={`${categories[index] || index}-${index}`}>
                     <rect x={x} y={y} width={widthValue} height={barHeight} rx="4" fill={barSeries.color} />
-                    <text x={x + widthValue / 2} y={plotHeight + 16} textAnchor="middle" fontSize="10" fill="#475569">
-                      {categories[index] || index + 1}
-                    </text>
+                    {(index % labelStep === 0 || index === categories.length - 1) && (
+                      <text x={x + widthValue / 2} y={plotHeight + 20} textAnchor="middle" fontSize="10" fill="#475569">
+                        {categoryLabel(categories[index] || index + 1)}
+                      </text>
+                    )}
                   </g>
                 );
               })}
-              {lineSeries && lineSeries.data.length > 0 && (
-                <>
+              {lineSeries.map((series) => series.data.length > 0 && (
+                <g key={series.name}>
                   <polyline
                     fill="none"
-                    stroke={lineSeries.color}
+                    stroke={series.color}
                     strokeWidth="2.5"
-                    points={lineSeries.data
+                    points={series.data
                       .map((item, index) => {
                         const value = toNumeric(item);
-                        const x = index * barWidth + barWidth / 2;
+                        const x = categories.length <= 1 ? plotWidth / 2 : (index / (categories.length - 1)) * plotWidth;
                         const y = plotHeight - ((value / maxValue) * (plotHeight - 4));
                         return `${x},${y}`;
                       })
                       .join(' ')}
                   />
-                  {lineSeries.data.map((item, index) => {
+                  {series.data.map((item, index) => {
                     const value = toNumeric(item);
-                    const x = index * barWidth + barWidth / 2;
+                    const x = categories.length <= 1 ? plotWidth / 2 : (index / (categories.length - 1)) * plotWidth;
                     const y = plotHeight - ((value / maxValue) * (plotHeight - 4));
-                    return <circle key={`point-${index}`} cx={x} cy={y} r="3.5" fill={lineSeries.color} />;
+                    return <circle key={`point-${index}`} cx={x} cy={y} r="3" fill={series.color} />;
                   })}
-                </>
-              )}
+                </g>
+              ))}
+              {!barSeries && categories.map((category, index) => (
+                (index % labelStep === 0 || index === categories.length - 1) && (
+                  <text
+                    key={`${category}-${index}`}
+                    x={categories.length <= 1 ? plotWidth / 2 : (index / (categories.length - 1)) * plotWidth}
+                    y={plotHeight + 20}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#475569"
+                  >
+                    {categoryLabel(category)}
+                  </text>
+                )
+              ))}
             </g>
           </>
         )}

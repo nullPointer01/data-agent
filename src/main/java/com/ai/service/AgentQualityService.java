@@ -6,9 +6,7 @@ import com.ai.agent.dto.AgentQualityDashboardResponse;
 import com.ai.agent.dto.AgentQualityRiskResponse;
 import com.ai.agent.dto.AgentQualityTrendPointResponse;
 import com.ai.model.AgentExecutionTrace;
-import com.ai.model.AgentFeedback;
 import com.ai.repository.AgentExecutionTraceRepository;
-import com.ai.repository.AgentFeedbackRepository;
 import com.ai.security.SecurityContextHelper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,8 +41,6 @@ public class AgentQualityService {
     private static final long SLOW_DURATION_MS = 15_000L;
     private static final long CRITICAL_DURATION_MS = 45_000L;
     private static final int MAX_TREND_POINTS = 14;
-    private static final String RATING_UP = "UP";
-    private static final String RATING_DOWN = "DOWN";
     private static final String UNKNOWN_AGENT = "未命名 Agent";
     private static final String UNKNOWN_TYPE = "UNKNOWN";
     private static final String CAUSE_MODEL_CALL = "MODEL_CALL";
@@ -74,16 +70,13 @@ public class AgentQualityService {
     private static final int REACT_ITERATION_LIMIT = 8;
 
     private final AgentExecutionTraceRepository traceRepository;
-    private final AgentFeedbackRepository feedbackRepository;
     private final SecurityContextHelper securityContextHelper;
     private final ObjectMapper objectMapper;
 
     public AgentQualityService(AgentExecutionTraceRepository traceRepository,
-            AgentFeedbackRepository feedbackRepository,
             SecurityContextHelper securityContextHelper,
             ObjectMapper objectMapper) {
         this.traceRepository = traceRepository;
-        this.feedbackRepository = feedbackRepository;
         this.securityContextHelper = securityContextHelper;
         this.objectMapper = objectMapper;
     }
@@ -99,11 +92,7 @@ public class AgentQualityService {
         String tenantId = securityContextHelper.getCurrentTenantId();
         PageRequest page = PageRequest.of(DEFAULT_PAGE, normalizeLimit(limit));
         List<AgentExecutionTrace> traces = traceRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, page);
-        List<AgentFeedback> recentFeedbacks = feedbackRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, page);
-        QualityMetrics metrics = calculateMetrics(traces,
-                feedbackRepository.countByTenantId(tenantId),
-                feedbackRepository.countByTenantIdAndRating(tenantId, RATING_UP),
-                feedbackRepository.countByTenantIdAndRating(tenantId, RATING_DOWN));
+        QualityMetrics metrics = calculateMetrics(traces);
         int qualityScore = calculateQualityScore(metrics);
         List<AgentQualityRiskResponse> risks = buildRisks(traces, metrics);
         List<AgentQualityAttributionResponse> attributions = buildAttributions(traces);
@@ -112,26 +101,20 @@ public class AgentQualityService {
                 qualityScore,
                 resolveQualityLevel(qualityScore),
                 metrics.successRate(),
-                metrics.positiveRate(),
                 metrics.averageDurationMs(),
                 metrics.fallbackRate(),
-                metrics.totalFeedbackCount(),
-                metrics.negativeFeedbackCount(),
                 attributions,
                 risks,
-                buildRecommendations(risks, metrics, attributions),
-                buildAgentStats(traces, recentFeedbacks),
-                buildTrendPoints(traces, recentFeedbacks));
+                buildRecommendations(risks, attributions),
+                buildAgentStats(traces),
+                buildTrendPoints(traces));
     }
 
     private int normalizeLimit(int limit) {
         return Math.max(MIN_LIMIT, Math.min(limit, MAX_LIMIT));
     }
 
-    private QualityMetrics calculateMetrics(List<AgentExecutionTrace> traces,
-            long totalFeedbackCount,
-            long positiveFeedbackCount,
-            long negativeFeedbackCount) {
+    private QualityMetrics calculateMetrics(List<AgentExecutionTrace> traces) {
         long traceCount = traces.size();
         long successCount = traces.stream().filter(AgentExecutionTrace::isSuccess).count();
         long fallbackCount = traces.stream().filter(AgentExecutionTrace::isFallbackUsed).count();
@@ -139,24 +122,20 @@ public class AgentQualityService {
         double successRate = traceCount == 0L ? 0D : (double) successCount / traceCount;
         double fallbackRate = traceCount == 0L ? 0D : (double) fallbackCount / traceCount;
         long averageDurationMs = traceCount == 0L ? 0L : Math.round((double) totalDurationMs / traceCount);
-        double positiveRate = totalFeedbackCount == 0L ? 0D : (double) positiveFeedbackCount / totalFeedbackCount;
-        return new QualityMetrics(traceCount, successRate, fallbackRate, averageDurationMs,
-                totalFeedbackCount, positiveFeedbackCount, negativeFeedbackCount, positiveRate);
+        return new QualityMetrics(traceCount, successRate, fallbackRate, averageDurationMs);
     }
 
-    private int calculateQualityScore(QualityMetrics metrics) {
+    private static int calculateQualityScore(QualityMetrics metrics) {
         if (metrics.traceCount() == 0L) {
             return 0;
         }
-        double feedbackScore = metrics.totalFeedbackCount() == 0L ? 0.8D : metrics.positiveRate();
-        double score = metrics.successRate() * 45D
-                + feedbackScore * 30D
-                + calculateLatencyScore(metrics.averageDurationMs()) * 15D
-                + (1D - metrics.fallbackRate()) * 10D;
+        double score = metrics.successRate() * 60D
+                + calculateLatencyScore(metrics.averageDurationMs()) * 25D
+                + (1D - metrics.fallbackRate()) * 15D;
         return (int) Math.round(Math.max(0D, Math.min(SCORE_MAX, score)));
     }
 
-    private double calculateLatencyScore(long averageDurationMs) {
+    private static double calculateLatencyScore(long averageDurationMs) {
         if (averageDurationMs <= 0L || averageDurationMs <= 5_000L) {
             return 1D;
         }
@@ -213,19 +192,10 @@ public class AgentQualityService {
                     "最近轨迹中存在 ReAct 达到最大迭代次数的情况，说明问题拆解、工具选择或回退策略仍需优化。",
                     "max_iterations"));
         }
-        if (metrics.totalFeedbackCount() == 0L) {
-            risks.add(new AgentQualityRiskResponse("NO_FEEDBACK", "反馈样本不足", "LOW",
-                    "当前还没有用户反馈，质量判断主要依赖执行指标。", "反馈数为 0"));
-        } else if (metrics.positiveRate() < 0.7D) {
-            risks.add(new AgentQualityRiskResponse("LOW_POSITIVE_RATE", "反馈满意度偏低", "HIGH",
-                    "正向反馈率低于 70%，需要结合负向反馈定位准确性、检索和工具问题。",
-                    formatPercent(metrics.positiveRate())));
-        }
         return risks;
     }
 
     private List<String> buildRecommendations(List<AgentQualityRiskResponse> risks,
-            QualityMetrics metrics,
             List<AgentQualityAttributionResponse> attributions) {
         List<String> recommendations = new ArrayList<>();
         for (AgentQualityRiskResponse risk : risks) {
@@ -235,10 +205,7 @@ public class AgentQualityService {
             recommendations.add(attribution.recommendation());
         }
         if (recommendations.isEmpty()) {
-            recommendations.add("当前核心指标稳定，建议继续观察负向反馈和高耗时轨迹，保持提示词、工具和 RAG 配置的变更记录。");
-        }
-        if (metrics.negativeFeedbackCount() > 0L) {
-            recommendations.add("优先复盘最近负向反馈关联的执行轨迹，确认问题来自检索缺口、工具失败还是模型回答偏差。");
+            recommendations.add("当前核心指标稳定，建议继续观察失败和高耗时轨迹，保持提示词、工具和 RAG 配置的变更记录。");
         }
         return recommendations.stream().distinct().toList();
     }
@@ -250,9 +217,7 @@ public class AgentQualityService {
             case "HIGH_LATENCY" -> "检查慢轨迹中的任务数、RAG 召回数量和外部工具耗时，必要时增加快速路径或减少串行调用。";
             case "FALLBACK_FREQUENT" -> "复盘触发回退的编排决策，补齐专家 Agent 能力边界和错误恢复策略。";
             case "DEPENDENCY_BLOCKED" -> "检查编排依赖、上游任务失败和阶段阻断策略，必要时把关键前置任务拆小或加入失败中止。";
-            case "NO_FEEDBACK" -> "在前端关键回答位置继续强化点赞/点踩入口，保证质量判断有用户侧信号。";
-            case "LOW_POSITIVE_RATE" -> "按问题分类聚合负向反馈，优先修复准确性、RAG 缺口和工具执行失败三类问题。";
-            default -> "持续关注执行轨迹、反馈和耗时指标，避免质量问题在生产环境累积。";
+            default -> "持续关注执行轨迹、失败和耗时指标，避免质量问题在生产环境累积。";
         };
     }
 
@@ -526,22 +491,12 @@ public class AgentQualityService {
                 && iterationsNode.asLong() >= REACT_ITERATION_LIMIT;
     }
 
-    private List<AgentQualityAgentStatResponse> buildAgentStats(List<AgentExecutionTrace> traces,
-            List<AgentFeedback> feedbacks) {
+    private List<AgentQualityAgentStatResponse> buildAgentStats(List<AgentExecutionTrace> traces) {
         Map<String, AgentStatAccumulator> stats = new LinkedHashMap<>();
         for (AgentExecutionTrace trace : traces) {
             String key = buildAgentKey(trace.getSelectedType(), trace.getSelectedAgent());
             stats.computeIfAbsent(key, ignored -> new AgentStatAccumulator(key, trace.getSelectedAgent(),
                     trace.getSelectedType())).addTrace(trace);
-        }
-        Map<String, AgentExecutionTrace> traceIndex = indexTraces(traces);
-        for (AgentFeedback feedback : feedbacks) {
-            AgentExecutionTrace trace = traceIndex.get(feedback.getTraceId());
-            if (trace != null) {
-                String key = buildAgentKey(trace.getSelectedType(), trace.getSelectedAgent());
-                stats.computeIfAbsent(key, ignored -> new AgentStatAccumulator(key, trace.getSelectedAgent(),
-                        trace.getSelectedType())).addFeedback(feedback);
-            }
         }
         return stats.values().stream()
                 .map(AgentStatAccumulator::toResponse)
@@ -553,11 +508,9 @@ public class AgentQualityService {
      * 按日期聚合趋势点，供前端渲染质量趋势图。
      *
      * @param traces 执行轨迹样本
-     * @param feedbacks 反馈样本
      * @return 趋势点列表
      */
-    private List<AgentQualityTrendPointResponse> buildTrendPoints(List<AgentExecutionTrace> traces,
-            List<AgentFeedback> feedbacks) {
+    private List<AgentQualityTrendPointResponse> buildTrendPoints(List<AgentExecutionTrace> traces) {
         Map<LocalDate, TrendAccumulator> trendMap = new TreeMap<>();
         for (AgentExecutionTrace trace : traces) {
             if (trace.getCreatedAt() == null) {
@@ -566,28 +519,11 @@ public class AgentQualityService {
             trendMap.computeIfAbsent(trace.getCreatedAt().toLocalDate(), ignored -> new TrendAccumulator())
                     .addTrace(trace);
         }
-        for (AgentFeedback feedback : feedbacks) {
-            if (feedback.getCreatedAt() == null) {
-                continue;
-            }
-            trendMap.computeIfAbsent(feedback.getCreatedAt().toLocalDate(), ignored -> new TrendAccumulator())
-                    .addFeedback(feedback);
-        }
         int startIndex = Math.max(0, trendMap.size() - MAX_TREND_POINTS);
         return trendMap.entrySet().stream()
                 .skip(startIndex)
                 .map(entry -> entry.getValue().toResponse(entry.getKey()))
                 .toList();
-    }
-
-    private Map<String, AgentExecutionTrace> indexTraces(List<AgentExecutionTrace> traces) {
-        Map<String, AgentExecutionTrace> index = new LinkedHashMap<>();
-        for (AgentExecutionTrace trace : traces) {
-            if (StringUtils.hasText(trace.getTraceId())) {
-                index.put(trace.getTraceId(), trace);
-            }
-        }
-        return index;
     }
 
     private String buildAgentKey(String selectedType, String selectedAgent) {
@@ -603,11 +539,7 @@ public class AgentQualityService {
     private record QualityMetrics(long traceCount,
             double successRate,
             double fallbackRate,
-            long averageDurationMs,
-            long totalFeedbackCount,
-            long positiveFeedbackCount,
-            long negativeFeedbackCount,
-            double positiveRate) {
+            long averageDurationMs) {
     }
 
     /**
@@ -619,9 +551,6 @@ public class AgentQualityService {
         private long successCount;
         private long fallbackCount;
         private long totalDurationMs;
-        private long feedbackCount;
-        private long positiveFeedbackCount;
-        private long negativeFeedbackCount;
 
         private void addTrace(AgentExecutionTrace trace) {
             traceCount++;
@@ -634,27 +563,14 @@ public class AgentQualityService {
             totalDurationMs += trace.getDurationMs();
         }
 
-        private void addFeedback(AgentFeedback feedback) {
-            feedbackCount++;
-            if (RATING_UP.equals(feedback.getRating())) {
-                positiveFeedbackCount++;
-            }
-            if (RATING_DOWN.equals(feedback.getRating())) {
-                negativeFeedbackCount++;
-            }
-        }
-
         private AgentQualityTrendPointResponse toResponse(LocalDate date) {
             double successRate = traceCount == 0L ? 0D : (double) successCount / traceCount;
             double fallbackRate = traceCount == 0L ? 0D : (double) fallbackCount / traceCount;
             long averageDurationMs = traceCount == 0L ? 0L : Math.round((double) totalDurationMs / traceCount);
-            double positiveRate = feedbackCount == 0L ? 0D : (double) positiveFeedbackCount / feedbackCount;
-            QualityMetrics metrics = new QualityMetrics(traceCount, successRate, fallbackRate, averageDurationMs,
-                    feedbackCount, positiveFeedbackCount, negativeFeedbackCount, positiveRate);
+            QualityMetrics metrics = new QualityMetrics(traceCount, successRate, fallbackRate, averageDurationMs);
             int qualityScore = calculateQualityScore(metrics);
-            return new AgentQualityTrendPointResponse(date.toString(), traceCount, feedbackCount, successRate,
-                    positiveRate, fallbackRate, averageDurationMs, qualityScore, positiveFeedbackCount,
-                    negativeFeedbackCount);
+            return new AgentQualityTrendPointResponse(date.toString(), traceCount, successRate,
+                    fallbackRate, averageDurationMs, qualityScore);
         }
     }
 
@@ -737,9 +653,6 @@ public class AgentQualityService {
         private long successCount;
         private long fallbackCount;
         private long totalDurationMs;
-        private long feedbackCount;
-        private long positiveFeedbackCount;
-        private long negativeFeedbackCount;
 
         private AgentStatAccumulator(String agentKey, String agentName, String agentType) {
             this.agentKey = agentKey;
@@ -758,27 +671,14 @@ public class AgentQualityService {
             totalDurationMs += trace.getDurationMs();
         }
 
-        private void addFeedback(AgentFeedback feedback) {
-            feedbackCount++;
-            if (RATING_UP.equals(feedback.getRating())) {
-                positiveFeedbackCount++;
-            }
-            if (RATING_DOWN.equals(feedback.getRating())) {
-                negativeFeedbackCount++;
-            }
-        }
-
         private AgentQualityAgentStatResponse toResponse() {
             double successRate = traceCount == 0L ? 0D : (double) successCount / traceCount;
             double fallbackRate = traceCount == 0L ? 0D : (double) fallbackCount / traceCount;
             long averageDurationMs = traceCount == 0L ? 0L : Math.round((double) totalDurationMs / traceCount);
-            double positiveRate = feedbackCount == 0L ? 0D : (double) positiveFeedbackCount / feedbackCount;
-            double feedbackScore = feedbackCount == 0L ? 0.8D : positiveRate;
-            int qualityScore = (int) Math.round(successRate * 55D
-                    + feedbackScore * 25D
-                    + (1D - fallbackRate) * 20D);
+            QualityMetrics metrics = new QualityMetrics(traceCount, successRate, fallbackRate, averageDurationMs);
+            int qualityScore = calculateQualityScore(metrics);
             return new AgentQualityAgentStatResponse(agentKey, agentName, agentType, traceCount, successRate,
-                    fallbackRate, averageDurationMs, feedbackCount, negativeFeedbackCount, positiveRate, qualityScore);
+                    fallbackRate, averageDurationMs, qualityScore);
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.ai.agent.tool.governance;
 
+import com.ai.agent.capability.AgentDelegationGuard;
 import com.ai.agent.runtime.AgentRunTerminatedException;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +30,15 @@ public class AgentToolFailureClassifier {
         Throwable runTermination = findCause(cause, AgentRunTerminatedException.class);
         if (runTermination != null) {
             return new AgentToolFailure(AgentToolExecutionStatus.RUN_TERMINATED, false, "Agent Run 已终止");
+        }
+        AgentDelegationGuard.DelegationRejectedException delegationRejection =
+                (AgentDelegationGuard.DelegationRejectedException) findCause(
+                        cause, AgentDelegationGuard.DelegationRejectedException.class);
+        if (delegationRejection != null) {
+            return new AgentToolFailure(
+                    AgentToolExecutionStatus.POLICY_DENIED,
+                    false,
+                    delegationRejection.safeMessage());
         }
         if (findCause(cause, TimeoutException.class) != null
                 || findCause(cause, SocketTimeoutException.class) != null

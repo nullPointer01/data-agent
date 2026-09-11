@@ -1,0 +1,172 @@
+- generic [ref=f2e3]:
+  - complementary [ref=f2e4]:
+    - generic [ref=f2e5]: Data Agent
+    - generic [ref=f2e17]:
+      - generic [ref=f2e18]: REFERENCE APP
+      - button "我的 Agent" [ref=f2e19] [cursor=pointer]
+      - button "知识" [ref=f2e23] [cursor=pointer]
+      - button "上下文" [ref=f2e27] [cursor=pointer]
+  - main [ref=f2e41]:
+    - generic [ref=f2e42]:
+      - generic [ref=f2e43]: 我的 Agent
+      - generic [ref=f2e45]:
+        - generic [ref=f2e46]:
+          - strong [ref=f2e47]: 演示用户
+          - generic [ref=f2e48]: default
+        - button "退出" [ref=f2e49] [cursor=pointer]
+    - generic [ref=f2e53]:
+      - generic [ref=f2e54]:
+        - generic [ref=f2e55]:
+          - heading "Agent 工作台" [level=1] [ref=f2e56]
+          - paragraph [ref=f2e57]: 整合知识、工具和专家能力完成可核验任务
+        - generic [ref=f2e58]:
+          - button "刷新" [ref=f2e59] [cursor=pointer]
+          - button "设置" [active] [ref=f2e65] [cursor=pointer]
+          - button "新对话" [ref=f2e69] [cursor=pointer]
+      - region "Agent Harness 当前状态" [ref=f2e71]:
+        - generic [ref=f2e76]:
+          - strong [ref=f2e77]: Agent Harness
+          - generic [ref=f2e78]: 当前 Agent：我的研究 Agent
+        - generic [ref=f2e79]:
+          - generic [ref=f2e80]:
+            - strong [ref=f2e85]: AUTO
+            - text: 路由
+          - generic [ref=f2e86]:
+            - strong [ref=f2e90]: "5"
+            - text: 类预算
+          - generic [ref=f2e91]:
+            - strong [ref=f2e94]: "2"
+            - text: 个工具
+          - generic [ref=f2e95]: 策略准入
+        - generic [ref=f2e99]:
+          - generic [ref=f2e100]: 最新 Run
+          - strong [ref=f2e101]: 等待任务
+          - code [ref=f2e102]: 尚未运行
+      - generic [ref=f2e103]:
+        - generic [ref=f2e104]:
+          - generic [ref=f2e105]:
+            - strong [ref=f2e106]: 会话
+            - generic [ref=f2e107]: "1"
+          - generic [ref=f2e109]:
+            - button "能力目录演示 0 条 · -" [ref=f2e110] [cursor=pointer]:
+              - strong [ref=f2e111]: 能力目录演示
+              - generic [ref=f2e112]: 0 条 · -
+            - button [ref=f2e113] [cursor=pointer]
+        - generic [ref=f2e117]:
+          - generic [ref=f2e118]:
+            - generic [ref=f2e123]:
+              - strong [ref=f2e124]: 我的研究 Agent
+              - generic [ref=f2e125]: GPT Compatible
+            - generic [ref=f2e126]: 2 个工具
+            - button "配置我的 Agent" [ref=f2e130] [cursor=pointer]
+          - generic [ref=f2e135]:
+            - strong [ref=f2e138]: 今天想完成什么？
+            - generic [ref=f2e139]: 直接提出问题或任务，我会决定是否检索知识、使用工具或直接回答。
+          - generic [ref=f2e144]:
+            - button "成功标准 未设置" [ref=f2e146] [cursor=pointer]:
+              - generic [ref=f2e150]:
+                - strong [ref=f2e151]: 成功标准
+                - generic [ref=f2e152]: 未设置
+            - generic [ref=f2e155]:
+              - textbox "告诉我的 Agent 你想完成什么" [ref=f2e156]
+              - button "发送" [ref=f2e157] [cursor=pointer]
+      - generic [ref=f2e162]:
+        - generic [ref=f2e163]:
+          - heading "配置我的 Agent" [level=2] [ref=f2e164]
+          - button [ref=f2e165] [cursor=pointer]
+        - generic [ref=f2e169]:
+          - generic [ref=f2e170]:
+            - generic [ref=f2e171]: 名称
+            - textbox "名称" [ref=f2e172]: 我的研究 Agent
+          - generic [ref=f2e173]:
+            - generic [ref=f2e174]: 模型
+            - combobox "模型" [ref=f2e175]:
+              - option "跟随系统默认模型"
+              - option "GPT Compatible" [selected]
+          - generic [ref=f2e176]:
+            - generic [ref=f2e177]: 简介
+            - textbox "简介" [ref=f2e178]: 整合知识、工具和专家能力完成可核验任务
+          - generic [ref=f2e179]:
+            - generic [ref=f2e180]: 角色与行为
+            - textbox "角色与行为" [ref=f2e181]
+          - generic [ref=f2e182]:
+            - generic [ref=f2e183]: 能力目录（已绑定 2 个 Tool）
+            - generic [ref=f2e184]:
+              - region [ref=f2e185]:
+                - generic [ref=f2e186]:
+                  - strong [ref=f2e190]: Tools
+                  - generic [ref=f2e191]: 2/3 可用
+                - generic [ref=f2e192]:
+                  - generic [ref=f2e193] [cursor=pointer]:
+                    - checkbox "取消 searchKnowledge" [checked] [ref=f2e194]
+                    - generic [ref=f2e195]:
+                      - generic [ref=f2e196]:
+                        - strong [ref=f2e197]: searchKnowledge
+                        - generic [ref=f2e198]: 低风险
+                        - generic [ref=f2e201]: 可用
+                      - generic [ref=f2e205]: 检索个人知识库并返回可引用证据
+                      - code [ref=f2e207]: 1.0.0
+                  - generic [ref=f2e208] [cursor=pointer]:
+                    - checkbox "取消 calculate" [checked] [ref=f2e209]
+                    - generic [ref=f2e210]:
+                      - generic [ref=f2e211]:
+                        - strong [ref=f2e212]: calculate
+                        - generic [ref=f2e213]: 低风险
+                        - generic [ref=f2e216]: 可用
+                      - generic [ref=f2e220]: 执行确定性数值计算
+                      - code [ref=f2e222]: 1.0.0
+                  - generic [ref=f2e223]:
+                    - checkbox "选择 updateHotelPrice" [disabled] [ref=f2e224]
+                    - generic [ref=f2e225]:
+                      - generic [ref=f2e226]:
+                        - strong [ref=f2e227]: updateHotelPrice
+                        - generic [ref=f2e228]: 高风险
+                        - generic [ref=f2e231]: 不可用
+                      - generic [ref=f2e236]: 更新隔离沙箱中的酒店价格
+                      - generic [ref=f2e237]:
+                        - code [ref=f2e238]: 1.0.0
+                        - generic [ref=f2e239]: 需要审批
+                        - generic [ref=f2e240]: 当前环境未启用该工具
+              - region [ref=f2e241]:
+                - generic [ref=f2e242]:
+                  - strong [ref=f2e254]: Skills
+                  - generic [ref=f2e255]: 1/2 可用
+                - generic [ref=f2e256]:
+                  - generic [ref=f2e259]:
+                    - generic [ref=f2e260]:
+                      - strong [ref=f2e261]: 报告总结
+                      - generic [ref=f2e262]: 低风险
+                      - generic [ref=f2e265]: 可用
+                    - generic [ref=f2e269]: 将检索证据整理为结构化报告
+                    - code [ref=f2e271]: "2.1"
+                  - generic [ref=f2e274]:
+                    - generic [ref=f2e275]:
+                      - strong [ref=f2e276]: 外部工单
+                      - generic [ref=f2e277]: 中风险
+                      - generic [ref=f2e280]: 不可用
+                    - generic [ref=f2e285]: 连接受控 API 查询工单状态
+                    - generic [ref=f2e286]:
+                      - code [ref=f2e287]: "1.0"
+                      - generic [ref=f2e288]: Skill 配置已启用但未加载到运行时
+              - region [ref=f2e289]:
+                - generic [ref=f2e290]:
+                  - strong [ref=f2e295]: Sub Agents
+                  - generic [ref=f2e296]: 2/2 可用
+                - generic [ref=f2e297]:
+                  - generic [ref=f2e300]:
+                    - generic [ref=f2e301]:
+                      - strong [ref=f2e302]: 数据分析专家
+                      - generic [ref=f2e303]: 中风险
+                      - generic [ref=f2e306]: 可用
+                    - generic [ref=f2e310]: 负责数据查询、统计与结果解释
+                    - code [ref=f2e312]: revision:2026-09-06T12:00:00
+                  - generic [ref=f2e315]:
+                    - generic [ref=f2e316]:
+                      - strong [ref=f2e317]: 报告专家
+                      - generic [ref=f2e318]: 低风险
+                      - generic [ref=f2e321]: 可用
+                    - generic [ref=f2e325]: 负责输出最终报告与引用摘要
+                    - code [ref=f2e327]: revision:2026-09-06T12:10:00
+        - generic [ref=f2e328]:
+          - button "取消" [ref=f2e329] [cursor=pointer]
+          - button "保存配置" [ref=f2e330] [cursor=pointer]

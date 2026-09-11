@@ -21,12 +21,13 @@ public interface HybridRetriever {
      *
      * @param analysis 查询分析结果
      * @param tenantId 租户编号
+     * @param userId 用户编号
      * @param candidateTopK 候选数量
      * @param minScore 向量最小分数
      * @param sourceTypes 来源类型过滤
      * @return 统一检索结果
      */
-    List<RetrievalResult> retrieve(RagQueryAnalysis analysis, String tenantId, int candidateTopK,
+    List<RetrievalResult> retrieve(RagQueryAnalysis analysis, String tenantId, String userId, int candidateTopK,
             double minScore, List<String> sourceTypes);
 
     /**
@@ -34,11 +35,13 @@ public interface HybridRetriever {
      *
      * @param analysis 查询分析结果
      * @param tenantId 租户编号
+     * @param userId 用户编号
      * @param candidateTopK 候选数量
      * @param minScore 向量最小分数
      * @param sourceTypes 来源类型过滤
      * @return 混合检索结果和通道耗时
      */
-    HybridRetrievalResult retrieveWithTrace(RagQueryAnalysis analysis, String tenantId, int candidateTopK,
+    HybridRetrievalResult retrieveWithTrace(RagQueryAnalysis analysis, String tenantId, String userId,
+            int candidateTopK,
             double minScore, List<String> sourceTypes);
 }

@@ -112,8 +112,9 @@ public class RagBenchmarkService {
 
     private RagBenchmarkReport executeCurrentTenant() {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        if (!StringUtils.hasText(tenantId)) {
-            throw new IllegalStateException("无法运行RAG评测：当前认证用户缺少tenantId");
+        String userId = securityContextHelper.getCurrentUserId();
+        if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(userId)) {
+            throw new IllegalStateException("无法运行RAG评测：当前认证用户缺少租户或用户标识");
         }
         if (ragProperties.getCandidateTopK() < MINIMUM_CANDIDATE_TOP_K) {
             throw new IllegalStateException("无法计算Recall@20：candidateTopK必须至少为20，实际="
@@ -126,7 +127,7 @@ public class RagBenchmarkService {
         Instant startedAt = Instant.now();
         LoadedDataset loadedDataset = datasetLoader.load();
         List<CaseResult> caseResults = loadedDataset.dataset().cases().stream()
-                .map(benchmarkCase -> evaluateCase(benchmarkCase, tenantId))
+                .map(benchmarkCase -> evaluateCase(benchmarkCase, tenantId, userId))
                 .toList();
         List<StageSummary> summaries = summarize(caseResults);
         List<String> failedCaseIds = caseResults.stream()
@@ -145,12 +146,13 @@ public class RagBenchmarkService {
                 qualityGate(summaries));
     }
 
-    private CaseResult evaluateCase(RagBenchmarkCase benchmarkCase, String tenantId) {
+    private CaseResult evaluateCase(RagBenchmarkCase benchmarkCase, String tenantId, String userId) {
         try {
             RagQueryAnalysis analysis = queryRewriter.analyze(benchmarkCase.query());
             HybridRetrievalResult hybrid = hybridRetriever.retrieveWithTrace(
                     analysis,
                     tenantId,
+                    userId,
                     ragProperties.getCandidateTopK(),
                     ragProperties.getMinScore(),
                     RAG_SOURCE_TYPES);

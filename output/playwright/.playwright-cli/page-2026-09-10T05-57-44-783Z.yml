@@ -1,0 +1,97 @@
+- generic [ref=e26]:
+  - complementary [ref=e27]:
+    - generic [ref=e38]:
+      - generic [ref=e39]: Data Agent
+      - generic [ref=e40]: Agent Control Plane
+    - generic [ref=e342]:
+      - generic [ref=e343]: 运行与质量
+      - button "运行追踪" [ref=e344] [cursor=pointer]
+      - button "动作审批" [active] [ref=e350] [cursor=pointer]
+      - button "质量观测" [ref=e356] [cursor=pointer]
+      - button "Agent 评测" [ref=e361] [cursor=pointer]
+      - button "用户反馈" [ref=e365] [cursor=pointer]
+      - button "资源统计" [ref=e369] [cursor=pointer]
+    - generic [ref=e373]:
+      - generic [ref=e374]: 能力配置
+      - button "模型目录" [ref=e375] [cursor=pointer]
+      - button "技能目录" [ref=e380] [cursor=pointer]
+      - button "知识与 RAG" [ref=e384] [cursor=pointer]
+      - button "数据连接" [ref=e388] [cursor=pointer]
+    - generic [ref=e394]:
+      - generic [ref=e395]: 平台治理
+      - button "用户" [ref=e396] [cursor=pointer]
+      - button "用户 Agent" [ref=e403] [cursor=pointer]
+      - button "角色权限" [ref=e408] [cursor=pointer]
+      - button "审计" [ref=e413] [cursor=pointer]
+  - main [ref=e70]:
+    - generic [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]: 动作审批
+        - generic [ref=e74]: Runtime · Capabilities · Governance
+      - generic [ref=e75]:
+        - button "返回我的 Agent" [ref=e418] [cursor=pointer]
+        - generic [ref=e80]:
+          - strong [ref=e81]: 超级管理员
+          - generic [ref=e82]: default
+          - generic [ref=e83]: ADMIN
+        - button "退出" [ref=e84] [cursor=pointer]
+    - generic [ref=e88]:
+      - generic [ref=e1041]:
+        - generic [ref=e1042]:
+          - heading "动作审批" [level=1] [ref=e1043]
+          - paragraph [ref=e1044]: 审核 Agent 提议的高风险动作，并追踪恢复执行状态
+        - generic [ref=e1046]:
+          - generic [ref=e1047]:
+            - generic [ref=e1048]: 决定状态
+            - combobox "决定状态" [ref=e1049]:
+              - option "全部"
+              - option "PENDING" [selected]
+              - option "APPROVED"
+              - option "REJECTED"
+              - option "EXPIRED"
+              - option "CANCELLED"
+          - button "刷新" [ref=e1050] [cursor=pointer]
+      - generic [ref=e1056]:
+        - generic [ref=e1057]:
+          - generic [ref=e1058]: 当前结果
+          - generic [ref=e1059]: "1"
+          - generic [ref=e1060]: PENDING
+        - generic [ref=e1061]:
+          - generic [ref=e1062]: 待处理
+          - generic [ref=e1063]: "1"
+          - generic [ref=e1064]: 需要四眼审批
+        - generic [ref=e1065]:
+          - generic [ref=e1066]: 高风险
+          - generic [ref=e1067]: "1"
+          - generic [ref=e1068]: 服务端策略判定
+        - generic [ref=e1069]:
+          - generic [ref=e1070]: 审批规则
+          - generic [ref=e1071]: 四眼原则
+          - generic [ref=e1072]: 申请人与审批人不可相同
+      - table [ref=e1075]:
+        - rowgroup [ref=e1076]:
+          - row [ref=e1077]:
+            - columnheader "申请时间" [ref=e1078]
+            - columnheader "工具" [ref=e1079]
+            - columnheader "风险" [ref=e1080]
+            - columnheader "申请人" [ref=e1081]
+            - columnheader "参数摘要" [ref=e1082]
+            - columnheader "决定" [ref=e1083]
+            - columnheader "执行" [ref=e1084]
+            - columnheader "操作" [ref=e1085]
+        - rowgroup [ref=e1086]:
+          - row [ref=e1087]:
+            - cell "2026/9/10 11:45:52" [ref=e1088]
+            - cell [ref=e1089]:
+              - strong [ref=e1090]: updateHotelPrice
+            - cell "HIGH" [ref=e1091]
+            - cell "testuser2 @testuser2" [ref=e1093]:
+              - generic [ref=e1094]:
+                - strong [ref=e1095]: testuser2
+                - generic [ref=e1096]: "@testuser2"
+            - 'cell "{hotelId{length=8,sha256=15c0c9670232},newPrice{length=3,sha256=c9a5da07..." [ref=e1097]'
+            - cell "PENDING" [ref=e1099]
+            - cell "WAITING_DECISION" [ref=e1101]
+            - cell [ref=e1103]:
+              - button "查看审批详情" [ref=e1104] [cursor=pointer]
+      - generic [ref=e1108]: 批准只授权当前不可修改动作，不扩大 Agent 的其他工具权限。

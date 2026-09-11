@@ -1,6 +1,12 @@
-# Data Agent 应用说明
+# Data Agent: Java Agent Harness
 
-这是 Data Agent 的主工程，包含 Spring Boot 后端和 React/Vite 前端。当前项目目标是提供一个可配置的数据分析智能体平台，支持对话、文件、知识库、RAG、记忆、多 Agent 编排、动态技能、模型管理、权限管理、审计和质量反馈。
+这是一个以个人 Agent 为参考应用的 Java Agent Harness：用户定义 Agent，发起任务，Runtime 在统一权限、预算、上下文和生命周期边界内执行，最终返回结果与可核验运行证据。项目重点不是再做一个聊天壳，而是展示如何把不稳定的模型行为放进可治理、可评测、可恢复的服务端运行时。
+
+Agent 不按“数据/知识/报告”预先分类，而是由模型、System Prompt、Capabilities 和 Chat/ReAct/Orchestrated 运行模式组合出实际能力。
+
+```text
+定义 Agent -> 发起任务 -> Harness 路由与治理 -> 结果 + 证据 -> Outcome / Eval
+```
 
 ## 技术栈
 
@@ -80,9 +86,9 @@ http://localhost:8080
 
 ## Profile
 
-- `local`：默认本地环境，使用 MySQL 和 Milvus。可以用 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 覆盖数据库连接。
-- `dev`：共享开发环境，所有敏感配置通过环境变量注入。
-- `prod`：生产环境，要求显式配置数据库、JWT、加密密钥、模型 API、Milvus 等。
+- `application.yml`：公共配置使用可直接阅读的固定值，不包含环境变量占位符。
+- `local`：默认本地环境，使用 MySQL 和 Milvus；`application-local.yml` 同样只写固定值，审批恢复和 `hotel_rate_sandbox` 演示工具默认开启，不需要在 IDEA 配置环境变量。
+- `prod`：线上环境，`application-prod.yml` 当前与 local 使用相同的固定配置和功能开关，不需要额外维护环境变量。
 
 ## 外部依赖
 
@@ -96,71 +102,15 @@ http://localhost:8080
 
 当前应用启动时会校验 Milvus 可达。Milvus 和 Elasticsearch 是 RAG 混合检索依赖；Redis 是否必需取决于启用的记忆和缓存能力。Embedding 不在 Compose 中运行，local profile 默认调用硅基流动的外部 API。Elasticsearch 不可用时不会回退到数据库模糊检索。
 
-## 环境变量
+## 配置方式
 
-环境变量由 `src/main/resources/application.yml` 中的占位符读取。核心变量：
+local 和 prod 都直接读取仓库内的 YAML 固定值，不要求在 IDEA Run Configuration 或部署环境中维护同名环境变量。启动线上 Profile：
 
 ```bash
-SPRING_PROFILES_ACTIVE=local
-
-DB_URL=jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-DB_USERNAME=root
-DB_PASSWORD=zym190457
-
-MILVUS_HOST=localhost
-MILVUS_PORT=19530
-
-JWT_SECRET=your_random_256bit_jwt_secret_at_least_32_chars
-APP_ENCRYPTION_KEY=your_random_encryption_key_at_least_32_chars
-
-LANGCHAIN_API_KEY=your_llm_api_key
-LANGCHAIN_BASE_URL=https://api.openai.com/v1
-LANGCHAIN_MODEL_NAME=qwen-plus
-
-EMBEDDING_API_BASE_URL=https://api.siliconflow.cn/v1
-EMBEDDING_API_KEY=your_siliconflow_api_key
-EMBEDDING_MODEL_NAME=BAAI/bge-m3
-EMBEDDING_API_TIMEOUT=30s
-EMBEDDING_API_OUTPUT_DIMENSIONS=
-EMBEDDING_API_BATCH_SIZE=32
-EMBEDDING_API_MAX_ATTEMPTS=3
-EMBEDDING_API_INITIAL_BACKOFF=200ms
-EMBEDDING_API_CIRCUIT_FAILURE_THRESHOLD=5
-EMBEDDING_API_CIRCUIT_OPEN_DURATION=30s
-EMBEDDING_QUERY_PREFIX=
-EMBEDDING_DOCUMENT_PREFIX=
-EMBEDDING_DIMENSION=1024
-EMBEDDING_INDEX_VERSION=bge-m3-v1
-
-AGENT_RUNTIME_TIMEOUT=5m
-AGENT_RUNTIME_MAX_ITERATIONS=8
-AGENT_RUNTIME_MAX_MODEL_CALLS=24
-AGENT_RUNTIME_MAX_TOOL_CALLS=32
-AGENT_RUNTIME_MAX_TOKENS=100000
-
-AGENT_DURABLE_ENABLED=false
-AGENT_DURABLE_SANDBOX_TOOL_ENABLED=false
-AGENT_DURABLE_ENABLED_APPROVAL_TOOLS=updateHotelPrice
-AGENT_DURABLE_APPROVAL_TTL=24h
-AGENT_DURABLE_LEASE_DURATION=60s
-AGENT_DURABLE_SCAN_INTERVAL=PT15S
-AGENT_DURABLE_TERMINAL_RETENTION=30d
-AGENT_DURABLE_MAX_RESUME_ATTEMPTS=3
-
-AGENT_TOOL_MAX_ARGUMENT_LENGTH=16384
-AGENT_TOOL_MAX_RESULT_LENGTH=20000
-AGENT_TOOL_DEFAULT_TIMEOUT=20s
-AGENT_TOOL_MAX_ATTEMPTS=2
-AGENT_TOOL_INITIAL_BACKOFF=100ms
-AGENT_TOOL_MAX_BACKOFF=1s
-AGENT_TOOL_JOURNAL_CAPACITY=64
-AGENT_TOOL_MAX_RISK=HIGH
-AGENT_TOOL_CORE_POOL_SIZE=2
-AGENT_TOOL_MAX_POOL_SIZE=8
-AGENT_TOOL_QUEUE_CAPACITY=100
+java -jar data-agent.jar --spring.profiles.active=prod
 ```
 
-`EMBEDDING_API_KEY` 示例只是占位符，真实值只配置在 IDEA Run Configuration、Shell 环境或部署平台 Secret 中，不要写入 YAML 或提交到仓库。生产环境不要使用 local 默认密钥。`APP_ENCRYPTION_KEY` 会影响数据库敏感字段解密，不能随意更换。
+当前 `application-prod.yml` 与 `application-local.yml` 使用相同的连接、密钥和功能开关，只适合当前个人项目部署。模型 Key 优先通过 Control Plane 的模型目录维护；`app.encryption.key` 会影响数据库敏感字段解密，不能随意更换。
 
 ## 管理员和权限
 
@@ -178,11 +128,10 @@ RBAC 相关表：
 - `sys_permission`
 - `sys_user_role`
 - `sys_role_permission`
-- `admin_role_request`
 
 默认初始化会确保 `USER`、`ADMIN`、`app:use`、`*:*` 存在。`BOOTSTRAP_ADMIN_USERS` 指定的已有用户会自动补管理员角色，local 默认是 `super`。
 
-如果系统还没有任何管理员，可以调用 `/api/v1/auth/bootstrap-admin` 创建第一个管理员。已有管理员后，新用户通过前端“管理员申请”提交申请，由管理员审核。
+如果系统还没有任何管理员，可以调用 `/api/v1/auth/bootstrap-admin` 创建第一个管理员。系统不提供用户自助提权入口；已有管理员通过管理控制台的“用户”页面为账号分配角色。旧环境确认不再需要申请历史后，可手动执行 `sql/drop-admin-role-request.sql` 清理旧表。
 
 ## 模型配置
 
@@ -212,22 +161,22 @@ app:
 
 ## 前端功能
 
-前端源码在 `frontend/src`，导航功能包括：
+前端源码在 `frontend/src`。普通用户 Reference App 包括：
 
-- 工作台
-- 智能对话
-- 资料中心
-- 记忆中心
-- 知识库
-- 文件
-- 管理员申请
+- 我的 Agent
+- 知识
+- 上下文
+
+管理员通过独立的“管理控制台”入口访问：
+
 - 用户管理
 - 角色权限
 - 模型管理
 - 技能管理
-- Agent 管理
-- 数据源管理
+- Agent 模板
+- 数据源与连接
 - Agent 动作审批
+- RAG 调试
 - 统计
 - 质量
 - 执行追踪
@@ -251,11 +200,11 @@ npm run build
 com.ai.controller       REST 接口
 com.ai.security         安全上下文、用户、权限基础类
 com.ai.security.auth    登录、JWT、SecurityFilterChain
-com.ai.security.rbac    角色权限和管理员申请
+com.ai.security.rbac    角色和权限管理
 com.ai.agent            Agent 主流程
 com.ai.agent.react      ReAct 循环
-com.ai.agent.orchestrator 多专家编排
-com.ai.agent.specialist 专家实现
+com.ai.agent.orchestrator ReAct 执行计划与并行预检
+com.ai.agent.runtime     统一 Run、路由与执行策略
 com.ai.agent.tool       Agent 工具
 com.ai.skill            动态技能
 com.ai.mcp              模型调用、缓存、重试、token 记录
@@ -280,8 +229,8 @@ com.ai.repository       JPA Repository
 1. 斜杠命令进入 Skill 命令执行。
 2. 指定 `agentId` 时走自定义 Agent。
 3. 指定 `skillId` 时走动态技能。
-4. 默认走 Orchestrator 多专家编排。
-5. Orchestrator 不可用时回退 ReAct。
+4. 未显式指定能力时，加载当前用户的默认个人 Agent。
+5. 个人 Agent 的 AUTO 模式对简单问题走 Chat；复杂任务存在有效子 Agent 时走 Orchestrated，否则走 ReAct。显式 Chat、ReAct 和 Orchestrated 不会在执行层被折叠成其他模式。
 
 普通 Run 状态为 `CREATED -> RUNNING -> COMPLETED | FAILED | CANCELLED | TIMED_OUT | BUDGET_EXHAUSTED`。启用持久化审批后，ReAct 还允许 `RUNNING -> WAITING_APPROVAL -> RESUMING`，拒绝和过期分别进入 `REJECTED`、`EXPIRED` 终态，恢复后可以再次等待或进入普通终态。每次状态变化都通过 MySQL 的期望状态、版本和租约条件更新竞争唯一结果。
 
@@ -289,15 +238,23 @@ com.ai.repository       JPA Repository
 
 SSE 首个 Agent 事件为 `run_started`，审批时增加 `approval_required`，随后发送 `businessCompleted=false` 的 transport `done` 并关闭连接。审批后不复用旧 SSE；调用方通过 `GET /api/v1/agent-runs/{runId}` 查询恢复状态。管理员在“动作审批”页处理同租户审批，申请人不能审批自己的动作，恢复前还会重新校验双方当前权限、Tool Registry、Agent allowlist 与风险策略。
 
-审批演示工具 `updateHotelPrice` 只写 `hotel_rate_sandbox`，默认关闭。只有同时开启 durable、sandbox flag，并将工具列入审批工具集合时才会暴露。`approvalId + toolCallId` 是沙箱唯一动作键，能证明本地重复恢复不重复写入；数据库租约本身不能保证外部系统 exactly-once，真实写连接器仍需下游幂等、业务唯一约束或补偿。
+审批演示工具 `updateHotelPrice` 只写 `hotel_rate_sandbox`，local/prod 默认开启。只有同时开启 durable、sandbox flag，并将工具列入审批工具集合时才会暴露。`approvalId + toolCallId` 是沙箱唯一动作键，能证明本地重复恢复不重复写入；数据库租约本身不能保证外部系统 exactly-once，真实写连接器仍需下游幂等、业务唯一约束或补偿。
 
 内存 Registry 仍只负责当前节点在途执行和快速取消，MySQL Run Store 才是启用 durable 后的权威状态。`APP_ENCRYPTION_KEY` 用于 Checkpoint 与原始工具请求的 AES-GCM 密文；直接更换单密钥会使等待中的 Run 无法恢复，生产轮换必须先设计多版本密钥迁移。完整设计见 [Agent 运行时与 Harness](docs/核心逻辑详解/Agent运行时与Harness.md)。
 
 所有模型工具调用还会经过服务端 Tool Governance：Registry 元数据、Run RBAC 快照、当前 Agent 白名单和风险策略共同决定是否允许执行；随后统一应用参数 Schema 校验、预算、timeout、安全重试、脱敏、截断、Journal、事件与指标。模型只能建议调用，不能授予自己权限。详细合同见 [Agent 工具治理](docs/核心逻辑详解/Agent工具治理.md)。
 
+Tool、Skill 和子 Agent 会投影为统一 Capability Descriptor，包含稳定身份、版本、输入/输出合同、租户/所有者、权限、风险、生命周期和运行时可用性。Profile 只使用 `tool:<name>`、`skill:<skillId>`、`agent:<agentId>` 组成的 `capabilityBindings`，可以保存 0 至 64 项，显式 `[]` 表示零能力。默认个人 Agent 首次创建时固化当时可见、可绑定、可用的 Tool 快照，后续新增 Tool 不会自动扩大已有 Agent 权限。旧库必须先运行能力审计和迁移，再运行收口脚本删除旧列。
+
+个人 Agent 设置可以选择三类能力和 `Auto / Chat / ReAct / Orchestrated` 四种模式。Chat 不开放可调用能力；ReAct 使用 Tool 和 Skill；Orchestrated 额外允许委派已绑定子 Agent；Auto 根据任务复杂度和当前有效子 Agent 决定路线。Skill 和委派通过 Harness 内部适配 Tool 进入同一治理管道，仍消耗根 Run 的 Tool、模型、Token 与 deadline 预算。普通用户只读取权限过滤后的目录，保存与每次执行都会在服务端重新校验；Capability Registry 本身不持有执行器，MCP 或未来 Provider 也不能通过目录绕过 Tool Pipeline。
+
+子 Agent 使用自己的模型、System Prompt 和能力快照，但继承同一个根 Run；运行时最多 3 层并拒绝活动路径环路。当前仍不是拖拽式 DAG 平台，也没有跨 Run 消息总线。组合执行已完成静态调用链与前端 fixture 验证，真实模型下的嵌套委派仍需在重启后的后端运行验收。
+
+四条可重复演示路径见 [Agent Harness 求职演示手册](docs/interview/AGENT_HARNESS_DEMO.md)：知识证据、工具审批与恢复、预算终止与配置恢复、组合能力与模式边界。
+
 ## RAG、知识库和文件
 
-知识库和文件内容以 MySQL 为事实源，同时写入 Milvus 向量索引和 Elasticsearch Chunk 全文索引。RAG 全文召回固定使用 Elasticsearch BM25：
+知识库和文件内容以 MySQL 为事实源，同时写入 Milvus 向量索引和 Elasticsearch Chunk 全文索引。个人 Agent 的两条召回通道、父级上下文回查和资源管理接口都同时按 `tenantId + userId` 隔离；管理控制台的租户级视图不复用普通用户接口。RAG 全文召回固定使用 Elasticsearch BM25：
 
 ```bash
 RAG_ELASTICSEARCH_BASE_URL=http://localhost:9200
@@ -306,7 +263,7 @@ RAG_ELASTICSEARCH_INDEX=data-agent-rag-v2
 
 `data-agent-rag-v2` 使用显式 Mapping：租户、来源和 Chunk 标识为 `keyword`，正文、标题和章节为 `text`。旧的动态 Mapping 索引不会被自动删除，需要显式重建数据。
 
-RRF 融合后的候选默认通过外部 Cross-Encoder 精排。首个配置使用硅基流动兼容接口和 `BAAI/bge-reranker-v2-m3`；真实密钥只放在 IDEA Run Configuration、Shell 环境或部署平台 Secret：
+RRF 融合后的候选默认通过外部 Cross-Encoder 精排。首个配置使用硅基流动兼容接口和 `BAAI/bge-reranker-v2-m3`；真实密钥只放在本地 Shell 环境或部署平台 Secret：
 
 ```bash
 RERANK_ENABLED=true

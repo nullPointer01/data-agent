@@ -14,6 +14,7 @@ import com.ai.security.dto.RefreshTokenRequest;
 import com.ai.security.dto.RegisterRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,16 +41,30 @@ public class AuthService {
 
     private final RolePermissionService rolePermissionService;
 
+    private final boolean registrationEnabled;
+
+    private final String registrationTenantId;
+
     public AuthService(SysUserRepository userRepository, PasswordEncoder passwordEncoder,
-            JwtTokenProvider jwtTokenProvider, RolePermissionService rolePermissionService) {
+            JwtTokenProvider jwtTokenProvider, RolePermissionService rolePermissionService,
+            @Value("${app.security.registration.enabled:false}") boolean registrationEnabled,
+            @Value("${app.security.registration.tenant-id:default}") String registrationTenantId) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.rolePermissionService = rolePermissionService;
+        this.registrationEnabled = registrationEnabled;
+        this.registrationTenantId = registrationTenantId;
     }
 
     @Transactional(rollbackFor = Exception.class)
     public AuthResult<AuthResponse> register(RegisterRequest request) {
+        if (!registrationEnabled) {
+            return AuthResult.failure("注册功能未开放", "REGISTRATION_DISABLED");
+        }
+        if (!StringUtils.hasText(registrationTenantId)) {
+            return AuthResult.failure("注册租户未配置", "REGISTRATION_TENANT_NOT_CONFIGURED");
+        }
         String username = request.username().trim();
         if (userRepository.existsByUsername(username)) {
             return AuthResult.failure("用户名已存在", "USERNAME_EXISTS");
@@ -60,7 +75,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setNickname(defaultIfBlank(request.nickname(), username));
         user.setEmail(trimToNull(request.email()));
-        user.setTenantId(defaultIfBlank(request.tenantId(), SecurityConstants.DEFAULT_TENANT_ID));
+        user.setTenantId(registrationTenantId.trim());
         user.setEnabled(true);
         user.setDailyTokenLimit(SecurityConstants.DEFAULT_USER_DAILY_TOKEN_LIMIT);
         user.setRoles(rolePermissionService.resolveRoles(Set.of(SecurityConstants.ROLE_USER)));
@@ -153,6 +168,9 @@ public class AuthService {
         }
 
         SysUser user = userOptional.get();
+        if (!user.isEnabled()) {
+            return AuthResult.failure("账号已被禁用", "USER_DISABLED");
+        }
         String newAccessToken = jwtTokenProvider.createAccessToken(
                 user.getId(), user.getUsername(), user.getTenantId(),
                 rolePermissionService.toRoleCodes(user.getRoles()));

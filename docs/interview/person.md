@@ -446,21 +446,23 @@ retries = 3
 
 ### 一句话定位
 
-> "从零独立设计并落地的 AI Agent 系统，核心亮点是：5 层请求路由 + Orchestrator 多专家编排 + RRF 混合检索 RAG + 3 层记忆架构 + 模型熔断重试。438 个 Java 文件，约 1.8 万行代码，涵盖对话/知识库/向量/安全/追踪全链路。"
+> "从零独立设计并落地的 AI Agent Harness，核心亮点是：统一 Agent Run + 请求级规划 + 受控子 Agent 委派 + RRF 混合检索 RAG + 分层记忆 + 模型故障治理，覆盖对话、知识库、权限、审批、预算和追踪全链路。"
 
-### 整体架构（5 层路由）
+### 整体架构（统一 Agent Run）
 
 ```
 HTTP 请求
   ↓
-AgentRuntimeService（路由决策）
-  1. 斜杠命令：SkillManager.processWithCommand
-  2. 指定 agentId：MultiAgentRuntimeService
-  3. 指定 skillId：SkillExecutionService
-  4. 默认路径：OrchestratorAgent（含多专家编排）
-  5. Orchestrator 不可用时兜底：ReActAgent
+AgentRuntimeService（薄入口）
   ↓
-执行层（ReActLoopRunner / OrchestratorAgent）
+AgentRunCoordinator（唯一顶层运行入口）
+  1. AgentRunRouteResolver 固化 AgentProfile + RequestExecutionPlan
+  2. 创建 runId、预算、权限快照、事件和 Trace
+  3. 分派 Chat / ReAct / Orchestrated Strategy
+  ↓
+ConfiguredAgentExecutionService（仅包内可见）
+  ↓
+ConfigurableAgentExecutor（要求 AgentRunScope，不能自行推断模式）
   ↓
 工具层（AgentTools 分发 → 7 个 ToolService）
   ↓
@@ -523,23 +525,23 @@ UserProfileMemory（用户画像，MySQL user_profile）
 
 **记忆注入**：`buildContext(sessionId, query)` 四层全部组装成 `MemoryContext`，最终由 `MemoryContextPromptFormatter` 格式化注入系统 Prompt
 
-#### ④ 编排器（OrchestratorAgent）
+#### ④ 受控子 Agent 编排（Orchestrated）
 
-两阶段决策：
+当前顶层编排路线：
 
 ```java
-// 路由优先级
-1. 文本匹配（question 含 profile.name 或 profile.description）
-2. 意图类型匹配（IntentAnalyzer.analyze → preferredType → matchProfileByType）
-3. 兜底 ReActAgent
+1. PersonalAgentRequestPlanner 判断是否需要 ORCHESTRATED
+2. 只把 Profile 显式绑定的子 Agent 投影成 delegateToAgent
+3. Tool Pipeline 再做 RBAC、风险、预算和 timeout 准入
+4. 子 Agent 使用自己的配置，但共享根 AgentRunContext
 ```
 
-多任务计划执行（`executeStructured`）：
+项目已经移除旧多专家执行内核，面试重点讲当前委派约束：
 
-- `OrchestratorTaskPlanner.plan()` 拆解任务为 `OrchestrationPlan`（含 `executionPhases`）
-- 按阶段顺序执行，**每阶段任务完成后把结果填入 `sharedContext`**，下游任务通过 `collaborationManager.injectSharedContext` 读取上游输出
-- 失败任务检查 `blocking dependencies`，上游失败 → 下游跳过，记录 `skippedTasks`
-- 最终由 `ResultIntegrator.integrate` 把多任务答案合并成最终输出
+- 父 Agent 未绑定的子 Agent 不可见、不可调用
+- 委派链最多 3 层，并拒绝重复 Agent ID
+- 父子 Agent 共享 timeout、模型调用、工具调用和 Token 预算
+- 子 Agent 每次执行重新读取自己的 Profile 和 Capability 快照
 
 #### ⑤ 模型重试与熔断（ModelRetryExecutor）
 
@@ -617,7 +619,7 @@ public void onModelConfigChange(ModelConfigChangeEvent event) {
 #### Q：AI 协作开发，哪些是你做的，哪些 AI 做的？
 
 **我独立设计**：
-- 5 层路由架构、Orchestrator 编排决策链、三层记忆分层
+- 统一 Agent Run、请求级规划、受控子 Agent 委派和分层记忆
 - RRF 融合参数调优（为什么 60 而不是 10）
 - 熔断策略：401/403/404 不重试，429/5xx 重试（这个判断需要理解 HTTP 语义）
 - 租户隔离双层方案（MySQL + Milvus filter 必须同步）
@@ -2183,7 +2185,7 @@ Full GC 频次从几分钟一次降到几小时一次，
 
 简历写 2026-04 至今，到面试时才 2 个月，面试官可能怀疑深度。**主动说出来**：
 
-> "这个项目时间不长，但代码量 1.8 万行覆盖 5 层路由、ReAct、RAG、3 层记忆。能这么快产出是因为我把它当成 AI 协作开发的方法论实验——我主导设计和技术选型，AI 工具做代码实现，过程中沉淀了团队可复用的 Prompt 模板和协作流程。这本身就是我想验证的东西：**一个有经验的 Java 工程师 + AI 工具，能产出什么量级的项目**。"
+> "这个项目时间不长，但我已经把统一 Agent Run、ReAct、受控子 Agent 委派、RAG、记忆、审批和可观测性串成完整链路。能快速迭代是因为我把它当成 AI 协作开发的方法论实验：我主导产品边界、架构和验收标准，AI 工具协助实现，我再通过调用链和真实运行证据校验。"
 
 ---
 

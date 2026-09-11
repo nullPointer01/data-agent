@@ -33,16 +33,17 @@ public class RagParentContextResolver {
      *
      * @param result 检索结果
      * @param tenantId 租户编号
+     * @param userId 用户编号
      * @return 补齐父级上下文后的检索结果
      */
-    public RetrievalResult resolve(RetrievalResult result, String tenantId) {
+    public RetrievalResult resolve(RetrievalResult result, String tenantId, String userId) {
         if (result == null || !result.metadata().hasParent()) {
             return result;
         }
         if (StringUtils.hasText(result.parentContext())) {
             return result;
         }
-        String content = findSourceContent(result, tenantId).orElse("");
+        String content = findSourceContent(result, tenantId, userId).orElse("");
         String parentContext = sliceParentContext(result, content);
         if (!StringUtils.hasText(parentContext)) {
             return result;
@@ -52,13 +53,37 @@ public class RagParentContextResolver {
                 parentContext);
     }
 
-    private Optional<String> findSourceContent(RetrievalResult result, String tenantId) {
+    /**
+     * 返回当前用户可见的来源名称，供普通用户阅读引用证据。
+     */
+    public String resolveSourceName(RetrievalResult result, String tenantId, String userId) {
+        if (result == null) {
+            return "";
+        }
         if (VectorDocumentTypes.KNOWLEDGE.equals(result.sourceType())) {
-            return knowledgeEntryRepository.findByKnowledgeIdAndTenantId(result.sourceId(), tenantId)
+            return knowledgeEntryRepository
+                    .findByKnowledgeIdAndTenantIdAndCreatedBy(result.sourceId(), tenantId, userId)
+                    .map(KnowledgeEntry::getName)
+                    .orElse("");
+        }
+        if (VectorDocumentTypes.FILE.equals(result.sourceType())) {
+            return fileMetadataRepository
+                    .findByFileIdAndTenantIdAndUploadedBy(result.sourceId(), tenantId, userId)
+                    .map(FileMetadata::getFilename)
+                    .orElse("");
+        }
+        return "";
+    }
+
+    private Optional<String> findSourceContent(RetrievalResult result, String tenantId, String userId) {
+        if (VectorDocumentTypes.KNOWLEDGE.equals(result.sourceType())) {
+            return knowledgeEntryRepository
+                    .findByKnowledgeIdAndTenantIdAndCreatedBy(result.sourceId(), tenantId, userId)
                     .map(KnowledgeEntry::getContent);
         }
         if (VectorDocumentTypes.FILE.equals(result.sourceType())) {
-            return fileMetadataRepository.findByFileIdAndTenantId(result.sourceId(), tenantId)
+            return fileMetadataRepository
+                    .findByFileIdAndTenantIdAndUploadedBy(result.sourceId(), tenantId, userId)
                     .map(FileMetadata::getContent);
         }
         return Optional.empty();

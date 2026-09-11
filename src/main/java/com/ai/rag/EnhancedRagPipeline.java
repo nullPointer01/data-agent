@@ -62,17 +62,19 @@ public class EnhancedRagPipeline {
      *
      * @param query 用户查询
      * @param tenantId 租户编号
+     * @param userId 当前用户编号
      * @return RAG 上下文响应
      */
-    public RagContextResponse execute(String query, String tenantId) {
+    public RagContextResponse execute(String query, String tenantId, String userId) {
         long totalStartedAt = System.currentTimeMillis();
         RagQueryAnalysis analysis = ragQueryRewriter.analyze(query);
-        if (!ragProperties.isEnabled() || analysis.rewrittenQuery().isBlank() || isBlank(tenantId)) {
+        if (!ragProperties.isEnabled() || analysis.rewrittenQuery().isBlank()
+                || isBlank(tenantId) || isBlank(userId)) {
             return RagContextResponse.empty();
         }
         StopWatch stopWatch = new StopWatch();
         stopWatch.start("retrieve");
-        HybridRetrievalResult hybridRetrieval = hybridRetriever.retrieveWithTrace(analysis, tenantId,
+        HybridRetrievalResult hybridRetrieval = hybridRetriever.retrieveWithTrace(analysis, tenantId, userId,
                 ragProperties.getCandidateTopK(), ragProperties.getMinScore(),
                 List.of(VectorDocumentTypes.KNOWLEDGE, VectorDocumentTypes.FILE));
         List<RetrievalResult> matches = hybridRetrieval.results();
@@ -90,11 +92,11 @@ public class EnhancedRagPipeline {
         }
         stopWatch.start("parentContext");
         List<RetrievalResult> resolvedMatches = ragMatches.stream()
-                .map(match -> resolveParentContext(match, tenantId))
+                .map(match -> resolveParentContext(match, tenantId, userId))
                 .toList();
         stopWatch.stop();
         stopWatch.start("compression");
-        RagContextBuildResult buildResult = buildResponse(resolvedMatches);
+        RagContextBuildResult buildResult = buildResponse(resolvedMatches, tenantId, userId);
         stopWatch.stop();
         RagContextResponse response = new RagContextResponse(buildResult.context(), buildResult.citations().size(),
                 analysis.rewrittenQuery(), analysis.queryType(), analysis.keywords(), buildResult.citations());
@@ -124,7 +126,7 @@ public class EnhancedRagPipeline {
         return lastTrace;
     }
 
-    private RagContextBuildResult buildResponse(List<RetrievalResult> ragMatches) {
+    private RagContextBuildResult buildResponse(List<RetrievalResult> ragMatches, String tenantId, String userId) {
         List<RagContextSection> sections = new ArrayList<>();
         List<RagCitation> citations = new ArrayList<>();
         for (int index = 0; index < ragMatches.size(); index++) {
@@ -132,7 +134,7 @@ public class EnhancedRagPipeline {
             String referenceId = REFERENCE_PREFIX + (index + 1);
             sections.add(new RagContextSection(referenceId, buildSectionHeader(referenceId, match),
                     contextContent(match)));
-            citations.add(citation(referenceId, match));
+            citations.add(citation(referenceId, match, tenantId, userId));
         }
         String context = ragContextCompressor.compress(sections, ragProperties.getMaxContextChars());
         return new RagContextBuildResult(context, citations);
@@ -145,8 +147,8 @@ public class EnhancedRagPipeline {
         return RAG_SOURCE_TYPES.contains(match.sourceType());
     }
 
-    private RetrievalResult resolveParentContext(RetrievalResult match, String tenantId) {
-        RetrievalResult resolved = ragParentContextResolver.resolve(match, tenantId);
+    private RetrievalResult resolveParentContext(RetrievalResult match, String tenantId, String userId) {
+        RetrievalResult resolved = ragParentContextResolver.resolve(match, tenantId, userId);
         return resolved == null ? match : resolved;
     }
 
@@ -177,8 +179,10 @@ public class EnhancedRagPipeline {
         return match.parentContext();
     }
 
-    private RagCitation citation(String referenceId, RetrievalResult match) {
-        return new RagCitation(referenceId, match.sourceType(), match.sourceId(), match.chunkId(), match.score(),
+    private RagCitation citation(String referenceId, RetrievalResult match, String tenantId, String userId) {
+        String sourceName = ragParentContextResolver.resolveSourceName(match, tenantId, userId);
+        return new RagCitation(referenceId, match.sourceType(), match.sourceId(), sourceName,
+                match.chunkId(), match.score(),
                 match.vectorScore(), match.fullTextScore(), match.channels(),
                 preview(match.content(), CITATION_SNIPPET_LENGTH), match.sectionPath(), match.charStart(),
                 match.charEnd(), match.containsTable(), match.containsCode(), match.containsList(),

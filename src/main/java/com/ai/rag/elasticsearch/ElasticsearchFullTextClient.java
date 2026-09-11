@@ -142,10 +142,11 @@ public class ElasticsearchFullTextClient {
     /**
      * 执行 BM25 全文检索，返回兼容旧格式的 JsonNode。
      */
-    public JsonNode search(RagQueryAnalysis analysis, String tenantId, int topK, List<String> sourceTypes) {
+    public JsonNode search(RagQueryAnalysis analysis, String tenantId, String userId, int topK,
+            List<String> sourceTypes) {
         ensureIndex();
         try {
-            SearchRequest request = buildSearchRequest(analysis, tenantId, topK, sourceTypes);
+            SearchRequest request = buildSearchRequest(analysis, tenantId, userId, topK, sourceTypes);
             SearchResponse<Map> response = esClient.search(request, Map.class);
             return toJsonNode(response);
         } catch (IOException e) {
@@ -166,10 +167,11 @@ public class ElasticsearchFullTextClient {
         }
     }
 
-    private SearchRequest buildSearchRequest(RagQueryAnalysis analysis, String tenantId, int topK,
+    private SearchRequest buildSearchRequest(RagQueryAnalysis analysis, String tenantId, String userId, int topK,
             List<String> sourceTypes) {
         List<Query> filters = new ArrayList<>();
         filters.add(termQuery(FIELD_TENANT_ID, tenantId));
+        filters.add(termQuery(FIELD_USER_ID, userId));
         if (sourceTypes != null && !sourceTypes.isEmpty()) {
             List<FieldValue> values = sourceTypes.stream()
                     .map(FieldValue::of)

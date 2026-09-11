@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -35,6 +36,7 @@ public class SkillManager {
 
     private final List<Skill> skills = new ArrayList<>();
     private final Map<String, Skill> skillByName = new ConcurrentHashMap<>();
+    private final Map<String, Skill> skillByStableId = new ConcurrentHashMap<>();
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private volatile Skill defaultSkill;
     private final McpContextManager mcpContextManager;
@@ -51,15 +53,35 @@ public class SkillManager {
     }
 
     public void registerSkill(Skill skill) {
-        registerSkill(skill, true);
+        registerSkill(null, skill, true);
+    }
+
+    /**
+     * 使用持久化稳定编号注册技能，同时保留名称查找兼容性。
+     *
+     * @param stableId Skill 配置编号
+     * @param skill 运行时技能
+     */
+    public void registerSkill(String stableId, Skill skill) {
+        registerSkill(stableId, skill, true);
     }
 
     public void registerSkillWithoutVectorRefresh(Skill skill) {
-        registerSkill(skill, false);
+        registerSkill(null, skill, false);
     }
 
-    private void registerSkill(Skill skill, boolean refreshVectorIndex) {
-        upsertSkill(skill);
+    /**
+     * 启动加载时使用稳定编号注册技能，但不触发外部向量写入。
+     *
+     * @param stableId Skill 配置编号
+     * @param skill 运行时技能
+     */
+    public void registerSkillWithoutVectorRefresh(String stableId, Skill skill) {
+        registerSkill(stableId, skill, false);
+    }
+
+    private void registerSkill(String stableId, Skill skill, boolean refreshVectorIndex) {
+        upsertSkill(stableId, skill);
         if (refreshVectorIndex) {
             refreshSkillVectorIndex(skill, false);
         }
@@ -67,15 +89,35 @@ public class SkillManager {
     }
 
     public void registerDefaultSkill(Skill skill) {
-        registerDefaultSkill(skill, true);
+        registerDefaultSkill(null, skill, true);
+    }
+
+    /**
+     * 使用持久化稳定编号注册默认技能。
+     *
+     * @param stableId Skill 配置编号
+     * @param skill 默认运行时技能
+     */
+    public void registerDefaultSkill(String stableId, Skill skill) {
+        registerDefaultSkill(stableId, skill, true);
     }
 
     public void registerDefaultSkillWithoutVectorRefresh(Skill skill) {
-        registerDefaultSkill(skill, false);
+        registerDefaultSkill(null, skill, false);
     }
 
-    private void registerDefaultSkill(Skill skill, boolean refreshVectorIndex) {
-        upsertSkill(skill);
+    /**
+     * 启动加载时使用稳定编号注册默认技能，但不触发外部向量写入。
+     *
+     * @param stableId Skill 配置编号
+     * @param skill 默认运行时技能
+     */
+    public void registerDefaultSkillWithoutVectorRefresh(String stableId, Skill skill) {
+        registerDefaultSkill(stableId, skill, false);
+    }
+
+    private void registerDefaultSkill(String stableId, Skill skill, boolean refreshVectorIndex) {
+        upsertSkill(stableId, skill);
         this.defaultSkill = skill;
         if (refreshVectorIndex) {
             refreshSkillVectorIndex(skill, true);
@@ -84,15 +126,34 @@ public class SkillManager {
     }
 
     public void unregisterSkill(String name) {
-        if (!hasText(name)) {
+        unregisterSkill(null, name);
+    }
+
+    /**
+     * 按稳定编号移除准确的运行时技能及其名称别名。
+     *
+     * @param stableId Skill 配置编号
+     * @param name Skill 名称，仅用于旧数据兼容和向量清理
+     */
+    public void unregisterSkill(String stableId, String name) {
+        if (!hasText(stableId) && !hasText(name)) {
             return;
         }
-        String normalizedName = normalizeName(name);
+        String normalizedName = hasText(name) ? normalizeName(name) : "";
         rwLock.writeLock().lock();
         try {
-            skills.removeIf(skill -> normalizedName.equals(normalizeName(skill.getName())));
-            skillByName.remove(normalizedName);
-            if (defaultSkill != null && normalizedName.equals(normalizeName(defaultSkill.getName()))) {
+            Skill target = hasText(stableId) ? skillByStableId.get(normalizeName(stableId)) : null;
+            if (target == null && hasText(name)) {
+                target = skillByName.get(normalizedName);
+            }
+            if (target == null) {
+                return;
+            }
+            Skill removed = target;
+            skills.removeIf(skill -> skill == removed);
+            skillByName.entrySet().removeIf(entry -> entry.getValue() == removed);
+            skillByStableId.entrySet().removeIf(entry -> entry.getValue() == removed);
+            if (defaultSkill == removed) {
                 defaultSkill = null;
             }
         } finally {
@@ -134,7 +195,10 @@ public class SkillManager {
         if (!hasText(name)) {
             return null;
         }
-        Skill skill = skillByName.get(normalizeName(name));
+        Skill skill = skillByStableId.get(normalizeName(name));
+        if (skill == null) {
+            skill = skillByName.get(normalizeName(name));
+        }
         if (skill != null) {
             return skill;
         }
@@ -144,6 +208,19 @@ public class SkillManager {
             }
         }
         return null;
+    }
+
+    /**
+     * 仅按持久化稳定编号查找 Skill，不使用显示名称别名。
+     *
+     * @param stableId Skill 稳定编号
+     * @return 精确匹配的运行时 Skill，不存在时为 null
+     */
+    public Skill findSkillById(String stableId) {
+        if (!hasText(stableId)) {
+            return null;
+        }
+        return skillByStableId.get(normalizeName(stableId));
     }
 
     public String processWithSkill(String query, Object data) {
@@ -160,6 +237,18 @@ public class SkillManager {
             skill = defaultSkill;
         }
         return executeResolvedSkill(skill, query, data);
+    }
+
+    /**
+     * 按持久化稳定编号精确执行 Skill，不允许回退到默认 Skill。
+     *
+     * @param stableId Skill 稳定编号
+     * @param query 用户任务
+     * @param data 可选数据
+     * @return Skill 结果，不存在时返回 null
+     */
+    public String processWithSkillById(String stableId, String query, Object data) {
+        return executeResolvedSkill(findSkillById(stableId), query, data);
     }
 
     public String processWithCommand(String command, Object data) {
@@ -194,14 +283,26 @@ public class SkillManager {
         return name.trim().toLowerCase(Locale.ROOT);
     }
 
-    private void upsertSkill(Skill skill) {
+    private void upsertSkill(String stableId, Skill skill) {
         validateSkill(skill);
         String normalizedName = normalizeName(skill.getName());
         rwLock.writeLock().lock();
         try {
-            skills.removeIf(item -> normalizedName.equals(normalizeName(item.getName())));
+            Skill existing = hasText(stableId) ? skillByStableId.get(normalizeName(stableId)) : null;
+            Set<Skill> replaced = skills.stream()
+                    .filter(item -> item == existing || normalizedName.equals(normalizeName(item.getName())))
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            skills.removeIf(replaced::contains);
+            skillByName.entrySet().removeIf(entry -> replaced.contains(entry.getValue()));
+            skillByStableId.entrySet().removeIf(entry -> replaced.contains(entry.getValue()));
             skills.add(skill);
             skillByName.put(normalizedName, skill);
+            if (hasText(stableId)) {
+                skillByStableId.put(normalizeName(stableId), skill);
+            }
+            if (defaultSkill != null && replaced.contains(defaultSkill)) {
+                defaultSkill = skill;
+            }
         } finally {
             rwLock.writeLock().unlock();
         }

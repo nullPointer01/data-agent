@@ -1,23 +1,15 @@
 package com.ai.model;
 
-import com.ai.agent.AgentType;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * 租户隔离的可配置 Agent。
@@ -36,10 +28,6 @@ public class AgentProfile {
     @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 32)
-    @Enumerated(EnumType.STRING)
-    private AgentType type = AgentType.REACT;
-
     @Column(length = 512)
     private String description;
 
@@ -49,22 +37,17 @@ public class AgentProfile {
     @Column(name = "model_id", length = 64)
     private String modelId;
 
-    @Column(name = "skill_id", length = 64)
-    private String skillId;
+    /** 统一能力稳定身份 JSON 数组；[] 表示明确无能力。 */
+    @Column(name = "capability_bindings", nullable = false, columnDefinition = "TEXT")
+    private String capabilityBindings;
 
-    @Column(name = "datasource_id", length = 64)
-    private String datasourceId;
-
-    /** 可用工具 JSON 数组，如 ["searchKnowledge","calculate"] */
-    @Column(name = "tools", columnDefinition = "TEXT")
-    private String tools;
-
-    /** chat=纯对话 | react=工具循环 */
+    /** auto=自动选择 | chat=纯对话 | react=工具循环 | orchestrated=受控子 Agent 委派 */
     @Column(name = "execution_mode", length = 16)
-    private String executionMode = "react";
+    private String executionMode = "auto";
 
-    @Transient
-    private static final ObjectMapper TOOLS_MAPPER = new ObjectMapper();
+    /** 当前用户的默认个人 Agent。 */
+    @Column(name = "default_agent", nullable = false, columnDefinition = "BIT(1) NOT NULL DEFAULT 0")
+    private boolean defaultAgent;
 
     @Column(nullable = false)
     private boolean enabled = true;
@@ -108,22 +91,6 @@ public class AgentProfile {
         this.name = name;
     }
 
-    public AgentType getType() {
-        return type;
-    }
-
-    public void setType(AgentType type) {
-        this.type = type == null ? AgentType.REACT : type;
-    }
-
-    public void setType(String type) {
-        this.type = AgentType.fromCode(type);
-    }
-
-    public String getTypeCode() {
-        return type == null ? AgentType.REACT.getCode() : type.getCode();
-    }
-
     public String getDescription() {
         return description;
     }
@@ -148,52 +115,12 @@ public class AgentProfile {
         this.modelId = modelId;
     }
 
-    public String getSkillId() {
-        return skillId;
+    public String getCapabilityBindings() {
+        return capabilityBindings;
     }
 
-    public void setSkillId(String skillId) {
-        this.skillId = skillId;
-    }
-
-    public String getDatasourceId() {
-        return datasourceId;
-    }
-
-    public void setDatasourceId(String datasourceId) {
-        this.datasourceId = datasourceId;
-    }
-
-    public String getTools() {
-        return tools;
-    }
-
-    public void setTools(String tools) {
-        this.tools = tools;
-    }
-
-    /** 解析 tools JSON 为工具名列表。 */
-    public List<String> getToolList() {
-        if (tools == null || tools.isBlank()) {
-            return Collections.emptyList();
-        }
-        try {
-            return TOOLS_MAPPER.readValue(tools, new TypeReference<List<String>>() {});
-        } catch (Exception e) {
-            return Collections.emptyList();
-        }
-    }
-
-    public void setToolList(List<String> toolList) {
-        if (toolList == null || toolList.isEmpty()) {
-            this.tools = null;
-            return;
-        }
-        try {
-            this.tools = TOOLS_MAPPER.writeValueAsString(toolList);
-        } catch (Exception e) {
-            this.tools = null;
-        }
+    public void setCapabilityBindings(String capabilityBindings) {
+        this.capabilityBindings = capabilityBindings;
     }
 
     public String getExecutionMode() {
@@ -206,6 +133,18 @@ public class AgentProfile {
 
     public boolean isChatMode() {
         return "chat".equalsIgnoreCase(executionMode);
+    }
+
+    public boolean isAutoMode() {
+        return "auto".equalsIgnoreCase(executionMode);
+    }
+
+    public boolean isDefaultAgent() {
+        return defaultAgent;
+    }
+
+    public void setDefaultAgent(boolean defaultAgent) {
+        this.defaultAgent = defaultAgent;
     }
 
     public boolean isEnabled() {

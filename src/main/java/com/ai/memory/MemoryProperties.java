@@ -12,6 +12,10 @@ public class MemoryProperties {
 
     private boolean modelCompressionEnabled = false;
 
+    private boolean semanticExtractionEnabled = true;
+
+    private double semanticExtractionMinConfidence = 0.85D;
+
     private int retentionBatchSize = 200;
 
     private int shortTermRetentionDays = 30;
@@ -36,6 +40,22 @@ public class MemoryProperties {
 
     public void setModelCompressionEnabled(boolean modelCompressionEnabled) {
         this.modelCompressionEnabled = modelCompressionEnabled;
+    }
+
+    public boolean isSemanticExtractionEnabled() {
+        return semanticExtractionEnabled;
+    }
+
+    public void setSemanticExtractionEnabled(boolean semanticExtractionEnabled) {
+        this.semanticExtractionEnabled = semanticExtractionEnabled;
+    }
+
+    public double getSemanticExtractionMinConfidence() {
+        return semanticExtractionMinConfidence;
+    }
+
+    public void setSemanticExtractionMinConfidence(double semanticExtractionMinConfidence) {
+        this.semanticExtractionMinConfidence = semanticExtractionMinConfidence;
     }
 
     public int getRetentionBatchSize() {

@@ -4,10 +4,8 @@ import com.ai.memory.dto.UserMemoryProfileSnapshotResponse;
 import com.ai.repository.UserProfileMemoryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 用户画像持久化服务。
@@ -41,20 +39,24 @@ public class UserProfileMemoryService {
     }
 
     /**
-     * 用新提取出的画像快照合并更新持久画像。
+     * 使用当前有效语义记忆完整替换持久画像。
      *
      * @param tenantId 租户 ID
      * @param userId 用户 ID
      * @param snapshot 新画像快照
-     * @param evidenceCount 证据记忆数量
-     * @return 合并后的画像快照
+     * @return 重建后的画像快照
      */
     @Transactional(rollbackFor = Exception.class)
-    public UserMemoryProfileSnapshotResponse upsertSnapshot(String tenantId, String userId,
-            UserMemoryProfileSnapshotResponse snapshot, int evidenceCount) {
+    public UserMemoryProfileSnapshotResponse replaceSnapshot(String tenantId, String userId,
+            UserMemoryProfileSnapshotResponse snapshot) {
+        if (snapshot.evidenceCount() <= 0) {
+            userProfileMemoryRepository.findByTenantIdAndUserId(tenantId, userId)
+                    .ifPresent(userProfileMemoryRepository::delete);
+            return UserMemoryProfileSnapshotResponse.empty();
+        }
         UserProfileMemory profile = userProfileMemoryRepository.findByTenantIdAndUserId(tenantId, userId)
                 .orElseGet(() -> createProfile(tenantId, userId));
-        merge(profile, snapshot, evidenceCount);
+        replace(profile, snapshot);
         return toSnapshot(userProfileMemoryRepository.save(profile));
     }
 
@@ -65,22 +67,18 @@ public class UserProfileMemoryService {
         return profile;
     }
 
-    private void merge(UserProfileMemory profile, UserMemoryProfileSnapshotResponse snapshot, int evidenceCount) {
-        profile.setDisplayName(firstText(snapshot.displayName(), profile.getDisplayName()));
-        profile.setRole(firstText(snapshot.role(), profile.getRole()));
-        profile.setCompany(firstText(snapshot.company(), profile.getCompany()));
-        profile.setIndustry(firstText(snapshot.industry(), profile.getIndustry()));
-        profile.setCommunicationStyle(firstText(snapshot.communicationStyle(), profile.getCommunicationStyle()));
-        profile.setPreferredFormat(firstText(snapshot.preferredFormat(), profile.getPreferredFormat()));
-        profile.setExpertiseAreasJson(memoryJsonCodec.toJson(mergeList(
-                memoryJsonCodec.toStringList(profile.getExpertiseAreasJson()), snapshot.expertiseAreas())));
-        profile.setFrequentlyAskedTopicsJson(memoryJsonCodec.toJson(mergeList(
-                memoryJsonCodec.toStringList(profile.getFrequentlyAskedTopicsJson()),
-                snapshot.frequentlyAskedTopics())));
-        profile.setDataSourcesJson(memoryJsonCodec.toJson(mergeList(
-                memoryJsonCodec.toStringList(profile.getDataSourcesJson()), snapshot.dataSources())));
-        profile.setConfidence(Math.max(profile.getConfidence(), snapshot.confidence()));
-        profile.setEvidenceCount(Math.max(profile.getEvidenceCount(), evidenceCount));
+    private void replace(UserProfileMemory profile, UserMemoryProfileSnapshotResponse snapshot) {
+        profile.setDisplayName(snapshot.displayName());
+        profile.setRole(snapshot.role());
+        profile.setCompany(snapshot.company());
+        profile.setIndustry(snapshot.industry());
+        profile.setCommunicationStyle(snapshot.communicationStyle());
+        profile.setPreferredFormat(snapshot.preferredFormat());
+        profile.setExpertiseAreasJson(memoryJsonCodec.toJson(snapshot.expertiseAreas()));
+        profile.setFrequentlyAskedTopicsJson(memoryJsonCodec.toJson(snapshot.frequentlyAskedTopics()));
+        profile.setDataSourcesJson(memoryJsonCodec.toJson(snapshot.dataSources()));
+        profile.setConfidence(snapshot.confidence());
+        profile.setEvidenceCount(snapshot.evidenceCount());
         profile.setLastActiveAt(LocalDateTime.now());
     }
 
@@ -95,18 +93,8 @@ public class UserProfileMemoryService {
                 memoryJsonCodec.toStringList(profile.getExpertiseAreasJson()),
                 memoryJsonCodec.toStringList(profile.getFrequentlyAskedTopicsJson()),
                 memoryJsonCodec.toStringList(profile.getDataSourcesJson()),
-                profile.getConfidence());
+                profile.getConfidence(),
+                profile.getEvidenceCount());
     }
 
-    private String firstText(String candidate, String current) {
-        return StringUtils.hasText(candidate) ? candidate : current;
-    }
-
-    private List<String> mergeList(List<String> current, List<String> incoming) {
-        return java.util.stream.Stream.concat(current.stream(), incoming.stream())
-                .filter(StringUtils::hasText)
-                .distinct()
-                .limit(8)
-                .toList();
-    }
 }

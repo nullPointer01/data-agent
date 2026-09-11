@@ -15,10 +15,13 @@ import java.time.LocalDateTime;
  * @param tier 记忆层级
  * @param type 记忆类型
  * @param source 记忆来源
+ * @param semanticKey 语义去重键
  * @param content 首选显示内容
+ * @param confidence 提取置信度
  * @param importance 归一化的重要性分数
  * @param accessCount 访问次数
  * @param createdAt 创建时间
+ * @param updatedAt 更新时间
  * @param expiresAt 过期时间
  * @author data-agent
  */
@@ -28,10 +31,13 @@ public record MemoryEntryResponse(
         MemoryTier tier,
         MemoryType type,
         MemorySource source,
+        String semanticKey,
         String content,
+        double confidence,
         double importance,
         int accessCount,
         LocalDateTime createdAt,
+        LocalDateTime updatedAt,
         LocalDateTime expiresAt) {
 
     /**
@@ -50,10 +56,13 @@ public record MemoryEntryResponse(
                 entry.getTier(),
                 entry.getType(),
                 entry.getSource(),
+                entry.getSemanticKey(),
                 displayContent,
+                entry.getConfidence(),
                 entry.getDecayWeight(),
                 entry.getAccessCount(),
                 entry.getCreatedAt(),
+                entry.getUpdatedAt(),
                 entry.getExpiresAt());
     }
 }

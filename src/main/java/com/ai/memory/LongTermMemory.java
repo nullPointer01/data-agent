@@ -22,20 +22,23 @@ import java.util.List;
 public class LongTermMemory {
 
     private static final double DEFAULT_MIN_SCORE = 0.45D;
-    private static final int PROFILE_EVIDENCE_LIMIT = 20;
+    private static final int PROFILE_EVIDENCE_LIMIT = 200;
 
     private final MemoryEntryRepository memoryEntryRepository;
     private final MemoryEntryFactory memoryEntryFactory;
     private final VectorMemoryService vectorMemoryService;
+    private final MemoryQuotaService memoryQuotaService;
     private final MemoryProperties memoryProperties;
 
     public LongTermMemory(MemoryEntryRepository memoryEntryRepository,
             MemoryEntryFactory memoryEntryFactory,
             VectorMemoryService vectorMemoryService,
+            MemoryQuotaService memoryQuotaService,
             MemoryProperties memoryProperties) {
         this.memoryEntryRepository = memoryEntryRepository;
         this.memoryEntryFactory = memoryEntryFactory;
         this.vectorMemoryService = vectorMemoryService;
+        this.memoryQuotaService = memoryQuotaService;
         this.memoryProperties = memoryProperties;
     }
 
@@ -57,6 +60,39 @@ public class LongTermMemory {
         entry.setTier(MemoryTier.LONG_TERM);
         MemoryEntry saved = memoryEntryRepository.saveAndFlush(entry);
         String content = normalized.effectiveContent();
+        if (StringUtils.hasText(content)) {
+            vectorMemoryService.indexMemory(saved.getMemoryId(), content, tenantId, userId);
+            saved.setVectorId(VectorDocumentTypes.MEMORY + ":" + saved.getMemoryId());
+            return memoryEntryRepository.save(saved);
+        }
+        return saved;
+    }
+
+    /**
+     * 根据稳定语义键新增或覆盖长期语义记忆。
+     *
+     * @param tenantId 租户 ID
+     * @param userId 用户 ID
+     * @param request 语义记忆请求
+     * @return 写入后的记忆
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public MemoryEntry upsertSemantic(String tenantId, String userId, MemoryCaptureRequest request) {
+        MemoryCaptureRequest normalized = request.normalize();
+        if (!StringUtils.hasText(normalized.semanticKey())) {
+            throw new IllegalArgumentException("semanticKey is required");
+        }
+        MemoryEntry incoming = memoryEntryFactory.create(tenantId, userId, normalized);
+        MemoryEntry existing = memoryEntryRepository.findByTenantIdAndUserIdAndTypeAndSemanticKey(
+                tenantId, userId, normalized.type(), normalized.semanticKey()).orElse(null);
+        if (existing == null) {
+            memoryQuotaService.pruneBeforeCapture(tenantId, userId);
+        }
+        MemoryEntry target = existing == null ? incoming : applySemanticUpdate(existing, incoming);
+        target.setTier(MemoryTier.LONG_TERM);
+        target.setExpiresAt(null);
+        MemoryEntry saved = memoryEntryRepository.saveAndFlush(target);
+        String content = resolveContent(saved);
         if (StringUtils.hasText(content)) {
             vectorMemoryService.indexMemory(saved.getMemoryId(), content, tenantId, userId);
             saved.setVectorId(VectorDocumentTypes.MEMORY + ":" + saved.getMemoryId());
@@ -111,8 +147,30 @@ public class LongTermMemory {
      */
     @Transactional(readOnly = true)
     public List<MemoryEntry> listProfileEvidence(String tenantId, String userId) {
-        return memoryEntryRepository.findByTenantIdAndUserIdAndTierOrderByCreatedAtDesc(
-                tenantId, userId, MemoryTier.LONG_TERM, PageRequest.of(0, PROFILE_EVIDENCE_LIMIT));
+        return memoryEntryRepository.findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc(
+                tenantId,
+                userId,
+                MemoryTier.LONG_TERM,
+                List.of(MemoryType.PREFERENCE, MemoryType.ENTITY),
+                PageRequest.of(0, PROFILE_EVIDENCE_LIMIT));
+    }
+
+    private MemoryEntry applySemanticUpdate(MemoryEntry target, MemoryEntry incoming) {
+        target.setSessionId(incoming.getSessionId());
+        target.setSource(incoming.getSource());
+        target.setContent(incoming.getContent());
+        target.setCompressedContent(incoming.getCompressedContent());
+        target.setSourceContentLength(incoming.getSourceContentLength());
+        target.setStoredContentLength(incoming.getStoredContentLength());
+        target.setMetadataJson(incoming.getMetadataJson());
+        target.setSemanticKey(incoming.getSemanticKey());
+        target.setConfidence(incoming.getConfidence());
+        target.setKeyEntitiesJson(incoming.getKeyEntitiesJson());
+        target.setTopicTagsJson(incoming.getTopicTagsJson());
+        target.setRelevanceScore(incoming.getRelevanceScore());
+        target.setDecayWeight(incoming.getDecayWeight());
+        target.setLastAccessedAt(LocalDateTime.now());
+        return target;
     }
 
     /**

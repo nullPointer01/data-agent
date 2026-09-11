@@ -1,84 +1,99 @@
-import { useEffect, useState } from 'react';
+import { GitBranch } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { ResourcePage } from '../../components/admin/ResourcePage.jsx';
 import { Badge } from '../../components/ui.jsx';
+import { formatTime, truncate } from '../../utils/format.js';
 
-export function AgentsPage({ api, toast }) {
-  const [references, setReferences] = useState({ models: [], skills: [], datasources: [] });
-  const [availableTools, setAvailableTools] = useState([]);
-  const [registry, setRegistry] = useState(null);
+export function AgentsPage({ api, toast, onOpenTraces }) {
+  const [models, setModels] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [ownerFilter, setOwnerFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
   const [detail, setDetail] = useState(null);
-
-  const loadRegistry = async () => {
-    const response = await api.get('/api/v1/agents/registry').catch(() => null);
-    setRegistry(response);
-  };
 
   useEffect(() => {
     Promise.all([
       api.get('/api/v1/models/list').catch(() => ({ models: [] })),
-      api.get('/api/v1/skills/list').catch(() => ({ skills: [] })),
-      api.get('/api/v1/datasources/list').catch(() => ({ datasources: [] })),
-      api.get('/api/v1/agents/registry').catch(() => null),
-      api.get('/api/v1/agents/available-tools').catch(() => ({ tools: [] }))
-    ]).then(([models, skills, datasources, registryResponse, toolsResponse]) => {
-      setReferences({
-        models: models.models || [],
-        skills: skills.skills || [],
-        datasources: datasources.datasources || []
-      });
-      setRegistry(registryResponse);
-      setAvailableTools(toolsResponse.tools || []);
+      api.get('/api/v1/admin/users').catch(() => ({ data: [] }))
+    ]).then(([modelResponse, userResponse]) => {
+      setModels(modelResponse.models || []);
+      setUsers(userResponse.data || []);
     });
   }, []);
 
+  const userById = useMemo(() => new Map(users.map((user) => [user.userId, user])), [users]);
+  const modelById = useMemo(() => new Map(models.map((model) => [
+    model.modelId,
+    model.name || model.displayName || model.modelName || model.modelId
+  ])), [models]);
+
+  const ownerLabel = (createdBy) => {
+    const owner = userById.get(createdBy);
+    return owner ? [owner.username, owner.nickname].filter(Boolean).join(' ') : createdBy || '';
+  };
+
+  const tableColumns = [
+    {
+      key: 'name',
+      title: '名称',
+      render: (item) => <><strong>{item.name || '-'}</strong><div className="muted">{truncate(item.description || '未填写描述', 48)}</div></>
+    },
+    {
+      key: 'agentRole',
+      title: '角色',
+      render: (item) => <Badge tone={item.defaultAgent ? 'blue' : 'purple'}>{item.defaultAgent ? '主 Agent' : '专家助手'}</Badge>
+    },
+    {
+      key: 'owner',
+      title: '归属用户',
+      render: (item) => {
+        const owner = userById.get(item.createdBy);
+        return <><strong>{owner?.username || '未知用户'}</strong><div className="mono muted" title={item.createdBy || ''}>{owner?.nickname || truncate(item.createdBy || '-', 18)}</div></>;
+      }
+    },
+    { key: 'executionMode', title: '执行模式', render: (item) => executionModeLabel(item.executionMode) },
+    { key: 'modelId', title: '模型', render: (item) => modelById.get(item.modelId) || '系统默认' },
+    { key: 'updatedAt', title: '更新时间', render: (item) => formatTime(item.updatedAt) }
+  ];
+
   return (
     <>
-      <AgentRegistryPanel registry={registry} />
       <ResourcePage
         api={api}
         toast={toast}
-        title="Agent 管理"
-        desc="配置任务场景 Agent、系统提示词和资源绑定"
+        title="用户 Agent"
+        desc="查看用户 Agent 的归属、能力和运行状态；个性化配置由所属用户维护"
         listUrl="/api/v1/agents"
         listKey="agents"
         idKey="agentId"
-        createUrl="/api/v1/agents"
-        updateUrl={(id) => `/api/v1/agents/${id}`}
         toggleUrl={(id) => `/api/v1/agents/${id}/enabled`}
-        deleteUrl={(id) => `/api/v1/agents/${id}`}
-        headerExtra={<button className="btn" onClick={loadRegistry}>刷新注册中心</button>}
-        fields={[
-          ['name', '名称'],
-          ['type', '类型', 'select', [
-            { value: 'REACT', label: 'ReAct 工具 Agent' },
-            { value: 'SKILL', label: '技能 Agent' },
-            { value: 'DATA', label: '数据源 Agent' },
-            { value: 'KNOWLEDGE', label: '知识检索 Agent' },
-            { value: 'CHART', label: '图表 Agent' },
-            { value: 'REPORT', label: '报告 Agent' },
-            { value: 'CHAT', label: '对话 Agent' }
-          ]],
-          ['executionMode', '执行模式', 'select', [
-            { value: 'react', label: 'ReAct 工具循环' },
-            { value: 'chat', label: '纯对话' }
-          ]],
-          ['description', '描述'],
-          ['systemPrompt', '系统提示词', 'textarea'],
-          ['modelId', '模型', 'select', references.models.map((item) => ({ value: item.modelId, label: `${item.name} / ${item.modelName || '-'}` }))],
-          ['tools', '工具', 'multiselect', availableTools.map((t) => ({ value: t.name, label: `${t.name} — ${t.description || ''}` }))],
-          ['skillId', '技能', 'select', references.skills.map((item) => ({ value: item.skillId, label: item.name }))],
-          ['datasourceId', '数据源', 'select', references.datasources.map((item) => ({ value: item.datasourceId, label: `${item.name} / ${item.type}` }))],
-          ['enabled', '启用', 'checkbox']
-        ]}
-        visibleFields={['name', 'executionMode', 'description', 'modelId']}
-        extraRowAction={(item) => <button className="btn" onClick={() => setDetail(item)}>详情</button>}
+        searchPlaceholder="搜索名称或归属用户"
+        searchText={(item) => [item.name, item.description, item.createdBy, ownerLabel(item.createdBy), item.defaultAgent ? '主 Agent' : '专家助手'].filter(Boolean).join(' ')}
+        filterPredicate={(item) => (!ownerFilter || item.createdBy === ownerFilter)
+          && (!roleFilter || (roleFilter === 'PRIMARY') === Boolean(item.defaultAgent))}
+        headerExtra={<>
+          <select className="select compact-select" aria-label="按 Agent 角色筛选" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+            <option value="">全部角色</option>
+            <option value="PRIMARY">主 Agent</option>
+            <option value="EXPERT">专家助手</option>
+          </select>
+          <select className="select compact-select" aria-label="按归属用户筛选" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+            <option value="">全部用户</option>
+            {users.map((user) => <option key={user.userId} value={user.userId}>{user.username}{user.nickname ? ` · ${user.nickname}` : ''}</option>)}
+          </select>
+        </>}
+        fields={[]}
+        tableColumns={tableColumns}
+        toggleLabel={(item) => item.enabled === false ? '启用' : '停用'}
+        toggleBlockedReason={(item) => item.defaultAgent && item.enabled !== false ? '默认主 Agent 不能直接停用' : ''}
+        extraRowAction={(item) => <><button className="btn" onClick={() => setDetail(item)}>详情</button><button className="btn" title="查看该归属用户的运行追踪" onClick={() => onOpenTraces?.(item.createdBy)}><GitBranch size={15} />用户追踪</button></>}
       />
-      {detail && <AgentDetailModal api={api} agent={detail} onClose={() => setDetail(null)} />}
+      {detail && <AgentDetailModal api={api} agent={detail} users={userById} onClose={() => setDetail(null)} />}
     </>
   );
 }
 
-function AgentDetailModal({ api, agent, onClose }) {
+function AgentDetailModal({ api, agent, users, onClose }) {
   const [runtime, setRuntime] = useState(null);
 
   useEffect(() => {
@@ -96,6 +111,14 @@ function AgentDetailModal({ api, agent, onClose }) {
   }, [api, agent.agentId]);
 
   const data = runtime || agent;
+  const owner = users.get(data.createdBy);
+  const capabilityBindings = Array.isArray(data.capabilityBindings) ? data.capabilityBindings : [];
+  const modeLabels = {
+    auto: '自主决策',
+    chat: '纯对话',
+    react: 'ReAct 工具循环',
+    orchestrated: 'Orchestrated 子 Agent 编排'
+  };
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="modal lg">
@@ -107,13 +130,18 @@ function AgentDetailModal({ api, agent, onClose }) {
           <button className="icon-button bordered" onClick={onClose}>×</button>
         </div>
         <div className="detail-grid">
-          <span>类型</span><span>{data.type || '-'}</span>
-          <span>执行模式</span><span>{data.executionMode === 'chat' ? '纯对话' : 'ReAct 工具循环'}</span>
+          <span>Agent ID</span><span className="mono">{data.agentId || '-'}</span>
+          <span>角色</span><span>{data.defaultAgent ? '主 Agent' : '专家助手'}</span>
+          <span>归属用户</span><span>{owner?.username || '未知用户'}{owner?.nickname ? ` · ${owner.nickname}` : ''}</span>
+          <span>用户 ID</span><span className="mono">{data.createdBy || '-'}</span>
+          <span>执行模式</span><span>{modeLabels[data.executionMode] || data.executionMode || '-'}</span>
           <span>模型</span><span>{data.modelId || '-'}</span>
-          <span>工具</span><span>{Array.isArray(data.tools) && data.tools.length > 0 ? data.tools.join(', ') : '全部（默认）'}</span>
-          <span>技能</span><span>{data.skillId || '-'}</span>
-          <span>数据源</span><span>{data.datasourceId || '-'}</span>
+          <span>能力绑定</span>
+          <span className="mono">
+            {capabilityBindings.length > 0 ? capabilityBindings.join(', ') : '未绑定能力'}
+          </span>
           <span>状态</span><span>{data.enabled === false ? '禁用' : '启用'}</span>
+          <span>更新时间</span><span>{formatTime(data.updatedAt)}</span>
         </div>
         <div className="panel-card" style={{ marginTop: 16 }}>
           <div className="section-title">系统提示词</div>
@@ -124,42 +152,11 @@ function AgentDetailModal({ api, agent, onClose }) {
   );
 }
 
-function AgentRegistryPanel({ registry }) {
-  if (!registry) {
-    return null;
-  }
-  const capabilities = Array.isArray(registry.capabilities) ? registry.capabilities : [];
-  return (
-    <section className="agent-registry-panel">
-      <div className="agent-registry-head">
-        <div>
-          <strong>Orchestrator 注册中心</strong>
-          <p>当前编排器可调度的系统专家和租户自定义 Agent 能力目录。</p>
-        </div>
-        <div className="toolbar">
-          <Badge tone="blue">系统 {registry.systemSpecialistCount || 0}</Badge>
-          <Badge tone="green">启用 {registry.enabledTenantAgentCount || 0}</Badge>
-          <Badge tone="gray">租户 {registry.tenantAgentCount || 0}</Badge>
-        </div>
-      </div>
-      <div className="agent-capability-grid">
-        {capabilities.map((capability) => (
-          <div className="agent-capability-card" key={capability.type}>
-            <div className="agent-capability-title">
-              <strong>{capability.displayName || capability.type}</strong>
-              <Badge tone={capability.systemAvailable ? 'green' : 'red'}>
-                {capability.systemAvailable ? '可执行' : '缺实现'}
-              </Badge>
-            </div>
-            <p>{capability.description}</p>
-            <div className="agent-capability-meta">
-              <span>{capability.capability}</span>
-              <span>配置 {capability.tenantAgentCount || 0}</span>
-              <span>启用 {capability.enabledTenantAgentCount || 0}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+function executionModeLabel(mode) {
+  return {
+    auto: '自主决策',
+    chat: 'Chat',
+    react: 'ReAct',
+    orchestrated: 'Orchestrated'
+  }[mode] || mode || '-';
 }

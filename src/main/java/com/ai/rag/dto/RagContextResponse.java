@@ -23,6 +23,8 @@ public class RagContextResponse {
 
     private RagRetrievalTrace trace = RagRetrievalTrace.empty();
 
+    private boolean retrievalAvailable = true;
+
     public RagContextResponse() {
     }
 
@@ -57,6 +59,15 @@ public class RagContextResponse {
      */
     public static RagContextResponse empty() {
         return new RagContextResponse("", 0, List.of());
+    }
+
+    /**
+     * 返回检索基础设施不可用时的降级响应。
+     */
+    public static RagContextResponse unavailable() {
+        RagContextResponse response = empty();
+        response.setRetrievalAvailable(false);
+        return response;
     }
 
     public String getContext() {
@@ -113,6 +124,14 @@ public class RagContextResponse {
 
     public void setTrace(RagRetrievalTrace trace) {
         this.trace = trace == null ? RagRetrievalTrace.empty() : trace;
+    }
+
+    public boolean isRetrievalAvailable() {
+        return retrievalAvailable;
+    }
+
+    public void setRetrievalAvailable(boolean retrievalAvailable) {
+        this.retrievalAvailable = retrievalAvailable;
     }
 
     public boolean hasContext() {

@@ -95,7 +95,7 @@ export function QualityPage({ api, toast }) {
     }
     const dates = trendPoints.map((item) => item.date || '-');
     return {
-      color: ['#1e40af', '#0f766e', '#f59e0b', '#dc2626', '#64748b'],
+      color: ['#1e40af', '#0f766e', '#dc2626', '#64748b'],
       tooltip: {
         trigger: 'axis',
         backgroundColor: '#ffffff',
@@ -122,7 +122,7 @@ export function QualityPage({ api, toast }) {
         left: 0,
         icon: 'roundRect',
         textStyle: { color: '#475569' },
-        data: ['质量分', '成功率', '正向率', '回退率', '轨迹数']
+        data: ['质量分', '成功率', '回退率', '轨迹数']
       },
       grid: { top: 54, right: 56, bottom: 32, left: 56 },
       xAxis: {
@@ -169,16 +169,6 @@ export function QualityPage({ api, toast }) {
           itemStyle: { color: '#0f766e' }
         },
         {
-          name: '正向率',
-          type: 'line',
-          yAxisIndex: 0,
-          smooth: true,
-          showSymbol: false,
-          data: trendPoints.map((item) => percentValue(item.positiveRate)),
-          lineStyle: { width: 2, color: '#f59e0b' },
-          itemStyle: { color: '#f59e0b' }
-        },
-        {
           name: '回退率',
           type: 'line',
           yAxisIndex: 0,
@@ -203,7 +193,7 @@ export function QualityPage({ api, toast }) {
     <>
       <PageHeader
         title="Agent 质量"
-        desc="聚合执行轨迹、回退率、耗时和用户反馈，评估 Agent 在当前租户下的运行质量"
+        desc="聚合执行轨迹、回退率和耗时，评估 Agent 在当前租户下的运行质量"
         actions={<><select className="select compact-select" value={limit} onChange={(event) => setLimit(event.target.value)}><option value="100">最近 100 条</option><option value="200">最近 200 条</option><option value="500">最近 500 条</option></select><button className="btn" onClick={load}><RefreshCw size={16} />刷新</button></>}
       />
       {dependencyBlockedRisk && (
@@ -218,8 +208,8 @@ export function QualityPage({ api, toast }) {
       <div className="grid grid-4">
         <Metric label="质量分" value={scoreLabel} hint={levelText(dashboard.qualityLevel)} />
         <Metric label="执行成功率" value={percent(dashboard.successRate)} hint={`${dashboard.sampleSize || 0} 条样本`} />
-        <Metric label="正向反馈率" value={percent(dashboard.positiveRate)} hint={`${dashboard.totalFeedbackCount || 0} 条反馈`} />
-        <Metric label="平均耗时" value={`${dashboard.averageDurationMs || 0} ms`} hint={`回退率 ${percent(dashboard.fallbackRate)}`} />
+        <Metric label="回退率" value={percent(dashboard.fallbackRate)} hint="越低越稳定" />
+        <Metric label="平均耗时" value={`${dashboard.averageDurationMs || 0} ms`} hint="最近样本平均值" />
       </div>
       {reasoningHealth && <ReasoningHealthPanel health={reasoningHealth} />}
       <section className="grid grid-2 chart-grid quality-trend-section">
@@ -227,7 +217,7 @@ export function QualityPage({ api, toast }) {
           <div className="section-title">质量趋势</div>
           {trendPoints.length && trendOption
             ? <Chart option={trendOption} height={320} />
-            : <EmptyState title="暂无趋势" desc="积累多天执行轨迹和反馈后，这里会展示质量趋势。" />}
+            : <EmptyState title="暂无趋势" desc="积累多天执行轨迹后，这里会展示质量趋势。" />}
         </div>
         <div className="card quality-trend-card">
           <div className="section-title">最近趋势摘要</div>
@@ -241,12 +231,10 @@ export function QualityPage({ api, toast }) {
                   </div>
                   <div className="quality-trend-meta">
                     <span>成功 {percent(item.successRate)}</span>
-                    <span>正向 {percent(item.positiveRate)}</span>
                     <span>回退 {percent(item.fallbackRate)}</span>
                   </div>
                   <div className="quality-trend-meta">
                     <span>轨迹 {item.traceCount || 0}</span>
-                    <span>反馈 {item.feedbackCount || 0}</span>
                     <span>耗时 {item.averageDurationMs || 0} ms</span>
                   </div>
                 </div>
@@ -260,14 +248,14 @@ export function QualityPage({ api, toast }) {
           <div className="quality-score-head">
             <div>
               <div className="section-title">质量状态</div>
-              <p>综合成功率、反馈、耗时和回退情况生成当前评分。</p>
+              <p>综合成功率、耗时和回退情况生成当前评分。</p>
             </div>
             <Badge tone={scoreTone(score)}>{levelText(dashboard.qualityLevel)}</Badge>
           </div>
           <div className="quality-score-ring">
             <Activity size={22} />
             <strong>{scoreLabel}</strong>
-            <span>负向反馈 {dashboard.negativeFeedbackCount || 0} 条</span>
+            <span>最近轨迹 {dashboard.sampleSize || 0} 条</span>
           </div>
           <div className="quality-meter large"><span style={{ width: `${Math.min(100, Math.max(0, score))}%` }} /></div>
         </div>
@@ -300,9 +288,7 @@ export function QualityPage({ api, toast }) {
         { key: 'traceCount', title: '轨迹' },
         { key: 'successRate', title: '成功率', render: (item) => percent(item.successRate) },
         { key: 'fallbackRate', title: '回退率', render: (item) => percent(item.fallbackRate) },
-        { key: 'averageDurationMs', title: '平均耗时', render: (item) => `${item.averageDurationMs || 0} ms` },
-        { key: 'feedbackCount', title: '反馈', render: (item) => `${item.feedbackCount || 0} 条` },
-        { key: 'positiveRate', title: '正向率', render: (item) => item.feedbackCount ? percent(item.positiveRate) : '-' }
+        { key: 'averageDurationMs', title: '平均耗时', render: (item) => `${item.averageDurationMs || 0} ms` }
       ]} rows={agentStats} rowKey="agentKey" />
     </>
   );

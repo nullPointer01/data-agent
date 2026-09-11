@@ -12,19 +12,19 @@ import java.time.LocalDateTime;
  * @param userId 用户编号
  * @param sessionId 会话编号
  * @param selectedAgent 选中的 Agent
- * @param selectedType 选中的 Agent 类型
+ * @param selectedType 运行模式；字段名为历史兼容名称
  * @param intent 意图类型
- * @param complexity 任务复杂度
+ * @param complexity 历史复杂度字段，新 Run 不再写入
  * @param success 是否成功
- * @param fallbackUsed 是否使用内置回退
- * @param taskCount 任务数量
+ * @param fallbackUsed 是否使用工具候选兜底
+ * @param taskCount 工具调用数量
  * @param durationMs 执行耗时
  * @param question 用户问题
  * @param reason 路由原因
  * @param error 错误信息
  * @param planJson 计划 JSON
- * @param taskResultsJson 任务结果 JSON
- * @param sharedContextJson 共享上下文 JSON，包含安全的 Tool Governance Journal 摘要
+ * @param taskResultsJson 历史任务结果 JSON，新 Run 固定为空数组
+ * @param sharedContextJson Run 证据 JSON，包含工具、上下文和结果治理摘要
  * @param createdAt 创建时间
  * @author data-agent
  */

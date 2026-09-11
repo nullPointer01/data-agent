@@ -1,0 +1,179 @@
+- generic [ref=e2]:
+  - generic [ref=e27]:
+    - complementary [ref=e28]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: Data Agent
+        - generic [ref=e41]: Java Agent Harness
+      - generic [ref=e42]:
+        - generic [ref=e43]: REFERENCE APP
+        - button "我的 Agent" [ref=e44] [cursor=pointer]
+        - button "专家助手" [ref=e48] [cursor=pointer]
+        - button "知识" [ref=e53] [cursor=pointer]
+        - button "上下文" [ref=e57] [cursor=pointer]
+    - main [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e74]: 我的 Agent
+          - generic [ref=e75]: Reference App · 由 Agent Harness 驱动
+        - generic [ref=e76]:
+          - generic [ref=e77]: 用户名或密码错误
+          - button "Control Plane" [ref=e78] [cursor=pointer]
+          - generic [ref=e82]:
+            - strong [ref=e83]: 超级管理员
+            - generic [ref=e84]: default
+            - generic [ref=e85]: ADMIN
+          - button "退出" [ref=e86] [cursor=pointer]
+      - generic [ref=e90]:
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - heading "我的 Agent" [level=1] [ref=e93]
+            - paragraph [ref=e94]: 会使用知识、记忆和工具完成任务，并在结果中给出依据。
+          - generic [ref=e95]:
+            - button "刷新" [ref=e96] [cursor=pointer]
+            - button "设置" [ref=e102] [cursor=pointer]
+            - button "新对话" [ref=e106] [cursor=pointer]
+        - generic [ref=e108]:
+          - generic [ref=e109]:
+            - generic [ref=e110]:
+              - strong [ref=e111]: 会话
+              - generic [ref=e112]: "5"
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - button "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。 2 条 · 2026/9/9 17:44:40" [ref=e115] [cursor=pointer]:
+                  - strong [ref=e116]: 请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。
+                  - generic [ref=e117]: 2 条 · 2026/9/9 17:44:40
+                - generic [ref=e118]:
+                  - button "重命名会话" [ref=e119] [cursor=pointer]
+                  - button "删除会话" [ref=e123] [cursor=pointer]
+              - generic [ref=e127]:
+                - button "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。 2 条 · 2026/9/9 17:43:29" [ref=e128] [cursor=pointer]:
+                  - strong [ref=e129]: 请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。
+                  - generic [ref=e130]: 2 条 · 2026/9/9 17:43:29
+                - generic [ref=e131]:
+                  - button "重命名会话" [ref=e132] [cursor=pointer]
+                  - button "删除会话" [ref=e136] [cursor=pointer]
+              - generic [ref=e140]:
+                - button "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。 2 条 · 2026/9/9 17:41:51" [ref=e141] [cursor=pointer]:
+                  - strong [ref=e142]: 请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。
+                  - generic [ref=e143]: 2 条 · 2026/9/9 17:41:51
+                - generic [ref=e144]:
+                  - button "重命名会话" [ref=e145] [cursor=pointer]
+                  - button "删除会话" [ref=e149] [cursor=pointer]
+              - generic [ref=e153]:
+                - button "新对话 0 条 · 2026/9/9 15:17:48" [ref=e154] [cursor=pointer]:
+                  - strong [ref=e155]: 新对话
+                  - generic [ref=e156]: 0 条 · 2026/9/9 15:17:48
+                - generic [ref=e157]:
+                  - button "重命名会话" [ref=e158] [cursor=pointer]
+                  - button "删除会话" [ref=e162] [cursor=pointer]
+              - generic [ref=e166]:
+                - button "你能做什么 4 条 · 2026/9/9 15:12:46" [ref=e167] [cursor=pointer]:
+                  - strong [ref=e168]: 你能做什么
+                  - generic [ref=e169]: 4 条 · 2026/9/9 15:12:46
+                - generic [ref=e170]:
+                  - button "重命名会话" [ref=e171] [cursor=pointer]
+                  - button "删除会话" [ref=e175] [cursor=pointer]
+            - generic "分页导航" [ref=e179]:
+              - generic [ref=e180]: 第 1-5 条，共 5 条
+              - generic [ref=e181]:
+                - generic [ref=e182]: 每页
+                - combobox "每页条数" [ref=e183]:
+                  - option "10" [selected]
+                  - option "20"
+                  - option "50"
+                - generic [ref=e184]: 条
+              - generic [ref=e185]:
+                - button "上一页" [disabled] [ref=e186]
+                - generic [ref=e189]: 1 / 1
+                - button "下一页" [disabled] [ref=e190]
+          - generic [ref=e193]:
+            - generic [ref=e194]:
+              - generic [ref=e199]:
+                - strong [ref=e200]: 我的 Agent
+                - generic [ref=e201]: 系统默认模型
+              - generic [ref=e202]:
+                - generic [ref=e203]: 知识与记忆
+                - generic [ref=e204]: 文件理解
+                - generic [ref=e205]: 数据分析
+                - generic [ref=e206]: 1 位专家
+              - button "配置我的 Agent" [ref=e210] [cursor=pointer]
+            - generic [ref=e214]:
+              - generic [ref=e215]: 请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。
+              - generic [ref=e216]:
+                - generic [ref=e217]:
+                  - heading "杭州上周酒店入住率分析" [level=2] [ref=e218]
+                  - blockquote [ref=e219]:
+                    - paragraph [ref=e220]:
+                      - strong [ref=e221]: 数据口径说明
+                      - text: ：以下为经营分析工具返回的
+                      - strong [ref=e222]: 模拟数据
+                      - text: ，非真实市场监测数据；“前期”指前一相邻统计周期。
+                  - table [ref=e223]:
+                    - rowgroup [ref=e224]:
+                      - row [ref=e225]:
+                        - columnheader "指标" [ref=e226]
+                        - columnheader "上周" [ref=e227]
+                        - columnheader "前期" [ref=e228]
+                        - columnheader "变化" [ref=e229]
+                    - rowgroup [ref=e230]:
+                      - row [ref=e231]:
+                        - cell "入住率" [ref=e232]
+                        - cell "76.3%" [ref=e233]
+                        - cell "72.5%" [ref=e234]
+                        - cell [ref=e235]:
+                          - strong [ref=e236]: +3.8 个百分点
+                      - row [ref=e237]:
+                        - cell "入住率环比增幅" [ref=e238]
+                        - cell "—" [ref=e239]
+                        - cell "—" [ref=e240]
+                        - cell [ref=e241]:
+                          - strong [ref=e242]: +5.24%
+                      - row [ref=e243]:
+                        - cell "ADR" [ref=e244]
+                        - cell "503 元" [ref=e245]
+                        - cell "485 元" [ref=e246]
+                        - cell "+18 元" [ref=e247]
+                      - row [ref=e248]:
+                        - cell "RevPAR" [ref=e249]
+                        - cell "383.8 元" [ref=e250]
+                        - cell "351.6 元" [ref=e251]
+                        - cell "+32.2 元" [ref=e252]
+                  - heading "计算" [level=3] [ref=e253]
+                  - list [ref=e254]:
+                    - listitem [ref=e255]:
+                      - text: 入住率环比变化：76.3% − 72.5% =
+                      - strong [ref=e256]: +3.8 个百分点
+                    - listitem [ref=e257]:
+                      - text: 相对环比增幅：3.8 ÷ 72.5 × 100% =
+                      - strong [ref=e258]: 5.24%
+                  - heading "经营判断" [level=3] [ref=e259]
+                  - paragraph [ref=e260]:
+                    - text: 入住率、ADR 和 RevPAR 均提升，属于
+                    - strong [ref=e261]: 量价同步改善
+                    - text: ，需求增长并非依靠降价获取，整体收益表现健康。
+                  - heading "建议" [level=3] [ref=e262]
+                  - list [ref=e263]:
+                    - listitem [ref=e264]:
+                      - strong [ref=e265]: 暂不进行普遍降价促销
+                      - text: ，维持当前主价格带，避免损失收益。
+                    - listitem [ref=e266]:
+                      - text: 按未来
+                      - strong [ref=e267]: 3 天、4–7 天
+                      - text: 滚动监测预订节奏；当前预订提前期约
+                      - strong [ref=e268]: 2.8 天
+                      - text: ，应加强临期收益管理。
+                    - listitem [ref=e269]:
+                      - text: 对高需求日期及高等级房型实施
+                      - strong [ref=e270]: 分批、小幅提价测试
+                      - text: ，不要一次性全房型提价。
+                    - listitem [ref=e271]:
+                      - text: 当前取消率约
+                      - strong [ref=e272]: 9.3%
+                      - text: ；高入住日期应优化担保和取消政策，并审慎设定超售边界，降低临期空房风险。
+                - generic [ref=e273]: 执行了 4 个动作
+            - generic [ref=e280]:
+              - textbox "告诉我的 Agent 你想完成什么" [ref=e281]
+              - button "发送" [ref=e282] [cursor=pointer]
+  - generic [ref=e287]:
+    - generic [ref=e291]: 登录成功
+    - button [ref=e292] [cursor=pointer]

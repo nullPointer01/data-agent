@@ -5,7 +5,6 @@ import com.ai.memory.dto.MemoryContext;
 import com.ai.model.AgentProfile;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import com.ai.agent.specialist.SpecialistTask;
 
 /**
  * Agent Prompt 组装器，负责将系统提示词、用户问题、文件内容、

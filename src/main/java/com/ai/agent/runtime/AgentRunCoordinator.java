@@ -2,8 +2,9 @@ package com.ai.agent.runtime;
 
 import com.ai.agent.AgentExecutionContext;
 import com.ai.agent.durable.AgentDurableRunStore;
-import com.ai.agent.orchestrator.OrchestratorResult;
-import com.ai.agent.specialist.SpecialistResult;
+import com.ai.agent.outcome.AgentOutcomeEvaluation;
+import com.ai.agent.outcome.AgentOutcomeEvaluator;
+import com.ai.agent.outcome.AgentOutcomeEvaluator.OutcomeEvidence;
 import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventSink;
 import com.ai.agent.runtime.event.AgentEventType;
@@ -12,6 +13,8 @@ import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.agent.tool.governance.AgentToolAuthorizationService;
 import com.ai.agent.tool.governance.AgentToolAuthorizationSnapshot;
 import com.ai.agent.tool.governance.AgentToolExecutionJournal;
+import com.ai.agent.tool.governance.AgentToolExecutionRecord;
+import com.ai.agent.tool.governance.AgentToolExecutionStatus;
 import com.ai.agent.tool.governance.AgentToolGovernanceProperties;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
@@ -28,7 +31,9 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 /**
@@ -52,6 +57,7 @@ public class AgentRunCoordinator {
     private final AgentToolAuthorizationService toolAuthorizationService;
     private final AgentToolGovernanceProperties toolGovernanceProperties;
     private final AgentDurableRunStore durableRunStore;
+    private final AgentOutcomeEvaluator outcomeEvaluator;
     private final Map<AgentExecutionMode, AgentExecutionStrategy> strategies;
 
     public AgentRunCoordinator(AgentRunRouteResolver routeResolver,
@@ -62,6 +68,7 @@ public class AgentRunCoordinator {
             AgentToolAuthorizationService toolAuthorizationService,
             AgentToolGovernanceProperties toolGovernanceProperties,
             AgentDurableRunStore durableRunStore,
+            AgentOutcomeEvaluator outcomeEvaluator,
             @Nullable AgentExecutionTraceService traceService,
             List<AgentExecutionStrategy> executionStrategies) {
         this.routeResolver = routeResolver;
@@ -72,6 +79,7 @@ public class AgentRunCoordinator {
         this.toolAuthorizationService = toolAuthorizationService;
         this.toolGovernanceProperties = toolGovernanceProperties;
         this.durableRunStore = durableRunStore;
+        this.outcomeEvaluator = outcomeEvaluator;
         this.traceService = traceService;
         this.strategies = indexStrategies(executionStrategies);
     }
@@ -122,6 +130,7 @@ public class AgentRunCoordinator {
             }
             strategyResult = AgentRunScope.call(runContext, () -> {
                 emitStarted(runContext);
+                emitRequestPlan(runContext, route);
                 runContext.control().ensureActive();
                 return executeStrategy(runContext, route);
             });
@@ -196,9 +205,10 @@ public class AgentRunCoordinator {
                 finalResponse.setError(safeDetail(snapshot, "Agent 运行未完成"));
             }
         }
+        finalResponse.setOutcomeEvaluation(evaluateOutcome(context, finalResponse, snapshot));
         applyRunMetadata(context, snapshot, finalResponse);
         recordConversation(context, route, finalResponse, snapshot);
-        recordTrace(context, route, strategyResult, finalResponse);
+        recordTrace(context, route, finalResponse);
         try {
             if (snapshot.status() != AgentRunStatus.WAITING_APPROVAL) {
                 emitFinalProcessEvents(context, strategyResult, finalResponse);
@@ -251,9 +261,28 @@ public class AgentRunCoordinator {
     private void emitStarted(AgentRunContext context) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", AgentRunStatus.RUNNING.name());
+        payload.put("origin", context.executionContext().getOrigin().name());
         payload.put("sessionId", nullToEmpty(context.sessionId()));
         payload.put("limits", context.control().getLimits());
         context.eventSink().emit(AgentEvent.of(context, AgentEventType.RUN_STARTED, payload));
+    }
+
+    private void emitRequestPlan(AgentRunContext context, AgentRunRoute route) {
+        if (route.requestPlan() == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("title", "请求规划");
+        payload.put("content", route.requestPlan().summary());
+        payload.put("intent", route.requestPlan().intent().name());
+        payload.put("matchedRule", route.requestPlan().matchedRule());
+        payload.put("confidence", route.requestPlan().confidence());
+        payload.put("modelRequired", route.requestPlan().modelRequired());
+        payload.put("ragRequired", route.requestPlan().ragRequired());
+        payload.put("memoryRequired", route.requestPlan().memoryRequired());
+        payload.put("candidateToolCount", route.requestPlan().candidateTools().size());
+        payload.put("toolSelectionFallback", route.requestPlan().toolSelectionFallback());
+        context.eventSink().emit(AgentEvent.of(context, AgentEventType.EXECUTION_PLAN, payload));
     }
 
     private void emitFinalProcessEvents(AgentRunContext context, AgentExecutionStrategy.Result strategyResult,
@@ -267,33 +296,11 @@ public class AgentRunCoordinator {
             }
             return;
         }
-        emitOrchestrationDetail(context, strategyResult);
         emitThinkingSteps(context, response.getThinkingSteps());
         if (response.isSuccess()) {
             emit(context, AgentEventType.MODEL_TOKEN, Map.of("content", nullToEmpty(response.getResult())));
         } else {
             emit(context, AgentEventType.ERROR, Map.of("content", safeError(response)));
-        }
-    }
-
-    private void emitOrchestrationDetail(AgentRunContext context,
-            AgentExecutionStrategy.Result strategyResult) {
-        if (strategyResult == null || !(strategyResult.traceDetail() instanceof OrchestratorResult result)) {
-            return;
-        }
-        if (result.orchestrationPlan() != null) {
-            emit(context, AgentEventType.ORCHESTRATION, Map.of(
-                    "title", "编排计划",
-                    "content", result.orchestrationPlan().toString()));
-        }
-        if (result.executionResult() == null || result.executionResult().taskResults() == null) {
-            return;
-        }
-        for (SpecialistResult task : result.executionResult().taskResults()) {
-            String content = task.success() ? task.result() : task.error();
-            emit(context, AgentEventType.ORCHESTRATION, Map.of(
-                    "title", "编排任务 " + nullToEmpty(task.taskId()),
-                    "content", nullToEmpty(content)));
         }
     }
 
@@ -332,6 +339,8 @@ public class AgentRunCoordinator {
         payload.put("usage", snapshot);
         payload.put("sessionId", nullToEmpty(response.getSessionId()));
         payload.put("traceId", nullToEmpty(response.getTraceId()));
+        payload.put("outcomeStatus", response.getOutcomeStatus().name());
+        payload.put("outcomeEvaluation", response.getOutcomeEvaluation());
         context.eventSink().emit(AgentEvent.of(context, AgentEventType.RUN_TERMINATED, payload));
     }
 
@@ -362,30 +371,62 @@ public class AgentRunCoordinator {
         }
     }
 
+    private AgentOutcomeEvaluation evaluateOutcome(AgentRunContext context,
+            AnalysisResponse response,
+            AgentRunSnapshot snapshot) {
+        List<AgentToolExecutionRecord> toolRecords = context.toolJournal().snapshot();
+        Set<String> calledTools = toolRecords.stream()
+                .filter(record -> record.status() == AgentToolExecutionStatus.SUCCESS)
+                .map(AgentToolExecutionRecord::toolName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toUnmodifiableSet());
+        Set<String> approvalStatuses = toolRecords.stream()
+                .filter(record -> record.status() == AgentToolExecutionStatus.APPROVAL_REQUIRED)
+                .map(record -> record.status().name())
+                .collect(Collectors.toUnmodifiableSet());
+        boolean journalComplete = context.toolJournal().overflowCount() == 0L;
+        return outcomeEvaluator.evaluate(
+                context.taskContract(),
+                new OutcomeEvidence(
+                        response.getResult(),
+                        snapshot.status(),
+                        calledTools,
+                        approvalStatuses,
+                        journalComplete,
+                        journalComplete));
+    }
+
     private void recordConversation(AgentRunContext context, AgentRunRoute route, AnalysisResponse response,
             AgentRunSnapshot snapshot) {
-        if (snapshot.status() != AgentRunStatus.COMPLETED || !response.isSuccess()) {
+        if (!context.executionContext().getOrigin().isConversationPersistenceEnabled()) {
             return;
         }
         ConversationSession session = context.executionContext().getSession();
         AnalysisRequest request = context.executionContext().getRequest();
         String modelId = request.hasModel() ? request.getModelId() : null;
+        if (snapshot.status() == AgentRunStatus.WAITING_APPROVAL) {
+            conversationRecorder.recordWaitingApprovalConversation(
+                    session, request, response.getSkillUsed(), modelId, context.runId());
+            return;
+        }
+        if (snapshot.status() != AgentRunStatus.COMPLETED || !response.isSuccess()) {
+            return;
+        }
         if (route.target() == AgentRunRoute.Target.COMMAND || route.target() == AgentRunRoute.Target.SKILL) {
             conversationRecorder.recordSessionConversation(session, request, response.getResult(),
-                    response.getSkillUsed(), modelId);
+                    response.getSkillUsed(), modelId, context.runId());
         } else {
             conversationRecorder.recordAnalysisConversation(session, request, response.getResult(),
-                    response.getSkillUsed(), modelId);
+                    response.getSkillUsed(), modelId, context.runId());
         }
     }
 
-    private void recordTrace(AgentRunContext context, AgentRunRoute route,
-            AgentExecutionStrategy.Result result, AnalysisResponse response) {
+    private void recordTrace(AgentRunContext context, AgentRunRoute route, AnalysisResponse response) {
         if (traceService == null) {
             return;
         }
         try {
-            traceService.recordRun(context, route, result, response);
+            traceService.recordRun(context, route, response);
             response.setTraceId(context.runId());
         } catch (Exception e) {
             LOGGER.warn("记录 Agent Run 轨迹失败: runId={}, error={}", context.runId(), e.getMessage());

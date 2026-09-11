@@ -1,6 +1,8 @@
 package com.ai.agent.durable;
 
 import com.ai.agent.durable.dto.AgentDurableRunResponse;
+import com.ai.agent.runtime.AgentRunEvidenceService;
+import com.ai.agent.runtime.dto.AgentRunEvidenceResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,14 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentDurableRunController {
 
     private final AgentDurableRunService runService;
+    private final AgentRunEvidenceService evidenceService;
 
-    public AgentDurableRunController(AgentDurableRunService runService) {
+    public AgentDurableRunController(AgentDurableRunService runService,
+            AgentRunEvidenceService evidenceService) {
         this.runService = runService;
+        this.evidenceService = evidenceService;
     }
 
     @GetMapping("/{runId}")
-    public AgentDurableRunResponse detail(@PathVariable String runId) {
-        return runService.getOwned(runId);
+    public AgentRunEvidenceResponse detail(@PathVariable String runId) {
+        return evidenceService.getOwned(runId);
     }
 
     @PostMapping("/{runId}/cancel")

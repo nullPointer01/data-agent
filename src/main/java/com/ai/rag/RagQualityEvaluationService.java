@@ -1,5 +1,4 @@
 package com.ai.rag;
-import com.ai.rag.retrieval.RetrievalChannel;
 
 import com.ai.rag.dto.RagCitation;
 import com.ai.rag.dto.RagContextResponse;
@@ -7,6 +6,9 @@ import com.ai.rag.dto.RagQualityEvaluationRequest;
 import com.ai.rag.dto.RagQualityEvaluationResponse;
 import com.ai.rag.dto.RagQualityMetric;
 import com.ai.rag.dto.RagRetrievalTrace;
+import com.ai.rag.eval.RagRelevanceEvaluator;
+import com.ai.rag.eval.RagRelevanceEvaluator.RelevanceEvaluation;
+import com.ai.rag.retrieval.RetrievalChannel;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -45,11 +47,11 @@ public class RagQualityEvaluationService {
     private static final int HUNDRED_PERCENT = 100;
 
     private final RagProperties ragProperties;
-    private final RagQueryRewriter ragQueryRewriter;
+    private final RagRelevanceEvaluator relevanceEvaluator;
 
-    public RagQualityEvaluationService(RagProperties ragProperties, RagQueryRewriter ragQueryRewriter) {
+    public RagQualityEvaluationService(RagProperties ragProperties, RagRelevanceEvaluator relevanceEvaluator) {
         this.ragProperties = ragProperties;
-        this.ragQueryRewriter = ragQueryRewriter;
+        this.relevanceEvaluator = relevanceEvaluator;
     }
 
     /**
@@ -64,14 +66,13 @@ public class RagQualityEvaluationService {
                 : request;
         RagContextResponse response = safeRequest.response() == null ? RagContextResponse.empty() : safeRequest.response();
         List<RagCitation> citations = safeList(response.getCitations());
-        List<String> expectedKeywords = expectedKeywords(safeRequest, response);
-        List<String> matchedKeywords = matchedKeywords(expectedKeywords, searchableText(response));
-        double relevanceScore = ratio(matchedKeywords.size(), expectedKeywords.size());
+        RelevanceEvaluation relevance = relevanceEvaluator.evaluate(safeRequest.expectedKeywords(), response);
+        double relevanceScore = relevance.score();
         CitationScore citationScore = citationScore(response, citations, safeList(safeRequest.expectedSourceIds()));
         double hybridCoverage = hybridCoverage(response.getTrace(), citations);
         double latencyScore = latencyScore(response.getTrace());
         double sourceCoverage = citationScore.sourceCoverage();
-        List<RagQualityMetric> metrics = metrics(relevanceScore, citationScore, hybridCoverage, latencyScore);
+        List<RagQualityMetric> metrics = metrics(relevance, citationScore, hybridCoverage, latencyScore);
         double overallScore = overallScore(relevanceScore, citationScore.accuracy(), hybridCoverage,
                 latencyScore, sourceCoverage, citationScore.hasExpectedSource());
         List<String> issues = issues(metrics);
@@ -80,16 +81,16 @@ public class RagQualityEvaluationService {
                 && metrics.stream().allMatch(RagQualityMetric::passed);
         return new RagQualityEvaluationResponse(passed, round(overallScore), round(relevanceScore),
                 round(citationScore.accuracy()), round(hybridCoverage), round(latencyScore), round(sourceCoverage),
-                expectedKeywords.size(), matchedKeywords.size(), citations.size(), citationScore.validCitationCount(),
-                matchedKeywords, metrics, issues, recommendations);
+                relevance.expectedKeywords().size(), relevance.matchedKeywords().size(), citations.size(),
+                citationScore.validCitationCount(), relevance.matchedKeywords(), metrics, issues, recommendations);
     }
 
-    private List<RagQualityMetric> metrics(double relevanceScore, CitationScore citationScore,
+    private List<RagQualityMetric> metrics(RelevanceEvaluation relevance, CitationScore citationScore,
             double hybridCoverage, double latencyScore) {
         List<RagQualityMetric> metrics = new ArrayList<>();
-        metrics.add(metric(METRIC_RELEVANCE, "检索相关性", relevanceScore,
+        metrics.add(metric(METRIC_RELEVANCE, "检索相关性", relevance.score(),
                 ragProperties.getQuality().getRelevanceThreshold(),
-                "命中业务关键词 " + percent(relevanceScore)));
+                relevance.detail()));
         metrics.add(metric(METRIC_CITATION_ACCURACY, "引用准确率", citationScore.accuracy(),
                 ragProperties.getQuality().getCitationAccuracyThreshold(), citationScore.detail()));
         metrics.add(metric(METRIC_HYBRID_COVERAGE, "混合召回覆盖", hybridCoverage,
@@ -109,41 +110,6 @@ public class RagQualityEvaluationService {
     private RagQualityMetric metric(String key, String name, double score, double threshold, String detail) {
         double roundedScore = round(score);
         return new RagQualityMetric(key, name, roundedScore, threshold, score >= threshold, detail);
-    }
-
-    private List<String> expectedKeywords(RagQualityEvaluationRequest request, RagContextResponse response) {
-        List<String> expectedKeywords = normalizeTerms(request.expectedKeywords());
-        if (!expectedKeywords.isEmpty()) {
-            return expectedKeywords;
-        }
-        expectedKeywords = normalizeTerms(response.getKeywords());
-        if (!expectedKeywords.isEmpty()) {
-            return expectedKeywords;
-        }
-        return normalizeTerms(ragQueryRewriter.analyze(request.query()).keywords());
-    }
-
-    private String searchableText(RagContextResponse response) {
-        StringBuilder builder = new StringBuilder(blankToEmpty(response.getContext()));
-        for (RagCitation citation : safeList(response.getCitations())) {
-            builder.append('\n')
-                    .append(blankToEmpty(citation.sourceType()))
-                    .append(' ')
-                    .append(blankToEmpty(citation.sourceId()))
-                    .append(' ')
-                    .append(blankToEmpty(citation.chunkId()))
-                    .append(' ')
-                    .append(blankToEmpty(citation.sectionPath()))
-                    .append(' ')
-                    .append(blankToEmpty(citation.snippet()));
-        }
-        return normalizeForMatch(builder.toString());
-    }
-
-    private List<String> matchedKeywords(List<String> expectedKeywords, String searchableText) {
-        return expectedKeywords.stream()
-                .filter(keyword -> searchableText.contains(normalizeForMatch(keyword)))
-                .toList();
     }
 
     private CitationScore citationScore(RagContextResponse response, List<RagCitation> citations,

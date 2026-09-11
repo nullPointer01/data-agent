@@ -4,6 +4,7 @@ import com.ai.memory.dto.MemoryEntryResponse;
 import com.ai.memory.dto.MemoryListResponse;
 import com.ai.memory.dto.MemoryMutationResponse;
 import com.ai.memory.dto.MemoryStatsResponse;
+import com.ai.memory.dto.SemanticMemoryUpdateRequest;
 import com.ai.memory.dto.UserMemoryProfileResponse;
 import com.ai.memory.dto.UserMemoryProfileSnapshotResponse;
 import com.ai.repository.MemoryEntryRepository;
@@ -46,8 +47,9 @@ public class MemoryGovernanceService {
     private final SecurityContextHelper securityContextHelper;
     private final VectorMemoryService vectorMemoryService;
     private final AuditLogService auditLogService;
-    private final UserMemoryProfileExtractor userMemoryProfileExtractor;
     private final UserProfileMemoryService userProfileMemoryService;
+    private final UserProfileMemoryRefreshService userProfileMemoryRefreshService;
+    private final SemanticMemoryService semanticMemoryService;
     private final MemoryProperties memoryProperties;
     private final MeterRegistry meterRegistry;
 
@@ -55,16 +57,18 @@ public class MemoryGovernanceService {
             SecurityContextHelper securityContextHelper,
             VectorMemoryService vectorMemoryService,
             AuditLogService auditLogService,
-            UserMemoryProfileExtractor userMemoryProfileExtractor,
             UserProfileMemoryService userProfileMemoryService,
+            UserProfileMemoryRefreshService userProfileMemoryRefreshService,
+            SemanticMemoryService semanticMemoryService,
             MemoryProperties memoryProperties,
             MeterRegistry meterRegistry) {
         this.memoryEntryRepository = memoryEntryRepository;
         this.securityContextHelper = securityContextHelper;
         this.vectorMemoryService = vectorMemoryService;
         this.auditLogService = auditLogService;
-        this.userMemoryProfileExtractor = userMemoryProfileExtractor;
         this.userProfileMemoryService = userProfileMemoryService;
+        this.userProfileMemoryRefreshService = userProfileMemoryRefreshService;
+        this.semanticMemoryService = semanticMemoryService;
         this.memoryProperties = memoryProperties;
         this.meterRegistry = meterRegistry;
     }
@@ -109,24 +113,49 @@ public class MemoryGovernanceService {
         }
 
         PageRequest page = PageRequest.of(DEFAULT_PAGE, PROFILE_LIMIT);
-        List<MemoryEntry> memories = memoryEntryRepository.findByTenantIdAndUserIdOrderByCreatedAtDesc(
-                tenantId, userId, page);
-        List<MemoryEntry> longTermMemories = memories.stream()
-                .filter(memory -> MemoryTier.LONG_TERM.equals(memory.getTier()))
-                .toList();
-        UserMemoryProfileSnapshotResponse profile = userMemoryProfileExtractor.extract(memories);
-        if (profile.confidence() > 0D) {
-            profile = userProfileMemoryService.upsertSnapshot(tenantId, userId, profile, memories.size());
-        } else {
-            profile = userProfileMemoryService.getSnapshot(tenantId, userId);
-        }
+        List<MemoryEntry> preferences = loadSemanticType(tenantId, userId, MemoryType.PREFERENCE, page);
+        List<MemoryEntry> profileFacts = loadSemanticType(tenantId, userId, MemoryType.ENTITY, page);
+        List<MemoryEntry> conclusions = loadSemanticType(tenantId, userId, MemoryType.CONCLUSION, page);
         return new UserMemoryProfileResponse(
                 true,
-                profile,
-                filterByType(longTermMemories, MemoryType.PREFERENCE),
-                filterByType(longTermMemories, MemoryType.ENTITY),
-                filterByType(longTermMemories, MemoryType.CONCLUSION),
+                userProfileMemoryService.getSnapshot(tenantId, userId),
+                preferences.stream().map(MemoryEntryResponse::from).toList(),
+                profileFacts.stream().map(MemoryEntryResponse::from).toList(),
+                conclusions.stream().map(MemoryEntryResponse::from).toList(),
                 memoryEntryRepository.countByTenantIdAndUserId(tenantId, userId));
+    }
+
+    /**
+     * 修正当前用户的一条长期语义记忆。
+     *
+     * @param memoryId 记忆 ID
+     * @param request 修正内容
+     * @return 变更结果
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public MemoryMutationResponse updateCurrentUserMemory(
+            String memoryId, SemanticMemoryUpdateRequest request) {
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        String userId = securityContextHelper.getCurrentUserId();
+        if (!hasIdentity(tenantId, userId) || !StringUtils.hasText(memoryId) || request == null) {
+            return MemoryMutationResponse.failure("记忆不存在或无权限");
+        }
+        MemoryEntry entry = memoryEntryRepository.findByMemoryIdAndTenantIdAndUserId(memoryId, tenantId, userId)
+                .orElse(null);
+        if (entry == null || !MemoryTier.LONG_TERM.equals(entry.getTier()) || !isSemanticType(entry.getType())) {
+            return MemoryMutationResponse.failure("仅支持修正长期语义记忆");
+        }
+        if (!StringUtils.hasText(entry.getSemanticKey())) {
+            entry.setSemanticKey(SemanticMemoryKey.legacyKey(entry.getType(), entry.getMemoryId()));
+            memoryEntryRepository.saveAndFlush(entry);
+        }
+        SemanticMemoryCandidate candidate = new SemanticMemoryCandidate(
+                entry.getType(), entry.getSemanticKey(), request.content().trim(),
+                1D, request.content().trim(), true);
+        semanticMemoryService.upsertAll(tenantId, userId, entry.getSessionId(), List.of(candidate));
+        auditLogService.record("UPDATE_MEMORY", AUDIT_RESOURCE_MEMORY, entry.getMemoryId(),
+                AUDIT_STATUS_SUCCESS, "用户修正语义记忆");
+        return MemoryMutationResponse.success("记忆已更新", 1);
     }
 
     /**
@@ -204,6 +233,8 @@ public class MemoryGovernanceService {
         List<MemoryEntry> entries = loadEntriesForDeletion(tenantId, userId, tier);
         entries.forEach(entry -> cleanupVectorIfNecessary(entry, tenantId));
         memoryEntryRepository.deleteAll(entries);
+        memoryEntryRepository.flush();
+        userProfileMemoryRefreshService.refresh(tenantId, userId);
         auditLogService.record(AUDIT_CLEAR_MEMORY, AUDIT_RESOURCE_MEMORY, tier == null ? "ALL" : tier.name(),
                 AUDIT_STATUS_SUCCESS, "清理记忆数量: " + entries.size());
         return MemoryMutationResponse.success("记忆已清理", entries.size());
@@ -212,6 +243,8 @@ public class MemoryGovernanceService {
     private MemoryMutationResponse deleteEntry(MemoryEntry entry, String tenantId) {
         cleanupVectorIfNecessary(entry, tenantId);
         memoryEntryRepository.delete(entry);
+        memoryEntryRepository.flush();
+        userProfileMemoryRefreshService.refresh(entry.getTenantId(), entry.getUserId());
         auditLogService.record(AUDIT_DELETE_MEMORY, AUDIT_RESOURCE_MEMORY, entry.getMemoryId(),
                 AUDIT_STATUS_SUCCESS, "删除用户记忆");
         return MemoryMutationResponse.success("记忆已删除", 1);
@@ -231,11 +264,16 @@ public class MemoryGovernanceService {
         }
     }
 
-    private List<MemoryEntryResponse> filterByType(List<MemoryEntry> entries, MemoryType type) {
-        return entries.stream()
-                .filter(entry -> type.equals(entry.getType()))
-                .map(MemoryEntryResponse::from)
-                .toList();
+    private List<MemoryEntry> loadSemanticType(
+            String tenantId, String userId, MemoryType type, PageRequest page) {
+        return memoryEntryRepository.findByTenantIdAndUserIdAndTierAndTypeOrderByUpdatedAtDesc(
+                tenantId, userId, MemoryTier.LONG_TERM, type, page);
+    }
+
+    private boolean isSemanticType(MemoryType type) {
+        return MemoryType.PREFERENCE.equals(type)
+                || MemoryType.ENTITY.equals(type)
+                || MemoryType.CONCLUSION.equals(type);
     }
 
     private int normalizeLimit(int limit) {

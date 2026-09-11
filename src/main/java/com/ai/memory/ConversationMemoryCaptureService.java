@@ -2,8 +2,10 @@ package com.ai.memory;
 
 import com.ai.memory.dto.MemoryCaptureRequest;
 import com.ai.memory.dto.MemoryCompressionResult;
+import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -15,19 +17,30 @@ import java.util.Map;
 public class ConversationMemoryCaptureService {
 
     private static final int SHORT_TERM_IMPORTANCE = 3;
-    private static final int LONG_TERM_IMPORTANCE = 5;
     private static final String SOURCE_CONVERSATION_CAPTURE = "conversation_capture";
 
     private final MemoryManager memoryManager;
     private final MemoryCompressor memoryCompressor;
     private final MemoryWorthinessEvaluator memoryWorthinessEvaluator;
+    private final SemanticMemoryExtractor semanticMemoryExtractor;
+    private final SemanticMemoryService semanticMemoryService;
+    private final SemanticMemoryExtractionJob semanticMemoryExtractionJob;
+    private final SecurityContextHelper securityContextHelper;
 
     public ConversationMemoryCaptureService(MemoryManager memoryManager,
             MemoryCompressor memoryCompressor,
-            MemoryWorthinessEvaluator memoryWorthinessEvaluator) {
+            MemoryWorthinessEvaluator memoryWorthinessEvaluator,
+            SemanticMemoryExtractor semanticMemoryExtractor,
+            SemanticMemoryService semanticMemoryService,
+            SemanticMemoryExtractionJob semanticMemoryExtractionJob,
+            SecurityContextHelper securityContextHelper) {
         this.memoryManager = memoryManager;
         this.memoryCompressor = memoryCompressor;
         this.memoryWorthinessEvaluator = memoryWorthinessEvaluator;
+        this.semanticMemoryExtractor = semanticMemoryExtractor;
+        this.semanticMemoryService = semanticMemoryService;
+        this.semanticMemoryExtractionJob = semanticMemoryExtractionJob;
+        this.securityContextHelper = securityContextHelper;
     }
 
     /**
@@ -37,14 +50,21 @@ public class ConversationMemoryCaptureService {
      * @param userMessage 用户消息
      * @param assistantReply 助手回复
      */
-    public void captureCompletedConversation(String sessionId, String userMessage, String assistantReply) {
+    public void captureCompletedConversation(
+            String sessionId, String userMessage, String assistantReply, String modelId) {
         if (!memoryWorthinessEvaluator.shouldStoreConversation(userMessage, assistantReply)) {
             return;
         }
         captureShortTermSummary(sessionId, userMessage, assistantReply);
-        if (memoryWorthinessEvaluator.hasExplicitMemoryIntent(userMessage)) {
-            captureExplicitLongTermMemory(sessionId, userMessage);
+        String tenantId = securityContextHelper.getCurrentTenantId();
+        String userId = securityContextHelper.getCurrentUserId();
+        List<SemanticMemoryCandidate> explicitCandidates = semanticMemoryExtractor.extractExplicit(userMessage);
+        if (!explicitCandidates.isEmpty()) {
+            semanticMemoryService.upsertAll(tenantId, userId, sessionId, explicitCandidates);
+            return;
         }
+        semanticMemoryExtractionJob.extract(
+                tenantId, userId, sessionId, userMessage, assistantReply, modelId);
     }
 
     private void captureShortTermSummary(String sessionId, String userMessage, String assistantReply) {
@@ -57,26 +77,12 @@ public class ConversationMemoryCaptureService {
                 compressionResult.content(),
                 compressionResult.compressedContent(),
                 Map.of("source", SOURCE_CONVERSATION_CAPTURE, "captureMode", "deterministic_summary"),
+                null,
+                0D,
                 compressionResult.keyEntities(),
                 compressionResult.topicTags(),
                 SHORT_TERM_IMPORTANCE);
         memoryManager.capture(request);
     }
 
-    private void captureExplicitLongTermMemory(String sessionId, String userMessage) {
-        MemoryType memoryType = memoryWorthinessEvaluator.classifyExplicitMemory(userMessage);
-        MemoryCompressionResult compressionResult = memoryCompressor.compressExplicitMemory(userMessage, memoryType);
-        MemoryCaptureRequest request = new MemoryCaptureRequest(
-                MemoryTier.LONG_TERM,
-                memoryType,
-                MemorySource.USER_EXPLICIT,
-                sessionId,
-                compressionResult.content(),
-                compressionResult.compressedContent(),
-                Map.of("source", SOURCE_CONVERSATION_CAPTURE, "captureMode", "explicit_user_statement"),
-                compressionResult.keyEntities(),
-                compressionResult.topicTags(),
-                LONG_TERM_IMPORTANCE);
-        memoryManager.capture(request);
-    }
 }

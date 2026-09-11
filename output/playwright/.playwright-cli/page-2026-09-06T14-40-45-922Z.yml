@@ -1,0 +1,187 @@
+- generic [ref=f2e3]:
+  - complementary [ref=f2e4]:
+    - generic [ref=f2e5]: Data Agent
+    - generic [ref=f2e18]:
+      - generic [ref=f2e19]: REFERENCE APP
+      - button "我的 Agent" [ref=f2e20] [cursor=pointer]
+      - button "知识" [ref=f2e24] [cursor=pointer]
+      - button "上下文" [ref=f2e28] [cursor=pointer]
+  - main [ref=f2e42]:
+    - generic [ref=f2e43]:
+      - generic [ref=f2e44]: 我的 Agent
+      - generic [ref=f2e47]:
+        - generic [ref=f2e48]:
+          - strong [ref=f2e49]: 演示用户
+          - generic [ref=f2e50]: default
+        - button "退出" [ref=f2e51] [cursor=pointer]
+    - generic [ref=f2e55]:
+      - generic [ref=f2e56]:
+        - generic [ref=f2e57]:
+          - heading "Agent 工作台" [level=1] [ref=f2e58]
+          - paragraph [ref=f2e59]: 能够检索知识并完成受控任务
+        - generic [ref=f2e60]:
+          - button "刷新" [ref=f2e61] [cursor=pointer]
+          - button "设置" [ref=f2e67] [cursor=pointer]
+          - button "新对话" [ref=f2e71] [cursor=pointer]
+      - region "Agent Harness 当前状态" [ref=f2e73]:
+        - generic [ref=f2e78]:
+          - strong [ref=f2e79]: Agent Harness
+          - generic [ref=f2e80]: 当前 Agent：我的开发 Agent
+        - generic [ref=f2e81]:
+          - generic [ref=f2e82]:
+            - strong [ref=f2e87]: Auto
+            - text: 模式
+          - generic [ref=f2e88]:
+            - strong [ref=f2e92]: "5"
+            - text: 类预算
+          - generic [ref=f2e93]:
+            - strong [ref=f2e96]: "2"
+            - text: Tool
+          - generic [ref=f2e97]:
+            - strong [ref=f2e108]: "1"
+            - text: Skill
+          - generic [ref=f2e109]:
+            - strong [ref=f2e113]: "1"
+            - text: 子 Agent
+          - generic [ref=f2e114]: 策略准入
+        - generic [ref=f2e118]:
+          - generic [ref=f2e119]: 最新 Run
+          - strong [ref=f2e120]: 等待任务
+          - code [ref=f2e121]: 尚未运行
+      - generic [ref=f2e122]:
+        - generic [ref=f2e123]:
+          - generic [ref=f2e124]:
+            - strong [ref=f2e125]: 会话
+            - generic [ref=f2e126]: "1"
+          - generic [ref=f2e128]:
+            - button "新对话 0 条 · -" [ref=f2e129] [cursor=pointer]:
+              - strong [ref=f2e130]: 新对话
+              - generic [ref=f2e131]: 0 条 · -
+            - button [ref=f2e132] [cursor=pointer]
+        - generic [ref=f2e136]:
+          - generic [ref=f2e137]:
+            - generic [ref=f2e142]:
+              - strong [ref=f2e143]: 我的开发 Agent
+              - generic [ref=f2e144]: GPT Compatible
+            - generic [ref=f2e145]:
+              - generic [ref=f2e146]: 2 Tool
+              - generic [ref=f2e149]: 1 Skill
+              - generic [ref=f2e160]: 1 子 Agent
+            - button "配置我的 Agent" [ref=f2e164] [cursor=pointer]
+          - generic [ref=f2e169]:
+            - strong [ref=f2e172]: 今天想完成什么？
+            - generic [ref=f2e173]: 直接提出问题或任务，我会决定是否检索知识、使用工具或直接回答。
+          - generic [ref=f2e178]:
+            - button "成功标准 未设置" [ref=f2e180] [cursor=pointer]:
+              - generic [ref=f2e184]:
+                - strong [ref=f2e185]: 成功标准
+                - generic [ref=f2e186]: 未设置
+            - generic [ref=f2e189]:
+              - textbox "告诉我的 Agent 你想完成什么" [ref=f2e190]
+              - button "发送" [ref=f2e191] [cursor=pointer]
+      - generic [ref=f2e379]:
+        - generic [ref=f2e380]:
+          - heading "配置我的 Agent" [level=2] [ref=f2e381]
+          - button [ref=f2e382] [cursor=pointer]
+        - generic [ref=f2e386]:
+          - generic [ref=f2e387]:
+            - generic [ref=f2e388]: 名称
+            - textbox "名称" [ref=f2e389]: 我的开发 Agent
+          - generic [ref=f2e390]:
+            - generic [ref=f2e391]: 模型
+            - combobox "模型" [ref=f2e392]:
+              - option "跟随系统默认模型"
+              - option "GPT Compatible" [selected]
+          - generic [ref=f2e393]:
+            - generic [ref=f2e394]: 简介
+            - textbox "简介" [ref=f2e395]: 能够检索知识并完成受控任务
+          - generic [ref=f2e396]:
+            - generic [ref=f2e397]: 角色与行为
+            - textbox "角色与行为" [ref=f2e398]: 你是一个可靠的个人 Agent。
+          - generic [ref=f2e399]:
+            - generic [ref=f2e400]: 执行模式
+            - radiogroup "执行模式" [ref=f2e401]:
+              - radio "Auto" [checked] [ref=f2e402] [cursor=pointer]
+              - radio "Chat" [ref=f2e403] [cursor=pointer]
+              - radio "ReAct" [ref=f2e404] [cursor=pointer]
+              - radio "Orchestrated" [ref=f2e405] [cursor=pointer]
+            - generic [ref=f2e406]: 简单问题直接回答，复杂任务按当前绑定自动选择 ReAct 或编排。
+          - generic [ref=f2e411]:
+            - generic [ref=f2e412]:
+              - text: 能力绑定
+              - generic [ref=f2e413]: 0 Tool · 0 Skill · 1 子 Agent
+            - group "能力绑定 0 Tool · 0 Skill · 1 子 Agent" [ref=f2e538]:
+              - region [ref=f2e415]:
+                - generic [ref=f2e416]:
+                  - strong [ref=f2e420]: Tools
+                  - generic [ref=f2e421]: 0 已选 · 2/2 可用
+                - generic [ref=f2e422]:
+                  - generic [ref=f2e423] [cursor=pointer]:
+                    - checkbox "选择 知识检索" [ref=f2e535]
+                    - generic [ref=f2e425]:
+                      - generic [ref=f2e426]:
+                        - strong [ref=f2e427]: 知识检索
+                        - generic [ref=f2e428]: 低风险
+                        - generic [ref=f2e431]: 可用
+                      - generic [ref=f2e435]: 检索个人知识库
+                      - generic [ref=f2e436]:
+                        - code [ref=f2e437]: tool:searchKnowledge
+                        - generic [ref=f2e438]: 版本 1
+                  - generic [ref=f2e439] [cursor=pointer]:
+                    - checkbox "选择 更新价格" [ref=f2e537]
+                    - generic [ref=f2e441]:
+                      - generic [ref=f2e442]:
+                        - strong [ref=f2e443]: 更新价格
+                        - generic [ref=f2e444]: 高风险
+                        - generic [ref=f2e447]: 可用
+                      - generic [ref=f2e451]: 执行受审批保护的价格更新
+                      - generic [ref=f2e452]:
+                        - code [ref=f2e453]: tool:updatePrice
+                        - generic [ref=f2e454]: 版本 2
+                        - generic [ref=f2e455]: 需要审批
+              - region [ref=f2e456]:
+                - generic [ref=f2e457]:
+                  - strong [ref=f2e469]: Skills
+                  - generic [ref=f2e470]: 0 已选 · 1/2 可用
+                - generic [ref=f2e471]:
+                  - generic [ref=f2e472] [cursor=pointer]:
+                    - checkbox "选择 需求分析" [active] [ref=f2e539]
+                    - generic [ref=f2e474]:
+                      - generic [ref=f2e475]:
+                        - strong [ref=f2e476]: 需求分析
+                        - generic [ref=f2e477]: 低风险
+                        - generic [ref=f2e480]: 可用
+                      - generic [ref=f2e484]: 按固定流程分析需求
+                      - generic [ref=f2e485]:
+                        - code [ref=f2e486]: skill:skill-1
+                        - generic [ref=f2e487]: 版本 3
+                  - generic [ref=f2e488]:
+                    - checkbox "选择 停用技能" [disabled] [ref=f2e489]
+                    - generic [ref=f2e490]:
+                      - generic [ref=f2e491]:
+                        - strong [ref=f2e492]: 停用技能
+                        - generic [ref=f2e493]: 低风险
+                        - generic [ref=f2e496]: 不可用
+                      - generic [ref=f2e501]: 当前未加载
+                      - generic [ref=f2e502]:
+                        - code [ref=f2e503]: skill:skill-disabled
+                        - generic [ref=f2e504]: 版本 1
+                        - generic [ref=f2e505]: 运行时未加载
+              - region [ref=f2e506]:
+                - generic [ref=f2e507]:
+                  - strong [ref=f2e512]: Sub Agents
+                  - generic [ref=f2e513]: 1 已选 · 1/1 可用
+                - generic [ref=f2e515] [cursor=pointer]:
+                  - checkbox "取消 代码审查 Agent" [checked] [ref=f2e516]
+                  - generic [ref=f2e517]:
+                    - generic [ref=f2e518]:
+                      - strong [ref=f2e519]: 代码审查 Agent
+                      - generic [ref=f2e520]: 中风险
+                      - generic [ref=f2e523]: 可用
+                    - generic [ref=f2e527]: 负责边界明确的代码审查任务
+                    - generic [ref=f2e528]:
+                      - code [ref=f2e529]: agent:agent-child
+                      - generic [ref=f2e530]: 版本 4
+        - generic [ref=f2e531]:
+          - button "取消" [ref=f2e532] [cursor=pointer]
+          - button "保存配置" [ref=f2e533] [cursor=pointer]

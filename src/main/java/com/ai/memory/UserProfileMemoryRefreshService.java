@@ -26,18 +26,15 @@ public class UserProfileMemoryRefreshService {
     }
 
     /**
-     * 刷新指定租户用户的画像。画像证据不足时保持原画像不变。
+     * 刷新指定租户用户的画像。画像是当前有效语义记忆的可重建投影。
      *
      * @param tenantId 租户 ID
      * @param userId 用户 ID
-     * @return 刷新后的画像，证据不足时返回已有画像
+     * @return 刷新后的画像
      */
     public UserMemoryProfileSnapshotResponse refresh(String tenantId, String userId) {
         List<MemoryEntry> memories = longTermMemory.listProfileEvidence(tenantId, userId);
         UserMemoryProfileSnapshotResponse profile = userMemoryProfileExtractor.extract(memories);
-        if (profile.confidence() > 0D) {
-            return userProfileMemoryService.upsertSnapshot(tenantId, userId, profile, memories.size());
-        }
-        return userProfileMemoryService.getSnapshot(tenantId, userId);
+        return userProfileMemoryService.replaceSnapshot(tenantId, userId, profile);
     }
 }

@@ -1,6 +1,6 @@
-import { BrainCircuit, RefreshCw, Trash2 } from 'lucide-react';
+import { BrainCircuit, Pencil, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Badge, ConfirmDialog, DataTable, EmptyState, Metric, PageHeader } from '../components/ui.jsx';
+import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader } from '../components/ui.jsx';
 import { formatTime, truncate } from '../utils/format.js';
 
 const tierOptions = [
@@ -51,6 +51,20 @@ function numberValue(value) {
 
 function percent(value) {
   return `${Math.round(numberValue(value) * 100)}%`;
+}
+
+function sourceLabel(source) {
+  const labels = {
+    USER_EXPLICIT: '用户明确记录',
+    USER_IMPLICIT: '对话自动识别',
+    AGENT_EXTRACTED: 'Agent 提取',
+    SYSTEM_GENERATED: '系统生成'
+  };
+  return labels[source] || '来源未知';
+}
+
+function isSemanticMemory(item) {
+  return item?.tier === 'LONG_TERM' && ['PREFERENCE', 'ENTITY', 'CONCLUSION'].includes(item?.type);
 }
 
 function durationMs(value) {
@@ -122,7 +136,7 @@ function MemoryStatsPanel({ stats }) {
   );
 }
 
-function ProfileList({ title, items }) {
+function ProfileList({ title, emptyText, items, onEdit, onDelete }) {
   return (
     <div className="card memory-profile-card">
       <div className="section-title">{title}</div>
@@ -130,13 +144,23 @@ function ProfileList({ title, items }) {
         <div className="memory-profile-list">
           {items.map((item) => (
             <div className="memory-profile-item" key={item.memoryId}>
-              <span>{truncate(item.content, 120)}</span>
-              <small>{formatTime(item.createdAt)}</small>
+              <div className="memory-profile-item-main">
+                <span>{truncate(item.content, 120)}</span>
+                <div className="memory-profile-meta">
+                  <Badge tone={item.source === 'USER_EXPLICIT' ? 'green' : 'gray'}>{sourceLabel(item.source)}</Badge>
+                  <small>置信度 {percent(item.confidence)}</small>
+                  <small>{formatTime(item.updatedAt || item.createdAt)}</small>
+                </div>
+              </div>
+              <div className="memory-profile-actions">
+                <button className="icon-button bordered" title="修正记忆" aria-label="修正记忆" onClick={() => onEdit(item)}><Pencil size={15} /></button>
+                <button className="icon-button bordered danger" title="删除记忆" aria-label="删除记忆" onClick={() => onDelete(item)}><Trash2 size={15} /></button>
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="muted">暂无记录</div>
+        <div className="muted">{emptyText}</div>
       )}
     </div>
   );
@@ -188,6 +212,9 @@ export function MemoryPage({ api, toast }) {
   const [tier, setTier] = useState('');
   const [loading, setLoading] = useState(true);
   const [confirm, setConfirm] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -220,6 +247,31 @@ export function MemoryPage({ api, toast }) {
     load();
   };
 
+  const openEdit = (item) => {
+    setEditing(item);
+    setEditContent(item.content || '');
+  };
+
+  const saveMemory = async () => {
+    const content = editContent.trim();
+    if (!content) {
+      toast('记忆内容不能为空', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.put(`/api/v1/memories/${editing.memoryId}`, { content });
+      toast(res.message || '记忆已更新', res.success === false ? 'error' : 'success');
+      if (res.success !== false) {
+        setEditing(null);
+        setEditContent('');
+        await load();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const clearTier = async () => {
     const params = new URLSearchParams();
     if (tier) {
@@ -247,9 +299,9 @@ export function MemoryPage({ api, toast }) {
       <MemoryStatsPanel stats={stats} />
       <ProfileSummary profile={profile.profile || {}} />
       <div className="grid grid-3 memory-profile-grid">
-        <ProfileList title="偏好" items={profile.preferences || []} />
-        <ProfileList title="画像事实" items={profile.profileFacts || []} />
-        <ProfileList title="结论" items={profile.conclusions || []} />
+        <ProfileList title="偏好" emptyText="尚未识别到稳定偏好" items={profile.preferences || []} onEdit={openEdit} onDelete={setConfirm} />
+        <ProfileList title="画像事实" emptyText="尚未识别到画像事实" items={profile.profileFacts || []} onEdit={openEdit} onDelete={setConfirm} />
+        <ProfileList title="结论" emptyText="尚未识别到稳定结论" items={profile.conclusions || []} onEdit={openEdit} onDelete={setConfirm} />
       </div>
       <DataTable loading={loading} empty={<EmptyState title="暂无记忆" desc="Agent 产生对话摘要或用户明确要求记住内容后，这里会显示记忆条目。" actions={<button className="btn primary" onClick={load}><BrainCircuit size={16} />重新加载</button>} />} columns={[
         { key: 'content', title: '内容', render: (item) => <><strong>{truncate(item.content, 140)}</strong><div className="muted">{item.sessionId || '跨会话记忆'}</div></> },
@@ -258,8 +310,14 @@ export function MemoryPage({ api, toast }) {
         { key: 'importance', title: '权重', render: (item) => Number(item.importance || 0).toFixed(2) },
         { key: 'createdAt', title: '创建时间', render: (item) => formatTime(item.createdAt) },
         { key: 'expiresAt', title: '过期时间', render: (item) => formatTime(item.expiresAt) },
-        { key: 'actions', title: '操作', render: (item) => <button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} />删除</button> }
+        { key: 'actions', title: '操作', render: (item) => <div className="toolbar">{isSemanticMemory(item) && <button className="btn" onClick={() => openEdit(item)}><Pencil size={16} />修正</button>}<button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} />删除</button></div> }
       ]} rows={memories} rowKey="memoryId" />
+      {editing && <Modal title={`修正${typeLabel(editing.type)}记忆`} onClose={() => setEditing(null)} actions={<button className="btn primary" disabled={saving} onClick={saveMemory}><Save size={16} />{saving ? '保存中' : '保存'}</button>}>
+        <div className="form-stack">
+          <Field label="记忆内容"><textarea className="textarea" rows={5} maxLength={500} autoFocus value={editContent} onChange={(event) => setEditContent(event.target.value)} /></Field>
+          <div className="memory-edit-counter">{editContent.length} / 500</div>
+        </div>
+      </Modal>}
       {confirm && <ConfirmDialog title="删除记忆" message={`确认删除这条记忆？${truncate(confirm.content, 80)}`} danger confirmText="删除" onCancel={() => setConfirm(null)} onConfirm={deleteMemory} />}
     </>
   );

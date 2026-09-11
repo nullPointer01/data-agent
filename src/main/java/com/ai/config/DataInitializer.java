@@ -242,12 +242,12 @@ public class DataInitializer {
 
     private void registerDefaultSkillToManager(SkillConfig config, SkillManager skillManager) {
         DynamicSkill skill = buildDynamicSkill(config);
-        skillManager.registerDefaultSkillWithoutVectorRefresh(skill);
+        skillManager.registerDefaultSkillWithoutVectorRefresh(config.getSkillId(), skill);
     }
 
     private void registerSkillToManager(SkillConfig config, SkillManager skillManager) {
         DynamicSkill skill = buildDynamicSkill(config);
-        skillManager.registerSkillWithoutVectorRefresh(skill);
+        skillManager.registerSkillWithoutVectorRefresh(config.getSkillId(), skill);
     }
 
     private DynamicSkill buildDynamicSkill(SkillConfig config) {

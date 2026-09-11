@@ -40,6 +40,9 @@ public class ConversationMessage {
     @Column(name = "model_used", length = 64)
     private String modelUsed;
 
+    @Column(name = "run_id", length = 64)
+    private String runId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -105,6 +108,14 @@ public class ConversationMessage {
 
     public void setModelUsed(String modelUsed) {
         this.modelUsed = modelUsed;
+    }
+
+    public String getRunId() {
+        return runId;
+    }
+
+    public void setRunId(String runId) {
+        this.runId = runId;
     }
 
     public LocalDateTime getCreatedAt() {

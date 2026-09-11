@@ -25,7 +25,7 @@ Agent 的一句话定义：
 
 > 我目前在同程旅行做酒店商品库和促销相关的 Java 后端开发，做过千万级数据拉取、多进程任务、Kafka 实时变更、JVM Full GC 和 OOM 治理，也做过酒店收益策略预测系统。在收益预测项目里，我接入过 DeepSeek，把 27 个核心指标通过固定 Prompt 和 HTML 模板生成分析报告。
 >
-> 我希望往 Java 后端加 AI 应用工程方向发展，所以做了 Data Agent 个人项目。它不是单次调用模型，而是一套 Spring Boot + LangChain4j 的 Agent Runtime，包含 ReAct 工具循环、Orchestrator 多专家编排、RAG 混合检索、分层记忆、多模型配置、SSE、Token 配额、RBAC、多租户和执行追踪。
+> 我希望往 Java 后端加 AI 应用工程方向发展，所以做了 Data Agent 个人项目。它不是单次调用模型，而是一套 Spring Boot + LangChain4j 的 Agent Runtime，包含 ReAct 工具循环、受控子 Agent 委派、RAG 混合检索、分层记忆、多模型配置、SSE、Token 配额、RBAC、多租户和执行追踪。
 >
 > 我的优势不是模型训练，而是把传统后端的并发、稳定性、权限、监控经验带到 AI 应用里。我对 Agent 最大的理解是：推理可以给模型空间，但动作必须有权限、预算、审计和必要的人审，也就是带刹车的自主。
 

@@ -9,11 +9,24 @@ Tool Calling 中，模型只负责返回“建议调用哪个工具、参数是�
 ```text
 Registry 中已注册且环境启用
   ∩ Run 创建时固化的用户/租户/RBAC 权限
-  ∩ 当前 Agent 或 Orchestrator 步骤的精确白名单
+  ∩ 当前 Agent 或 ReAct 规划预检步骤的精确白名单
   ∩ 环境允许的最大风险等级
 ```
 
-任意条件不满足都在工具实现和预算之前拒绝。旧 AgentProfile 的空 `tools` 列表仍表示“从服务端全部已启用工具开始”，但不会绕过 RBAC 和风险策略。
+任意条件不满足都在工具实现和预算之前拒绝。`AgentProfile.capability_bindings` 必须是 JSON 数组，`[]` 表示零能力；缺失、损坏、未知或重复身份都会失败关闭。默认个人 Agent 只在首次创建时固化当时允许的 Tool，后续新增 Tool 不会自动扩权。
+
+## Profile 能力配置安全边界
+
+`AgentProfile` 只保存 `capability_bindings` 原始字段，不负责 JSON 解析。保存、响应、能力目录、风险计算和运行时统一经过 `AgentCapabilityConfigurationCodec`：
+
+```text
+capability_bindings
+  -> []：零能力
+  -> 合法数组：精确 Tool / Skill / sub Agent 白名单
+  -> NULL 或非法值：失败关闭
+```
+
+Codec 解析异常使用稳定领域错误码，API 只返回字段、Agent 编号和原因码，不回显原始 JSON。旧库先用 `sql/audit-agent-capability-bindings.sql` 识别历史状态，再用默认不更新数据的 `sql/migrate-agent-capability-bindings.sql` 审查候选，最后执行 `sql/finalize-agent-capability-bindings.sql` 设置非空约束并删除旧列。历史 `tools=NULL` 必须人工确认具体 Tool 快照，迁移不接入启动流程。
 
 ## Descriptor 与 Registry
 
@@ -56,7 +69,7 @@ admit: Registry -> Schema -> owner RBAC -> Agent allowlist -> risk
 
 ## 沙箱审批工具
 
-`updateHotelPrice` 声明为非只读、幂等、不可自动重试、需要审批。它受 `app.agent.durable.enabled`、`sandbox-tool-enabled` 和 `enabled-approval-tools` 三重配置收窄，即使普通 Profile 的工具列表为空，也不会在默认配置下自动出现。
+`updateHotelPrice` 声明为非只读、幂等、不可自动重试、需要审批。它受 `app.agent.durable.enabled`、`sandbox-tool-enabled` 和 `enabled-approval-tools` 三重配置收窄，且只有显式绑定后才可能进入 Agent 能力快照。
 
 工具只写隔离的 `hotel_rate_sandbox` 追加流水，不连接真实酒店表。稳定 `approvalId + toolCallId` 形成唯一动作键，重复恢复读取第一次结果且不重复改变沙箱价格。这是本地幂等证据，不是跨系统 exactly-once 承诺。
 

@@ -68,7 +68,7 @@ public class KnowledgeSyncService {
 
     public KnowledgeSyncConfigEnvelope getSyncConfig(String knowledgeId) {
         String tenantId = securityService.currentTenantIdOrThrow();
-        securityService.assertCurrentTenantKnowledge(knowledgeId);
+        securityService.assertCurrentUserKnowledge(knowledgeId);
         return syncConfigRepository.findByKnowledgeIdAndTenantId(knowledgeId, tenantId)
                 .map(KnowledgeSyncConfigResponse::from)
                 .map(KnowledgeSyncConfigEnvelope::success)
@@ -78,7 +78,7 @@ public class KnowledgeSyncService {
     @Transactional(rollbackFor = Exception.class)
     public KnowledgeMutationResponse saveSyncConfig(String knowledgeId, KnowledgeSyncConfigRequest request) {
         String tenantId = securityService.currentTenantIdOrThrow();
-        securityService.assertCurrentTenantKnowledge(knowledgeId);
+        securityService.assertCurrentUserKnowledge(knowledgeId);
         KnowledgeSyncConfig config = syncConfigRepository.findByKnowledgeIdAndTenantId(knowledgeId, tenantId)
                 .orElseGet(KnowledgeSyncConfig::new);
         config.setKnowledgeId(knowledgeId);
@@ -94,14 +94,13 @@ public class KnowledgeSyncService {
     @Transactional(rollbackFor = Exception.class)
     public KnowledgeMutationResponse deleteSyncConfig(String knowledgeId) {
         String tenantId = securityService.currentTenantIdOrThrow();
-        securityService.assertCurrentTenantKnowledge(knowledgeId);
+        securityService.assertCurrentUserKnowledge(knowledgeId);
         syncConfigRepository.findByKnowledgeIdAndTenantId(knowledgeId, tenantId)
                 .ifPresent(syncConfigRepository::delete);
         return KnowledgeMutationResponse.success("自动同步配置已删除");
     }
 
     public KnowledgeMutationResponse triggerSync(String knowledgeId) {
-        securityService.assertCurrentTenantKnowledge(knowledgeId);
         KnowledgeSyncConfig config = securityService.findOwnedSyncConfig(knowledgeId);
         try {
             return KnowledgeMutationResponse.success(doSync(config));

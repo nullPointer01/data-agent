@@ -1,5 +1,6 @@
 package com.ai.agent.tool;
 
+import com.ai.agent.durable.AgentDurableRunStore;
 import com.ai.mcp.TokenMonitor;
 import com.ai.memory.ConversationMemoryCaptureService;
 import com.ai.model.AnalysisRequest;
@@ -22,22 +23,24 @@ public class AgentConversationRecorder {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentConversationRecorder.class);
     private static final int ASSISTANT_MEMORY_PREVIEW_LENGTH = 500;
     private static final String ANONYMOUS_SESSION_ID = "anonymous";
-    private static final String USER_ROLE = "user";
-    private static final String ASSISTANT_ROLE = "assistant";
     private static final String REACT_SKILL_NAME = "react-agent";
+    private static final String WAITING_APPROVAL_MESSAGE = "工具操作已提交审批，审批通过后会继续执行。";
 
     private final TokenMonitor tokenMonitor;
+    private final AgentDurableRunStore durableRunStore;
     private final SessionManager sessionManager;
     private final VectorMemoryService vectorMemoryService;
     private final SecurityContextHelper securityContextHelper;
     private final ConversationMemoryCaptureService conversationMemoryCaptureService;
 
     public AgentConversationRecorder(TokenMonitor tokenMonitor,
+            AgentDurableRunStore durableRunStore,
             SessionManager sessionManager,
             VectorMemoryService vectorMemoryService,
             SecurityContextHelper securityContextHelper,
             ConversationMemoryCaptureService conversationMemoryCaptureService) {
         this.tokenMonitor = tokenMonitor;
+        this.durableRunStore = durableRunStore;
         this.sessionManager = sessionManager;
         this.vectorMemoryService = vectorMemoryService;
         this.securityContextHelper = securityContextHelper;
@@ -51,11 +54,14 @@ public class AgentConversationRecorder {
      * @param request 原始请求
      * @param result 最终回答
      * @param modelId 选中的模型 ID
+     * @param runId 本次 Agent Run 编号
      */
     public void recordReActConversation(ConversationSession session, AnalysisRequest request, String result,
-            String modelId) {
-        persistConversation(session, request, result, REACT_SKILL_NAME, modelId);
-        captureConversationMemory(session, request, result);
+            String modelId, String runId) {
+        if (!persistConversation(session, request, result, REACT_SKILL_NAME, modelId, runId)) {
+            return;
+        }
+        captureConversationMemory(session, request, result, modelId);
         indexConversation(session, request, result);
     }
 
@@ -67,11 +73,13 @@ public class AgentConversationRecorder {
      * @param result 最终回答
      * @param skillUsed 使用的技能或命令名称
      * @param modelId 选中的模型 ID
+     * @param runId 本次 Agent Run 编号
      */
     public void recordSessionConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId) {
-        persistConversation(session, request, result, skillUsed, modelId);
-        captureConversationMemory(session, request, result);
+            String skillUsed, String modelId, String runId) {
+        if (persistConversation(session, request, result, skillUsed, modelId, runId)) {
+            captureConversationMemory(session, request, result, modelId);
+        }
     }
 
     /**
@@ -85,28 +93,84 @@ public class AgentConversationRecorder {
      * @param result 最终回答
      * @param skillUsed 使用的技能或 Agent 名称
      * @param modelId 选中的模型 ID
+     * @param runId 本次 Agent Run 编号
      */
     public void recordAnalysisConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId) {
-        persistConversation(session, request, result, skillUsed, modelId);
-        captureConversationMemory(session, request, result);
+            String skillUsed, String modelId, String runId) {
+        if (!persistConversation(session, request, result, skillUsed, modelId, runId)) {
+            return;
+        }
+        captureConversationMemory(session, request, result, modelId);
         indexConversation(session, request, result);
     }
 
-    private void persistConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId) {
-        if (session == null) {
-            return;
-        }
-        session.addUserMessage(request.getQuestion());
-        session.addAssistantMessage(result);
+    /**
+     * 保存进入等待审批状态的对话，使其可在重新登录后恢复展示。
+     *
+     * @param session 会话对象
+     * @param request 原始请求
+     * @param skillUsed 使用的技能或 Agent 名称
+     * @param modelId 选中的模型 ID
+     * @param runId 本次 Agent Run 编号
+     */
+    public void recordWaitingApprovalConversation(ConversationSession session,
+            AnalysisRequest request,
+            String skillUsed,
+            String modelId,
+            String runId) {
+        persistConversation(session, request, WAITING_APPROVAL_MESSAGE, skillUsed, modelId, runId);
+    }
+
+    /**
+     * 将等待审批消息更新为 Run 的最新用户可见状态。
+     *
+     * @param runId Agent Run 编号
+     * @param content 用户可见内容
+     * @param skillUsed 使用的技能或 Agent 名称
+     * @param modelId 选中的模型 ID
+     */
+    public void updateRunConversation(String runId,
+            String content,
+            String skillUsed,
+            String modelId) {
         try {
-            sessionManager.saveMessage(session.getSessionId(), USER_ROLE, request.getQuestion(), null, null,
-                    tokenMonitor.estimateTokens(request.getQuestion()));
-            sessionManager.saveMessage(session.getSessionId(), ASSISTANT_ROLE, result, skillUsed, modelId,
-                    tokenMonitor.estimateTokens(result));
+            durableRunStore.find(runId).ifPresent(run -> sessionManager.updateRunAssistantMessage(
+                    run.getSessionId(),
+                    run.getTenantId(),
+                    run.getUserId(),
+                    run.getRunId(),
+                    content,
+                    skillUsed,
+                    modelId,
+                    tokenMonitor.estimateTokens(content)));
+        } catch (Exception e) {
+            LOGGER.warn("更新 Agent Run 会话状态失败，run: {}", runId, e);
+        }
+    }
+
+    private boolean persistConversation(ConversationSession session, AnalysisRequest request, String result,
+            String skillUsed, String modelId, String runId) {
+        if (session == null) {
+            return false;
+        }
+        try {
+            boolean saved = sessionManager.saveConversationTurn(
+                    session.getSessionId(),
+                    request.getQuestion(),
+                    result,
+                    skillUsed,
+                    modelId,
+                    tokenMonitor.estimateTokens(request.getQuestion()),
+                    tokenMonitor.estimateTokens(result),
+                    runId);
+            if (saved) {
+                session.addUserMessage(request.getQuestion());
+                session.addAssistantMessage(result);
+            }
+            return saved;
         } catch (Exception e) {
             LOGGER.warn("持久化 Agent 对话失败，session: {}", session.getSessionId(), e);
+            return false;
         }
     }
 
@@ -123,12 +187,11 @@ public class AgentConversationRecorder {
         }
     }
 
-    private void captureConversationMemory(ConversationSession session, AnalysisRequest request, String result) {
+    private void captureConversationMemory(
+            ConversationSession session, AnalysisRequest request, String result, String modelId) {
         try {
             conversationMemoryCaptureService.captureCompletedConversation(
-                    resolveSessionId(session),
-                    request.getQuestion(),
-                    result);
+                    resolveSessionId(session), request.getQuestion(), result, modelId);
         } catch (Exception e) {
             LOGGER.warn("捕获对话记忆失败", e);
         }

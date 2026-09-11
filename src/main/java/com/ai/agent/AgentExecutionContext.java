@@ -16,10 +16,20 @@ public class AgentExecutionContext {
 
     private final String fileContent;
 
-    public AgentExecutionContext(AnalysisRequest request, ConversationSession session, String fileContent) {
+    private final AgentRunOrigin origin;
+
+    public AgentExecutionContext(AnalysisRequest request, ConversationSession session, String fileContent,
+            AgentRunOrigin origin) {
+        if (request == null) {
+            throw new IllegalArgumentException("Agent 分析请求不能为空");
+        }
+        if (origin == null) {
+            throw new IllegalArgumentException("Agent 运行来源不能为空");
+        }
         this.request = request;
         this.session = session;
         this.fileContent = fileContent;
+        this.origin = origin;
     }
 
     public AnalysisRequest getRequest() {
@@ -32,5 +42,9 @@ public class AgentExecutionContext {
 
     public String getFileContent() {
         return fileContent;
+    }
+
+    public AgentRunOrigin getOrigin() {
+        return origin;
     }
 }

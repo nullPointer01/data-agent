@@ -68,7 +68,17 @@ public class SecurityConfig {
             "/api/v1/agents/**",
             "/api/v1/datasources/**",
             "/api/v1/audit-logs/**",
-            "/api/v1/agent-traces/**"
+            "/api/v1/agent-traces/**",
+            "/api/v1/resources/**",
+            "/api/v1/token/skill-usage",
+            "/api/v1/token/model-usage",
+            "/api/v1/token/tenant-summary",
+            "/api/v1/token/usage-records",
+            "/api/v1/token/reset",
+            "/api/v1/rag/settings",
+            "/api/v1/rag/health",
+            "/api/v1/rag/evaluate",
+            "/api/v1/rag/benchmark/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

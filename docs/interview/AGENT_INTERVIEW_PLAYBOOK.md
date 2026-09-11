@@ -59,7 +59,7 @@ LLM 负责推理和决策，工具负责接触真实世界，RAG/Memory 负责�
 
 一句话总纲：
 
-> 我做的不是 ChatGPT 套壳，而是一套面向企业数据分析的 Agent Runtime。它有 ReAct 工具循环、Orchestrator 多专家编排、RAG 混合检索、分层记忆、模型网关、SSE 流式输出、执行轨迹和权限治理。我的最大收获是理解了 Agent 的自主性和工程可控性之间的取舍。
+> 我做的不是 ChatGPT 套壳，而是一套面向个人任务的 Agent Runtime。它有 ReAct 工具循环、受控子 Agent 委派、RAG 混合检索、分层记忆、模型网关、SSE 流式输出、执行轨迹和权限治理。我的最大收获是理解了 Agent 的自主性和工程可控性之间的取舍。
 
 ---
 
@@ -233,7 +233,7 @@ LLM-as-judge：用模型辅助评价答案，但高风险场景要抽样人工�
 
 可以选 5-7 条放简历：
 
-- 设计 `AgentRuntimeService` 路由链路，支持命令、指定 Skill、指定 Agent、Orchestrator 多专家编排和 ReAct 兜底执行。
+- 设计统一 Agent Run 路由链路，支持 Chat、ReAct、受控子 Agent 委派以及命令和指定 Skill 执行。
 - 基于 LangChain4j Function Calling 实现工具系统，通过 `@Tool` 注解生成工具 schema，支持知识库搜索、文件分析、SQL 查询、图表生成、计算和酒店经营指标诊断。
 - 实现 ReAct 推理循环，支持“模型决策 -> 工具调用 -> 结果观察 -> 继续推理”，并通过最大迭代次数、错误恢复和 fallback 防止无限循环。
 - 构建 RAG 混合检索管道，结合 Milvus 向量检索、全文检索、RRF 融合、重排、父上下文补全和上下文压缩，提高企业知识问答的可追溯性。
@@ -272,7 +272,7 @@ Tool-call Recovery
 
 ### 5.2 1 分钟版
 
-> 这个项目面向企业数据分析场景，后端是 Spring Boot + LangChain4j，前端是 React，MySQL 存业务数据，Milvus 做向量库。核心不是单次调用模型，而是有一套 Agent Runtime：请求进来后先加载会话、文件、RAG 和记忆上下文，再由 `AgentRuntimeService` 决定走指定 Skill、指定 Agent、Orchestrator 多专家编排，还是 ReAct 兜底。ReAct 里模型每轮可以根据 tool schema 决定是否调用工具，工具结果再回填给模型继续推理。为了生产可用，我还做了模型错误分类重试、token 配额、SQL 只读、租户隔离、SSE 流式输出和执行轨迹。
+> 这个项目是一个可配置的个人 Agent Harness，后端是 Spring Boot + LangChain4j，前端是 React，MySQL 存业务数据，Milvus 做向量库。核心不是单次调用模型，而是一套统一 Agent Run：请求规划器按需选择 Chat、ReAct 或 Orchestrated，并决定是否加载 RAG、记忆和候选工具。Orchestrated 通过受治理的 `delegateToAgent` 委派用户显式绑定的子 Agent，父子共享预算和取消信号。为了生产可用，我还做了模型错误分类重试、Token 配额、SQL 只读、租户隔离、SSE 流式输出和执行轨迹。
 
 ### 5.3 3 分钟版
 
@@ -339,7 +339,7 @@ Tool-call Recovery
 
 结合项目：
 
-> 我项目里默认优先 Orchestrator，如果能匹配到专家，就走多专家协作；如果没有匹配到，就回退到 ReAct，保证系统有兜底能力。
+> 我项目里先由请求规划器固化 Chat、ReAct 或 Orchestrated 模式。Orchestrated 不会扫描全部专家，而是只把当前 Profile 显式绑定的子 Agent 作为受治理能力暴露；没有委派必要时就保持 Chat 或 ReAct，避免额外规划成本和权限扩大。
 
 取舍：
 
@@ -642,7 +642,7 @@ query rewrite
 | RAG 解决什么？ | 给模型真实企业资料，减少幻觉，提高可追溯性。 |
 | 纯向量检索有什么问题？ | 对精确关键词、编号、字段名不敏感，所以要 hybrid retrieval。 |
 | Memory 是什么？ | LLM 外部的持久上下文系统，不是模型自己记住。 |
-| Orchestrator 作用？ | 多专家路由和任务编排，适合复杂可拆分任务。 |
+| Orchestrated 作用？ | 在同一 Run 内把明确子任务委派给显式绑定的子 Agent，并继续受权限、预算和 Trace 治理。 |
 | SSE 为什么适合？ | Agent 主要服务端单向推送 thinking/tool/token/done 事件。 |
 | 模型失败怎么处理？ | 401/403/404 不重试，429/5xx 重试，配额和熔断兜底。 |
 | 怎么防 SQL 危险？ | 模型不能直连库，只能调用受控 SELECT 工具。 |

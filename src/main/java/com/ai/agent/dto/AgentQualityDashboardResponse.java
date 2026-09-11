@@ -10,11 +10,8 @@ import java.util.List;
  * @param qualityScore 综合质量分
  * @param qualityLevel 质量等级
  * @param successRate 执行成功率
- * @param positiveRate 正向反馈率
  * @param averageDurationMs 平均耗时
  * @param fallbackRate 回退率
- * @param totalFeedbackCount 反馈总数
- * @param negativeFeedbackCount 负向反馈数
  * @param attributions 质量问题归因
  * @param risks 风险列表
  * @param recommendations 优化建议
@@ -27,11 +24,8 @@ public record AgentQualityDashboardResponse(boolean success,
         int qualityScore,
         String qualityLevel,
         double successRate,
-        double positiveRate,
         long averageDurationMs,
         double fallbackRate,
-        long totalFeedbackCount,
-        long negativeFeedbackCount,
         List<AgentQualityAttributionResponse> attributions,
         List<AgentQualityRiskResponse> risks,
         List<String> recommendations,

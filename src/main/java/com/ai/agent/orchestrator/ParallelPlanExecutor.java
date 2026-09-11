@@ -64,7 +64,7 @@ public class ParallelPlanExecutor {
                 .filter(ExecutionPlanStep::parallelizable)
                 .map(step -> buildToolCall(step, userQuery)
                         .map(toolCall -> parallelTaskExecutor.supplyAsync(() -> invoke(step, toolCall,
-                                toolInvocationContextFactory.orchestratorPrecheck())))
+                                toolInvocationContextFactory.plannerPrecheck())))
                         .orElse(null))
                 .filter(future -> future != null)
                 .toList();

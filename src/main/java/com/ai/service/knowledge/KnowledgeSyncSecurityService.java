@@ -7,10 +7,8 @@ import com.ai.repository.KnowledgeSyncConfigRepository;
 import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Component;
 
-import java.util.Objects;
-
 /**
- * 集中进行知识同步的租户所有权检查。
+ * 集中进行知识同步的用户和租户所有权检查。
  *
  * @author data-agent
  */
@@ -30,24 +28,27 @@ public class KnowledgeSyncSecurityService {
     }
 
     /**
-     * 断言当前租户拥有知识条目。
+     * 断言当前用户拥有知识条目。
      *
      * @param knowledgeId 知识 ID
      * @return 拥有的知识条目
      */
-    public KnowledgeEntry assertCurrentTenantKnowledge(String knowledgeId) {
+    public KnowledgeEntry assertCurrentUserKnowledge(String knowledgeId) {
         String tenantId = currentTenantIdOrThrow();
-        return assertTenantKnowledge(knowledgeId, tenantId);
+        String userId = currentUserIdOrThrow();
+        return knowledgeEntryRepository.findByKnowledgeIdAndTenantIdAndCreatedBy(knowledgeId, tenantId, userId)
+                .orElseThrow(() -> new SecurityException("知识条目不存在或无权访问"));
     }
 
     /**
-     * 查找由当前租户拥有的同步配置。
+     * 查找当前用户知识条目的同步配置。
      *
      * @param knowledgeId 知识 ID
      * @return 拥有的同步配置
      */
     public KnowledgeSyncConfig findOwnedSyncConfig(String knowledgeId) {
         String tenantId = currentTenantIdOrThrow();
+        assertCurrentUserKnowledge(knowledgeId);
         return findTenantSyncConfig(knowledgeId, tenantId);
     }
 
@@ -74,12 +75,8 @@ public class KnowledgeSyncSecurityService {
      * @return owned knowledge entry
      */
     public KnowledgeEntry assertTenantKnowledge(String knowledgeId, String tenantId) {
-        KnowledgeEntry entry = knowledgeEntryRepository.findById(knowledgeId)
-                .orElseThrow(() -> new IllegalArgumentException("知识条目不存在: " + knowledgeId));
-        if (!Objects.equals(tenantId, entry.getTenantId())) {
-            throw new SecurityException("无权访问该知识条目");
-        }
-        return entry;
+        return knowledgeEntryRepository.findByKnowledgeIdAndTenantId(knowledgeId, tenantId)
+                .orElseThrow(() -> new SecurityException("知识条目不存在或无权访问"));
     }
 
     /**
@@ -89,9 +86,22 @@ public class KnowledgeSyncSecurityService {
      */
     public String currentTenantIdOrThrow() {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        if (tenantId == null) {
+        if (tenantId == null || tenantId.isBlank()) {
             throw new SecurityException("未登录或租户上下文为空");
         }
         return tenantId;
+    }
+
+    /**
+     * 获取当前用户 ID，缺少认证上下文时拒绝操作。
+     *
+     * @return 当前用户 ID
+     */
+    public String currentUserIdOrThrow() {
+        String userId = securityContextHelper.getCurrentUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new SecurityException("未登录或用户上下文为空");
+        }
+        return userId;
     }
 }

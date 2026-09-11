@@ -116,6 +116,7 @@ public class AgentApprovalSuspensionService {
                 messageMapper.captureForPending(messages, request),
                 pendingTool,
                 invocationContext.allowedToolNames(),
+                runContext.taskContract(),
                 budget,
                 now);
         String checkpointCiphertext = checkpointCodec.encode(checkpoint);

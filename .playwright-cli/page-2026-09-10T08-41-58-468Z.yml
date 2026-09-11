@@ -1,0 +1,256 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - complementary [ref=f1e4]:
+      - generic [ref=f1e5]: Data Agent
+      - generic [ref=f1e18]:
+        - generic [ref=f1e19]: REFERENCE APP
+        - button "我的 Agent" [ref=f1e20] [cursor=pointer]
+        - button "专家助手" [ref=f1e24] [cursor=pointer]
+        - button "知识" [ref=f1e29] [cursor=pointer]
+        - button "上下文" [ref=f1e33] [cursor=pointer]
+    - main [ref=f1e47]:
+      - generic [ref=f1e48]:
+        - generic [ref=f1e49]: 上下文
+        - generic [ref=f1e52]:
+          - button "Control Plane" [ref=f1e53] [cursor=pointer]
+          - generic [ref=f1e57]:
+            - strong [ref=f1e58]: Super Admin
+            - generic [ref=f1e59]: default
+            - generic [ref=f1e60]: ADMIN
+          - button "退出" [ref=f1e61] [cursor=pointer]
+      - generic [ref=f1e65]:
+        - generic [ref=f1e132]:
+          - generic [ref=f1e133]:
+            - heading "记忆中心" [level=1] [ref=f1e134]
+            - paragraph [ref=f1e135]: 查看 Agent 为当前用户沉淀的短期摘要、长期偏好、画像事实和结构化用户画像
+          - generic [ref=f1e136]:
+            - combobox [ref=f1e137]:
+              - option "全部层级" [selected]
+              - option "短期记忆"
+              - option "长期记忆"
+            - button "刷新" [ref=f1e138] [cursor=pointer]
+            - button "清理" [ref=f1e144] [cursor=pointer]
+        - generic [ref=f1e148]:
+          - generic [ref=f1e149]:
+            - generic [ref=f1e150]: 记忆总数
+            - generic [ref=f1e151]: "20"
+            - generic [ref=f1e152]: 20 / 500
+          - generic [ref=f1e153]:
+            - generic [ref=f1e154]: 配额使用
+            - generic [ref=f1e155]: 4%
+            - generic [ref=f1e156]: 单用户记忆上限
+          - generic [ref=f1e157]:
+            - generic [ref=f1e158]: 画像置信度
+            - generic [ref=f1e159]: 0%
+          - generic [ref=f1e160]:
+            - generic [ref=f1e161]: 存储节省
+            - generic [ref=f1e162]: 46%
+            - generic [ref=f1e163]: 3,910 / 7,238 字符
+        - generic [ref=f1e164]:
+          - generic [ref=f1e165]: 记忆运行状态
+          - generic [ref=f1e166]:
+            - generic [ref=f1e167]:
+              - generic [ref=f1e168]: 工作 / 短期 / 长期
+              - strong [ref=f1e169]: 0 / 12 / 8
+            - generic [ref=f1e170]:
+              - generic [ref=f1e171]: 保留策略
+              - strong [ref=f1e172]: 短期 30 天
+            - generic [ref=f1e173]:
+              - generic [ref=f1e174]: 长期衰减
+              - strong [ref=f1e175]: 90 天后
+            - generic [ref=f1e176]:
+              - generic [ref=f1e177]: 上下文构建
+              - strong [ref=f1e178]: 0.0 ms
+              - generic [ref=f1e179]: 0 次采样
+            - generic [ref=f1e180]:
+              - generic [ref=f1e181]: 压缩后占比
+              - strong [ref=f1e182]: 54%
+              - generic [ref=f1e183]: 3,910 / 7,238 字符
+            - generic [ref=f1e184]:
+              - generic [ref=f1e185]: 存储节省
+              - strong [ref=f1e186]: 46%
+              - generic [ref=f1e187]: 摘要化记忆
+          - generic [ref=f1e188]:
+            - generic [ref=f1e189]: 类型分布
+            - generic [ref=f1e190]: 摘要 20
+        - generic [ref=f1e193]:
+          - generic [ref=f1e194]: 结构化画像
+          - generic [ref=f1e195]:
+            - generic [ref=f1e196]:
+              - generic [ref=f1e197]: 称呼
+              - strong [ref=f1e198]: "-"
+            - generic [ref=f1e199]:
+              - generic [ref=f1e200]: 角色
+              - strong [ref=f1e201]: "-"
+            - generic [ref=f1e202]:
+              - generic [ref=f1e203]: 公司
+              - strong [ref=f1e204]: "-"
+            - generic [ref=f1e205]:
+              - generic [ref=f1e206]: 行业
+              - strong [ref=f1e207]: "-"
+            - generic [ref=f1e208]:
+              - generic [ref=f1e209]: 沟通风格
+              - strong [ref=f1e210]: "-"
+            - generic [ref=f1e211]:
+              - generic [ref=f1e212]: 输出偏好
+              - strong [ref=f1e213]: "-"
+            - generic [ref=f1e214]:
+              - generic [ref=f1e215]: 置信度
+              - strong [ref=f1e216]: 0%
+          - generic [ref=f1e217]:
+            - generic [ref=f1e218]: 专业领域
+            - generic [ref=f1e219]: 暂无
+          - generic [ref=f1e220]:
+            - generic [ref=f1e221]: 高频话题
+            - generic [ref=f1e222]: 暂无
+          - generic [ref=f1e223]:
+            - generic [ref=f1e224]: 常用数据源
+            - generic [ref=f1e225]: 暂无
+        - generic [ref=f1e226]:
+          - generic [ref=f1e227]:
+            - generic [ref=f1e228]: 偏好
+            - generic [ref=f1e229]: 尚未识别到稳定偏好
+          - generic [ref=f1e262]:
+            - generic [ref=f1e263]: 画像事实
+            - generic [ref=f1e264]: 尚未识别到画像事实
+          - generic [ref=f1e265]:
+            - generic [ref=f1e266]: 结论
+            - generic [ref=f1e267]: 尚未识别到稳定结论
+        - generic [ref=f1e901]:
+          - table [ref=f1e903]:
+            - rowgroup [ref=f1e904]:
+              - row [ref=f1e905]:
+                - columnheader "内容" [ref=f1e906]
+                - columnheader "层级" [ref=f1e907]
+                - columnheader "类型" [ref=f1e908]
+                - columnheader "权重" [ref=f1e909]
+                - columnheader "创建时间" [ref=f1e910]
+                - columnheader "过期时间" [ref=f1e911]
+                - columnheader "操作" [ref=f1e912]
+            - rowgroup [ref=f1e913]:
+              - row [ref=f1e914]:
+                - cell "用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：## 杭州上周酒店入住率分析 > **数据口径说明**：以下为经营分析工具返回的**模拟数据**，非真实市场监测数据；“前期”指前一相邻统计周期。 | 指标 |... 5b16c3b8-4839-4eaf-b093-9cc5179e501b" [ref=f1e915]:
+                  - strong [ref=f1e916]: 用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：## 杭州上周酒店入住率分析 > **数据口径说明**：以下为经营分析工具返回的**模拟数据**，非真实市场监测数据；“前期”指前一相邻统计周期。 | 指标 |...
+                  - generic [ref=f1e917]: 5b16c3b8-4839-4eaf-b093-9cc5179e501b
+                - cell "短期" [ref=f1e918]
+                - cell "摘要" [ref=f1e920]
+                - cell "0.60" [ref=f1e921]
+                - cell "2026/9/9 17:44:40" [ref=f1e922]
+                - cell "2026/10/9 17:44:40" [ref=f1e923]
+                - cell [ref=f1e924]:
+                  - button "删除" [ref=f1e926] [cursor=pointer]
+              - row [ref=f1e930]:
+                - 'cell "用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：已委派酒店经营分析专家完成查询与分析。结果如下： ## 杭州上周酒店经营表现 > **数据口径：** 工具返回“上周”，未提供具体起止日期；数据为工具提供的**... 9b10c313-ef73-4b35-9bcd-e7786387e180" [ref=f1e931]':
+                  - strong [ref=f1e932]: "用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：已委派酒店经营分析专家完成查询与分析。结果如下： ## 杭州上周酒店经营表现 > **数据口径：** 工具返回“上周”，未提供具体起止日期；数据为工具提供的**..."
+                  - generic [ref=f1e933]: 9b10c313-ef73-4b35-9bcd-e7786387e180
+                - cell "短期" [ref=f1e934]
+                - cell "摘要" [ref=f1e936]
+                - cell "0.60" [ref=f1e937]
+                - cell "2026/9/9 17:43:29" [ref=f1e938]
+                - cell "2026/10/9 17:43:29" [ref=f1e939]
+                - cell [ref=f1e940]:
+                  - button "删除" [ref=f1e942] [cursor=pointer]
+              - row [ref=f1e946]:
+                - cell "用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：## 杭州上周酒店经营分析 | 指标 | 上周 | 前一周 | 变化 | |---|---:|---:|---:| | 入住率（出租率） | 76.3% | 7... 3f52f1ba-ba66-41ae-9848-dc2ebefe3b37" [ref=f1e947]:
+                  - strong [ref=f1e948]: 用户提到：请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。；助手回复：## 杭州上周酒店经营分析 | 指标 | 上周 | 前一周 | 变化 | |---|---:|---:|---:| | 入住率（出租率） | 76.3% | 7...
+                  - generic [ref=f1e949]: 3f52f1ba-ba66-41ae-9848-dc2ebefe3b37
+                - cell "短期" [ref=f1e950]
+                - cell "摘要" [ref=f1e952]
+                - cell "0.60" [ref=f1e953]
+                - cell "2026/9/9 17:41:51" [ref=f1e954]
+                - cell "2026/10/9 17:41:51" [ref=f1e955]
+                - cell [ref=f1e956]:
+                  - button "删除" [ref=f1e958] [cursor=pointer]
+              - row [ref=f1e962]:
+                - cell "用户提到：手机验证码输错两次会触发限制吗；助手回复：不会。手机验证码在 30 分钟内连续输错 2 次仅记录风险日志，不会限制登录；连续输错第 5 次才会限制登录 15 分钟。 [R1] 48ab7ba7-0cf0-4f08-98e0-a64439c42457" [ref=f1e963]:
+                  - strong [ref=f1e964]: 用户提到：手机验证码输错两次会触发限制吗；助手回复：不会。手机验证码在 30 分钟内连续输错 2 次仅记录风险日志，不会限制登录；连续输错第 5 次才会限制登录 15 分钟。 [R1]
+                  - generic [ref=f1e965]: 48ab7ba7-0cf0-4f08-98e0-a64439c42457
+                - cell "短期" [ref=f1e966]
+                - cell "摘要" [ref=f1e968]
+                - cell "0.60" [ref=f1e969]
+                - cell "2026/9/9 15:12:46" [ref=f1e970]
+                - cell "2026/10/9 15:12:46" [ref=f1e971]
+                - cell [ref=f1e972]:
+                  - button "删除" [ref=f1e974] [cursor=pointer]
+              - row [ref=f1e978]:
+                - cell "用户提到：你能做什么；助手回复：我是 我的 Agent。会使用知识、记忆和工具完成任务，并在结果中给出依据。 我目前可以： - 基于你的个人知识库回答，并给出可核对的引用 - 读取并分析你上传的文件 - 查询和分析结构化数据与业务指标 - 根据分析结果生成图表 - 执行计算、时间... 48ab7ba7-0cf0-4f08-98e0-a64439c42457" [ref=f1e979]:
+                  - strong [ref=f1e980]: 用户提到：你能做什么；助手回复：我是 我的 Agent。会使用知识、记忆和工具完成任务，并在结果中给出依据。 我目前可以： - 基于你的个人知识库回答，并给出可核对的引用 - 读取并分析你上传的文件 - 查询和分析结构化数据与业务指标 - 根据分析结果生成图表 - 执行计算、时间...
+                  - generic [ref=f1e981]: 48ab7ba7-0cf0-4f08-98e0-a64439c42457
+                - cell "短期" [ref=f1e982]
+                - cell "摘要" [ref=f1e984]
+                - cell "0.60" [ref=f1e985]
+                - cell "2026/9/9 14:25:41" [ref=f1e986]
+                - cell "2026/10/9 14:25:41" [ref=f1e987]
+                - cell [ref=f1e988]:
+                  - button "删除" [ref=f1e990] [cursor=pointer]
+              - row [ref=f1e994]:
+                - cell "用户提到：你能干什么；助手回复：我是 我的 Agent。会使用知识、记忆和工具完成任务，并在结果中给出依据。 我目前可以： - 基于你的个人知识库回答，并给出可核对的引用 - 读取并分析你上传的文件 - 查询和分析结构化数据与业务指标 - 根据分析结果生成图表 - 执行计算、时间... 7d56609d-0c86-4ba1-8692-2970b3f6dd9e" [ref=f1e995]:
+                  - strong [ref=f1e996]: 用户提到：你能干什么；助手回复：我是 我的 Agent。会使用知识、记忆和工具完成任务，并在结果中给出依据。 我目前可以： - 基于你的个人知识库回答，并给出可核对的引用 - 读取并分析你上传的文件 - 查询和分析结构化数据与业务指标 - 根据分析结果生成图表 - 执行计算、时间...
+                  - generic [ref=f1e997]: 7d56609d-0c86-4ba1-8692-2970b3f6dd9e
+                - cell "短期" [ref=f1e998]
+                - cell "摘要" [ref=f1e1000]
+                - cell "0.57" [ref=f1e1001]
+                - cell "2026/9/8 20:07:11" [ref=f1e1002]
+                - cell "2026/10/8 20:07:11" [ref=f1e1003]
+                - cell [ref=f1e1004]:
+                  - button "删除" [ref=f1e1006] [cursor=pointer]
+              - row [ref=f1e1010]:
+                - cell "用户提到：你好；助手回复：你好！有什么我可以帮你处理的吗？ 7d56609d-0c86-4ba1-8692-2970b3f6dd9e" [ref=f1e1011]:
+                  - strong [ref=f1e1012]: 用户提到：你好；助手回复：你好！有什么我可以帮你处理的吗？
+                  - generic [ref=f1e1013]: 7d56609d-0c86-4ba1-8692-2970b3f6dd9e
+                - cell "短期" [ref=f1e1014]
+                - cell "摘要" [ref=f1e1016]
+                - cell "0.57" [ref=f1e1017]
+                - cell "2026/9/8 20:07:04" [ref=f1e1018]
+                - cell "2026/10/8 20:07:04" [ref=f1e1019]
+                - cell [ref=f1e1020]:
+                  - button "删除" [ref=f1e1022] [cursor=pointer]
+              - row [ref=f1e1026]:
+                - cell "用户提到：你能干什么；助手回复：我可以作为你的个人数据与知识助手，主要帮你做： - **数据分析**：分析你上传的 Excel、CSV、文本文件，统计指标、发现异常、提炼结论。 - **SQL 查询**：查看数据库结构，编写并执行**只读** SQL，输出可核验结果。 - **图... 68512ec0-4775-4a2a-a9b0-89e3d115096e" [ref=f1e1027]:
+                  - strong [ref=f1e1028]: 用户提到：你能干什么；助手回复：我可以作为你的个人数据与知识助手，主要帮你做： - **数据分析**：分析你上传的 Excel、CSV、文本文件，统计指标、发现异常、提炼结论。 - **SQL 查询**：查看数据库结构，编写并执行**只读** SQL，输出可核验结果。 - **图...
+                  - generic [ref=f1e1029]: 68512ec0-4775-4a2a-a9b0-89e3d115096e
+                - cell "短期" [ref=f1e1030]
+                - cell "摘要" [ref=f1e1032]
+                - cell "0.54" [ref=f1e1033]
+                - cell "2026/9/7 21:33:22" [ref=f1e1034]
+                - cell "2026/10/7 21:33:22" [ref=f1e1035]
+                - cell [ref=f1e1036]:
+                  - button "删除" [ref=f1e1038] [cursor=pointer]
+              - row [ref=f1e1042]:
+                - cell "用户提到：你能干什么呢；助手回复：我可以作为你的个人数据与知识助手，主要帮你： - **数据分析**：分析上传的 Excel、CSV、文本文件，做汇总、指标计算、异常发现。 - **SQL 查询**：查看数据库表结构、编写并执行只读 SQL，输出可核验的查询结果。 - **图表报... 2d65bbeb-341f-4804-b1f6-9d83a46c79a5" [ref=f1e1043]:
+                  - strong [ref=f1e1044]: 用户提到：你能干什么呢；助手回复：我可以作为你的个人数据与知识助手，主要帮你： - **数据分析**：分析上传的 Excel、CSV、文本文件，做汇总、指标计算、异常发现。 - **SQL 查询**：查看数据库表结构、编写并执行只读 SQL，输出可核验的查询结果。 - **图表报...
+                  - generic [ref=f1e1045]: 2d65bbeb-341f-4804-b1f6-9d83a46c79a5
+                - cell "短期" [ref=f1e1046]
+                - cell "摘要" [ref=f1e1048]
+                - cell "0.60" [ref=f1e1049]
+                - cell "2026/9/7 19:58:54" [ref=f1e1050]
+                - cell "2026/10/7 19:58:54" [ref=f1e1051]
+                - cell [ref=f1e1052]:
+                  - button "删除" [ref=f1e1054] [cursor=pointer]
+              - row [ref=f1e1058]:
+                - cell "用户提到：你是什么模型；助手回复：🦜播报：我是由 OpenAI 提供的 AI 助手，可通过当前平台协助你进行数据查询、分析、计算、图表生成和知识检索。 d16260cb-903b-418e-90e2-498678376d70" [ref=f1e1059]:
+                  - strong [ref=f1e1060]: 用户提到：你是什么模型；助手回复：🦜播报：我是由 OpenAI 提供的 AI 助手，可通过当前平台协助你进行数据查询、分析、计算、图表生成和知识检索。
+                  - generic [ref=f1e1061]: d16260cb-903b-418e-90e2-498678376d70
+                - cell "短期" [ref=f1e1062]
+                - cell "摘要" [ref=f1e1064]
+                - cell "0.53" [ref=f1e1065]
+                - cell "2026/9/3 20:28:30" [ref=f1e1066]
+                - cell "2026/10/3 20:28:30" [ref=f1e1067]
+                - cell [ref=f1e1068]:
+                  - button "删除" [ref=f1e1070] [cursor=pointer]
+          - generic "分页导航" [ref=f1e1074]:
+            - generic [ref=f1e1075]: 第 1-10 条，共 20 条
+            - generic [ref=f1e1076]:
+              - generic [ref=f1e1077]: 每页
+              - combobox "每页条数" [ref=f1e1078]:
+                - option "10" [selected]
+                - option "20"
+                - option "50"
+              - generic [ref=f1e1079]: 条
+            - generic [ref=f1e1080]:
+              - button "上一页" [disabled] [ref=f1e1081]
+              - generic [ref=f1e1084]: 1 / 2
+              - button "下一页" [ref=f1e1085] [cursor=pointer]
+  - generic [ref=f1e1088]:
+    - generic [ref=f1e1092]: 记忆已删除
+    - button [ref=f1e1093] [cursor=pointer]

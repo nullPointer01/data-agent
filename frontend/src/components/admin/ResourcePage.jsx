@@ -1,5 +1,6 @@
 import { Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { CapabilityPicker } from '../CapabilityPicker.jsx';
 import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../ui.jsx';
 import { truncate } from '../../utils/format.js';
 
@@ -19,7 +20,15 @@ export function ResourcePage({
   extraRowAction,
   headerExtra,
   templates,
-  visibleFields
+  visibleFields,
+  createDefaults,
+  tableColumns,
+  searchText,
+  searchPlaceholder = '搜索当前列表',
+  filterPredicate,
+  toggleLabel,
+  toggleBlockedReason,
+  deleteBlockedReason
 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,11 +50,17 @@ export function ResourcePage({
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return items;
-    }
-    return items.filter((item) => JSON.stringify(item).toLowerCase().includes(keyword));
-  }, [items, query]);
+    return items.filter((item) => {
+      if (filterPredicate && !filterPredicate(item)) {
+        return false;
+      }
+      if (!keyword) {
+        return true;
+      }
+      const searchable = searchText ? searchText(item) : JSON.stringify(item);
+      return String(searchable || '').toLowerCase().includes(keyword);
+    });
+  }, [filterPredicate, items, query, searchText]);
 
   const save = async () => {
     const id = editing?.[idKey];
@@ -62,22 +77,27 @@ export function ResourcePage({
     load();
   };
 
+  const resourceColumns = tableColumns || fields
+    .filter(([key]) => (visibleFields || fields.slice(0, 4).map(([fieldKey]) => fieldKey)).includes(key))
+    .map(([key, label]) => ({ key, title: label, render: (item) => renderCell(item, key) }));
   const columns = [
-    ...fields
-      .filter(([key]) => (visibleFields || fields.slice(0, 4).map(([fieldKey]) => fieldKey)).includes(key))
-      .map(([key, label]) => ({ key, title: label, render: (item) => renderCell(item, key) })),
+    ...resourceColumns,
     { key: 'enabled', title: '状态', render: (item) => <Badge tone={item.enabled !== false ? 'green' : 'gray'}>{item.enabled !== false ? '启用' : '禁用'}</Badge> },
     {
       key: 'actions',
       title: '操作',
-      render: (item) => (
-        <div className="toolbar">
-          {extraRowAction?.(item)}
-          {toggleUrl && <button className="btn" onClick={async () => { await api.put(toggleUrl(item[idKey]), {}); toast('状态已更新', 'success'); load(); }}>启停</button>}
-          <button className="btn" onClick={() => { setEditing(item); setForm(item); }}>编辑</button>
-          {deleteUrl && <button className="btn danger" onClick={() => setConfirm({ message: `确认删除 ${item.name || item[idKey]}？`, onConfirm: async () => { await api.delete(deleteUrl(item[idKey])); setConfirm(null); toast('已删除', 'success'); load(); } })}><Trash2 size={16} /></button>}
-        </div>
-      )
+      render: (item) => {
+        const toggleReason = toggleBlockedReason?.(item) || '';
+        const deleteReason = deleteBlockedReason?.(item) || '';
+        return (
+          <div className="toolbar">
+            {extraRowAction?.(item)}
+            {toggleUrl && <span title={toggleReason || '启用或停用'}><button className="btn" disabled={Boolean(toggleReason)} onClick={async () => { await api.put(toggleUrl(item[idKey]), {}); toast('状态已更新', 'success'); load(); }}>{toggleLabel?.(item) || '启停'}</button></span>}
+            {updateUrl && <button className="btn" onClick={() => { setEditing(item); setForm(item); }}>编辑</button>}
+            {deleteUrl && <span title={deleteReason || '删除'}><button className="btn danger" disabled={Boolean(deleteReason)} aria-label={`删除 ${item.name || item[idKey]}`} onClick={() => setConfirm({ message: `确认删除 ${item.name || item[idKey]}？`, onConfirm: async () => { await api.delete(deleteUrl(item[idKey])); setConfirm(null); toast('已删除', 'success'); load(); } })}><Trash2 size={16} /></button></span>}
+          </div>
+        );
+      }
     }
   ];
 
@@ -86,7 +106,7 @@ export function ResourcePage({
       <PageHeader
         title={title}
         desc={desc}
-        actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder="搜索当前列表" />{headerExtra}<button className="btn" onClick={load}><RefreshCw size={16} />刷新</button><button className="btn primary" onClick={() => { setEditing({}); setForm({ enabled: true }); }}><Plus size={16} />新增</button></>}
+        actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder={searchPlaceholder} />{headerExtra}<button className="btn" onClick={load}><RefreshCw size={16} />刷新</button>{createUrl && <button className="btn primary" onClick={() => { setEditing({}); setForm(createDefaults || { enabled: true }); }}><Plus size={16} />新增</button>}</>}
       />
       <div className="grid grid-4">
         <Metric label="总数" value={items.length} />
@@ -109,7 +129,7 @@ function ResourceModal({ title, fields, form, setForm, templates, onClose, onSav
       </div>}
       <div className="form-grid">
         {fields.map(([key, label, type, options]) => (
-          <Field key={key} label={label} span={type === 'textarea'}>
+          <Field key={key} label={label} span={type === 'textarea' || type === 'capability-picker'}>
             {renderField({ key, type, options, form, setForm })}
           </Field>
         ))}
@@ -119,6 +139,23 @@ function ResourceModal({ title, fields, form, setForm, templates, onClose, onSav
 }
 
 function renderField({ key, type, options, form, setForm }) {
+  if (type === 'capability-picker') {
+    const selectedBindings = Array.isArray(form[key]) ? form[key] : [];
+    const selfIdentity = form.agentId ? `agent:${form.agentId}` : null;
+    const selectableCapabilities = (options || []).filter((item) => item.identity !== selfIdentity);
+    return (
+      <CapabilityPicker
+        capabilities={selectableCapabilities}
+        selectedBindings={selectedBindings}
+        onToggleBinding={(identity) => setForm({
+          ...form,
+          [key]: selectedBindings.includes(identity)
+            ? selectedBindings.filter((value) => value !== identity)
+            : [...selectedBindings, identity]
+        })}
+      />
+    );
+  }
   if (type === 'textarea') {
     return <textarea className="textarea mono" rows={6} value={form[key] || ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />;
   }

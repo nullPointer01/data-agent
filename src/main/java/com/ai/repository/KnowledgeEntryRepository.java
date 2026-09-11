@@ -22,6 +22,11 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntry, 
     List<KnowledgeEntry> findByTenantIdOrderByCreatedAtDesc(String tenantId);
 
     /**
+     * 查询用户自己的知识条目，按创建时间倒序。
+     */
+    List<KnowledgeEntry> findByTenantIdAndCreatedByOrderByCreatedAtDesc(String tenantId, String createdBy);
+
+    /**
      * 按租户查询单条知识。
      *
      * @param knowledgeId 知识编号
@@ -29,5 +34,11 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntry, 
      * @return 知识条目
      */
     Optional<KnowledgeEntry> findByKnowledgeIdAndTenantId(String knowledgeId, String tenantId);
+
+    /**
+     * 按租户和创建人查询单条知识。
+     */
+    Optional<KnowledgeEntry> findByKnowledgeIdAndTenantIdAndCreatedBy(
+            String knowledgeId, String tenantId, String createdBy);
 
 }

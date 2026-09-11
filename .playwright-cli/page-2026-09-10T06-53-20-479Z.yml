@@ -1,0 +1,216 @@
+- generic [ref=e27]:
+  - complementary [ref=e28]:
+    - generic [ref=e39]:
+      - generic [ref=e40]: Data Agent
+      - generic [ref=e41]: Agent Control Plane
+    - generic [ref=e351]:
+      - generic [ref=e352]: 运行与质量
+      - button "运行追踪" [ref=e353] [cursor=pointer]
+      - button "动作审批" [ref=e359] [cursor=pointer]
+      - button "质量观测" [ref=e365] [cursor=pointer]
+      - button "Agent 评测" [ref=e370] [cursor=pointer]
+      - button "资源统计" [ref=e374] [cursor=pointer]
+    - generic [ref=e378]:
+      - generic [ref=e379]: 能力配置
+      - button "模型目录" [ref=e380] [cursor=pointer]
+      - button "技能目录" [ref=e385] [cursor=pointer]
+      - button "知识与 RAG" [ref=e389] [cursor=pointer]
+      - button "数据连接" [ref=e393] [cursor=pointer]
+    - generic [ref=e399]:
+      - generic [ref=e400]: 平台治理
+      - button "用户" [ref=e401] [cursor=pointer]
+      - button "用户 Agent" [ref=e408] [cursor=pointer]
+      - button "角色权限" [ref=e413] [cursor=pointer]
+      - button "审计" [ref=e418] [cursor=pointer]
+  - main [ref=e71]:
+    - generic [ref=e72]:
+      - generic [ref=e73]:
+        - generic [ref=e74]: 运行追踪
+        - generic [ref=e75]: Runtime · Capabilities · Governance
+      - generic [ref=e76]:
+        - button "返回我的 Agent" [ref=e423] [cursor=pointer]
+        - generic [ref=e82]:
+          - strong [ref=e83]: 超级管理员
+          - generic [ref=e84]: default
+          - generic [ref=e85]: ADMIN
+        - button "退出" [ref=e86] [cursor=pointer]
+    - generic [ref=e90]:
+      - generic [ref=e426]:
+        - generic [ref=e427]:
+          - heading "执行追踪" [level=1] [ref=e428]
+          - paragraph [ref=e429]: 查看请求计划、Run 预算、工具治理、上下文治理和最终状态
+        - generic [ref=e430]:
+          - textbox [ref=e435]:
+            - /placeholder: 搜索问题、Agent、意图
+          - textbox "用户 ID" [ref=e436]
+          - button "刷新" [ref=e437] [cursor=pointer]
+      - generic [ref=e443]:
+        - generic [ref=e444]:
+          - generic [ref=e445]: 轨迹总数
+          - generic [ref=e446]: "33"
+        - generic [ref=e447]:
+          - generic [ref=e448]: 成功
+          - generic [ref=e449]: "32"
+        - generic [ref=e450]:
+          - generic [ref=e451]: 失败
+          - generic [ref=e452]: "1"
+        - generic [ref=e453]:
+          - generic [ref=e454]: 平均耗时
+          - generic [ref=e455]: 55049 ms
+      - generic [ref=e456]:
+        - table [ref=e458]:
+          - rowgroup [ref=e459]:
+            - row [ref=e460]:
+              - columnheader "时间" [ref=e461]
+              - columnheader "问题" [ref=e462]
+              - columnheader "Agent" [ref=e463]
+              - columnheader "运行模式" [ref=e464]
+              - columnheader "意图" [ref=e465]
+              - columnheader "工具调用" [ref=e466]
+              - columnheader "耗时" [ref=e467]
+              - columnheader "状态" [ref=e468]
+              - columnheader "操作" [ref=e469]
+          - rowgroup [ref=e470]:
+            - row [ref=e471]:
+              - cell "2026/9/10 14:28:48" [ref=e472]
+              - cell "把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。" [ref=e473]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e474]:
+                - strong [ref=e475]: 我的 Agent
+                - generic [ref=e476]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "REACT" [ref=e477]
+              - cell "ACTION" [ref=e479]
+              - cell "0" [ref=e480]
+              - cell "3531 ms" [ref=e481]
+              - cell "成功" [ref=e482]
+              - cell [ref=e484]:
+                - button "详情" [ref=e485] [cursor=pointer]
+            - row [ref=e489]:
+              - cell "2026/9/10 13:37:09" [ref=e490]
+              - cell "把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。" [ref=e491]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e492]:
+                - strong [ref=e493]: 我的 Agent
+                - generic [ref=e494]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "REACT" [ref=e495]
+              - cell "ACTION" [ref=e497]
+              - cell "1" [ref=e498]
+              - cell "10232 ms" [ref=e499]
+              - cell "成功" [ref=e500]
+              - cell [ref=e502]:
+                - button "详情" [ref=e503] [cursor=pointer]
+            - row [ref=e507]:
+              - cell "2026/9/10 11:45:52" [ref=e508]
+              - cell "把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。" [ref=e509]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e510]:
+                - strong [ref=e511]: 我的 Agent
+                - generic [ref=e512]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "REACT" [ref=e513]
+              - cell "ACTION" [ref=e515]
+              - cell "0" [ref=e516]
+              - cell "4146 ms" [ref=e517]
+              - cell "成功" [ref=e518]
+              - cell [ref=e520]:
+                - button "详情" [ref=e521] [cursor=pointer]
+            - row [ref=e525]:
+              - cell "2026/9/10 11:09:51" [ref=e526]
+              - cell "把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。" [ref=e527]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e528]:
+                - strong [ref=e529]: 我的 Agent
+                - generic [ref=e530]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "REACT" [ref=e531]
+              - cell "ACTION" [ref=e533]
+              - cell "0" [ref=e534]
+              - cell "3350 ms" [ref=e535]
+              - cell "成功" [ref=e536]
+              - cell [ref=e538]:
+                - button "详情" [ref=e539] [cursor=pointer]
+            - row [ref=e543]:
+              - cell "2026/9/9 20:19:44" [ref=e544]
+              - cell "确认将 HZ-001 豪华大床房 2026-09-15 调整为 699 元。" [ref=e545]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e546]:
+                - strong [ref=e547]: 我的 Agent
+                - generic [ref=e548]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "CHAT" [ref=e549]
+              - cell "GENERAL_CONVERSATION" [ref=e551]
+              - cell "0" [ref=e552]
+              - cell "6431 ms" [ref=e553]
+              - cell "成功" [ref=e554]
+              - cell [ref=e556]:
+                - button "详情" [ref=e557] [cursor=pointer]
+            - row [ref=e561]:
+              - cell "2026/9/9 20:18:40" [ref=e562]
+              - cell "把演示酒店 HZ-001 的豪华大床房在 2026-09-15 的价格改成699元。" [ref=e563]
+              - cell "我的 Agent dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e564]:
+                - strong [ref=e565]: 我的 Agent
+                - generic [ref=e566]: dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8
+              - cell "REACT" [ref=e567]
+              - cell "ACTION" [ref=e569]
+              - cell "0" [ref=e570]
+              - cell "9447 ms" [ref=e571]
+              - cell "成功" [ref=e572]
+              - cell [ref=e574]:
+                - button "详情" [ref=e575] [cursor=pointer]
+            - row [ref=e579]:
+              - cell "2026/9/9 17:44:40" [ref=e580]
+              - cell "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。" [ref=e581]
+              - cell "我的 Agent 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e582]:
+                - strong [ref=e583]: 我的 Agent
+                - generic [ref=e584]: 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940
+              - cell "ORCHESTRATED" [ref=e585]
+              - cell "MULTI_STEP" [ref=e587]
+              - cell "4" [ref=e588]
+              - cell "34953 ms" [ref=e589]
+              - cell "成功" [ref=e590]
+              - cell [ref=e592]:
+                - button "详情" [ref=e593] [cursor=pointer]
+            - row [ref=e597]:
+              - cell "2026/9/9 17:43:30" [ref=e598]
+              - cell "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。" [ref=e599]
+              - cell "我的 Agent 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e600]:
+                - strong [ref=e601]: 我的 Agent
+                - generic [ref=e602]: 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940
+              - cell "ORCHESTRATED" [ref=e603]
+              - cell "MULTI_STEP" [ref=e605]
+              - cell "3" [ref=e606]
+              - cell "31182 ms" [ref=e607]
+              - cell "成功" [ref=e608]
+              - cell [ref=e610]:
+                - button "详情" [ref=e611] [cursor=pointer]
+            - row [ref=e615]:
+              - cell "2026/9/9 17:41:57" [ref=e616]
+              - cell "请把任务委派给酒店经营分析专家：先查询杭州上周酒店入住率，然后计算与前期的变化，最后总结经营建议。" [ref=e617]
+              - cell "我的 Agent 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e618]:
+                - strong [ref=e619]: 我的 Agent
+                - generic [ref=e620]: 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940
+              - cell "ORCHESTRATED" [ref=e621]
+              - cell "MULTI_STEP" [ref=e623]
+              - cell "3" [ref=e624]
+              - cell "36333 ms" [ref=e625]
+              - cell "成功" [ref=e626]
+              - cell [ref=e628]:
+                - button "详情" [ref=e629] [cursor=pointer]
+            - row [ref=e633]:
+              - cell "2026/9/9 15:12:46" [ref=e634]
+              - cell "手机验证码输错两次会触发限制吗" [ref=e635]
+              - cell "我的 Agent 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e636]:
+                - strong [ref=e637]: 我的 Agent
+                - generic [ref=e638]: 0c85ec7c-541d-11f1-acdc-3f6e6bcbb940
+              - cell "CHAT" [ref=e639]
+              - cell "PERSONAL_KNOWLEDGE" [ref=e641]
+              - cell "0" [ref=e642]
+              - cell "3983 ms" [ref=e643]
+              - cell "成功" [ref=e644]
+              - cell [ref=e646]:
+                - button "详情" [ref=e647] [cursor=pointer]
+        - generic "分页导航" [ref=e651]:
+          - generic [ref=e652]: 第 1-10 条，共 33 条
+          - generic [ref=e653]:
+            - generic [ref=e654]: 每页
+            - combobox "每页条数" [ref=e655]:
+              - option "10" [selected]
+              - option "20"
+              - option "50"
+            - generic [ref=e656]: 条
+          - generic [ref=e657]:
+            - button "上一页" [disabled] [ref=e658]
+            - generic [ref=e661]: 1 / 4
+            - button "下一页" [ref=e662] [cursor=pointer]

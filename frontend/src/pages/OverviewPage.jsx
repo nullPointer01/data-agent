@@ -11,23 +11,20 @@ export function OverviewPage({ api, user, admin, goPage, toast }) {
     sessions: 0,
     memories: 0,
     traces: 0,
-    feedbacks: 0,
     resources: 0,
     recentTraces: [],
-    recentFeedbacks: [],
     recentFiles: [],
     recentKnowledge: []
   });
 
   const load = async () => {
-    const [quota, knowledge, files, sessions, memories, traces, feedbacks, resources] = await Promise.all([
+    const [quota, knowledge, files, sessions, memories, traces, resources] = await Promise.all([
       api.get('/api/v1/token/remaining-quota').catch(() => ({})),
       api.get('/api/v1/resources/summary').catch(() => ({})),
       api.get('/api/v1/files/list').catch(() => ({})),
       api.get('/api/v1/analysis/sessions').catch(() => ({})),
       api.get('/api/v1/memories/stats').catch(() => ({})),
       api.get('/api/v1/agent-traces?limit=5').catch(() => ({})),
-      api.get('/api/v1/agent-feedbacks?limit=5').catch(() => ({})),
       api.get('/api/v1/resources/assets?limit=5').catch(() => ({}))
     ]);
     setData({
@@ -37,10 +34,8 @@ export function OverviewPage({ api, user, admin, goPage, toast }) {
       sessions: (sessions.sessions || []).length,
       memories: memories.totalMemories || 0,
       traces: (traces.traces || []).length,
-      feedbacks: (feedbacks.feedbacks || feedbacks.items || []).length,
       resources: resources.summary?.totalAssets || (resources.assets || []).length,
       recentTraces: (traces.traces || []).slice(0, 5),
-      recentFeedbacks: (feedbacks.feedbacks || feedbacks.items || []).slice(0, 5),
       recentFiles: (files.files || []).slice(0, 5),
       recentKnowledge: (resources.assets || []).filter((item) => item.resourceType === 'KNOWLEDGE').slice(0, 5)
     });
@@ -61,7 +56,7 @@ export function OverviewPage({ api, user, admin, goPage, toast }) {
         <Metric label="会话数" value={data.sessions} />
         <Metric label="记忆数" value={data.memories} />
         <Metric label="执行轨迹" value={data.traces} />
-        <Metric label="反馈数" value={data.feedbacks} />
+        <Metric label="资料总数" value={data.resources} />
       </div>
       <div className="dashboard-band" style={{ marginTop: 16 }}>
         <div className="dashboard-band-head">
@@ -102,10 +97,10 @@ export function OverviewPage({ api, user, admin, goPage, toast }) {
                 <span>{item.selectedAgent || '-'} · {formatTime(item.createdAt)}</span>
               </>
             )} />
-            <MiniRow title="最近反馈" items={data.recentFeedbacks} onOpen={() => goPage('feedbacks')} render={(item) => (
+            <MiniRow title="最近知识" items={data.recentKnowledge} onOpen={() => goPage('resources')} render={(item) => (
               <>
-                <strong>{truncate(item.question || item.comment || '-', 48)}</strong>
-                <span>{item.rating || '-'} · {formatTime(item.createdAt)}</span>
+                <strong>{truncate(item.name || item.title || item.content || '-', 48)}</strong>
+                <span>{item.status || '可用'} · {formatTime(item.updatedAt || item.createdAt)}</span>
               </>
             )} />
           </div>

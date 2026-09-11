@@ -1,6 +1,8 @@
 package com.ai.advice;
 
+import com.ai.agent.capability.AgentCapabilityConfigurationException;
 import com.ai.api.ApiResponse;
+import com.ai.exception.QuotaExceededException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,9 +14,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
-
-import com.ai.exception.QuotaExceededException;
 
 import java.util.Map;
 
@@ -86,10 +87,32 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(e.getMessage(), "SECURITY_ERROR");
     }
 
+    @ExceptionHandler(AgentCapabilityConfigurationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, Object> handleCapabilityConfiguration(AgentCapabilityConfigurationException e) {
+        LOGGER.warn("Agent capability configuration rejected: field={}, agentId={}, reason={}",
+                e.getField(), e.getAgentId(), e.getReasonCode());
+        Map<String, Object> response = ApiResponse.error(
+                "Agent 能力配置损坏，请修复后重试",
+                AgentCapabilityConfigurationException.ERROR_CODE);
+        response.put("field", e.getField());
+        if (e.getAgentId() != null && !e.getAgentId().isBlank()) {
+            response.put("agentId", e.getAgentId());
+        }
+        response.put("reason", e.getReasonCode());
+        return response;
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, Object> handleIllegalArgument(IllegalArgumentException e) {
         return ApiResponse.error(e.getMessage(), "BAD_REQUEST");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, Object> handleNoResource(NoResourceFoundException e) {
+        return ApiResponse.error("接口不存在", "NOT_FOUND");
     }
 
     @ExceptionHandler(Exception.class)

@@ -164,7 +164,9 @@ public class KnowledgeService {
 
     public KnowledgeListResponse listKnowledge() {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        List<KnowledgeEntry> entries = knowledgeRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+        String userId = securityContextHelper.getCurrentUserId();
+        List<KnowledgeEntry> entries = knowledgeRepository
+                .findByTenantIdAndCreatedByOrderByCreatedAtDesc(tenantId, userId);
         List<KnowledgeItemResponse> list = entries.stream()
                 .map(KnowledgeItemResponse::from)
                 .collect(Collectors.toList());
@@ -193,12 +195,14 @@ public class KnowledgeService {
 
     public KnowledgeStatsResponse getStats() {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        List<KnowledgeEntry> entries = knowledgeRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+        String userId = securityContextHelper.getCurrentUserId();
+        List<KnowledgeEntry> entries = knowledgeRepository
+                .findByTenantIdAndCreatedByOrderByCreatedAtDesc(tenantId, userId);
 
         long totalChunks = entries.stream().mapToInt(KnowledgeEntry::getChunkCount).sum();
         long totalChars = entries.stream().mapToLong(KnowledgeEntry::getContentLength).sum();
-        int vectorCount = knowledgeVectorIndexService.getIndexedCount();
-        Map<String, Long> byType = knowledgeVectorIndexService.getIndexedCountByType();
+        int vectorCount = (int) Math.min(Integer.MAX_VALUE, totalChunks);
+        Map<String, Long> byType = Map.of(VectorDocumentTypes.KNOWLEDGE, totalChunks);
 
         return new KnowledgeStatsResponse(true, entries.size(), totalChunks, totalChars, vectorCount, byType,
                 knowledgeVectorIndexService.isUsingMilvus());
@@ -244,7 +248,8 @@ public class KnowledgeService {
 
     public KnowledgeSearchResponse searchKnowledge(String query, int topK) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        if (tenantId == null || tenantId.isBlank()) {
+        String userId = securityContextHelper.getCurrentUserId();
+        if (tenantId == null || tenantId.isBlank() || userId == null || userId.isBlank()) {
             return KnowledgeSearchResponse.empty("未找到相关知识");
         }
         RagQueryAnalysis analysis = ragQueryRewriter.analyze(query);
@@ -252,7 +257,7 @@ public class KnowledgeService {
             return KnowledgeSearchResponse.empty("未找到相关知识");
         }
         List<RetrievalResult> matches = ragReranker.rerankHybrid(
-                hybridRetriever.retrieve(analysis, tenantId, topK, DEFAULT_SEARCH_MIN_SCORE,
+                hybridRetriever.retrieve(analysis, tenantId, userId, topK, DEFAULT_SEARCH_MIN_SCORE,
                         List.of(VectorDocumentTypes.KNOWLEDGE, VectorDocumentTypes.FILE)),
                 analysis).stream().limit(topK).toList();
         List<KnowledgeSearchResult> results = toSearchResults(matches);
@@ -312,7 +317,8 @@ public class KnowledgeService {
 
     private Optional<KnowledgeEntry> findCurrentTenantKnowledge(String knowledgeId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        return knowledgeRepository.findByKnowledgeIdAndTenantId(knowledgeId, tenantId);
+        String userId = securityContextHelper.getCurrentUserId();
+        return knowledgeRepository.findByKnowledgeIdAndTenantIdAndCreatedBy(knowledgeId, tenantId, userId);
     }
 
     private String getOriginalFilename(MultipartFile file) {

@@ -65,4 +65,10 @@ public interface AgentProfileRepository extends JpaRepository<AgentProfile, Stri
      * @return 匹配的 Agent 配置
      */
     Optional<AgentProfile> findByAgentIdAndTenantIdAndCreatedBy(String agentId, String tenantId, String createdBy);
+
+    /**
+     * 查询当前用户的默认个人 Agent。
+     */
+    Optional<AgentProfile> findFirstByTenantIdAndCreatedByAndDefaultAgentTrueOrderByUpdatedAtDesc(
+            String tenantId, String createdBy);
 }

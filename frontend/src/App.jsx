@@ -1,18 +1,17 @@
-import { Brain, LogOut } from 'lucide-react';
+import { ArrowLeft, Brain, LogOut, ShieldCheck } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { createApiClient } from './api/client.js';
 import { ToastHost } from './components/ui.jsx';
-import { adminPages, navGroups } from './config/navigation.jsx';
+import { adminNavGroups, adminPages, userNavGroups } from './config/navigation.jsx';
 import { AgentApprovalsPage, AgentsPage, DatasourcesPage, ModelsPage, RolesPage, SkillsPage, UsersPage } from './pages/AdminPages.jsx';
-import { AdminRequestPage } from './pages/AdminRequestPage.jsx';
 import { AuditPage } from './pages/AuditPage.jsx';
+import { AgentEvalPage } from './pages/AgentEvalPage.jsx';
 import { ChatPage } from './pages/ChatPage.jsx';
-import { FeedbackPage } from './pages/FeedbackPage.jsx';
+import { ExpertsPage } from './pages/ExpertsPage.jsx';
 import { FilesPage } from './pages/FilesPage.jsx';
 import { KnowledgePage } from './pages/KnowledgePage.jsx';
 import { LoginScreen } from './pages/LoginScreen.jsx';
 import { MemoryPage } from './pages/MemoryPage.jsx';
-import { OverviewPage } from './pages/OverviewPage.jsx';
 import { QualityPage } from './pages/QualityPage.jsx';
 import { ResourceCenterPage } from './pages/ResourceCenterPage.jsx';
 import { StatsPage } from './pages/StatsPage.jsx';
@@ -30,7 +29,9 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem('accessToken') || '');
   const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken') || '');
   const [user, setUser] = useState(readJson('userInfo', {}));
-  const [page, setPage] = useState('overview');
+  const [page, setPage] = useState('chat');
+  const [consoleMode, setConsoleMode] = useState('agent');
+  const [traceUserId, setTraceUserId] = useState('');
   const [notice, setNotice] = useState('');
   const [toasts, setToasts] = useState([]);
 
@@ -44,6 +45,7 @@ export default function App() {
     setToken('');
     setRefreshToken('');
     setUser({});
+    setConsoleMode('agent');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('userInfo');
@@ -67,7 +69,8 @@ export default function App() {
     localStorage.setItem('accessToken', auth.accessToken);
     localStorage.setItem('refreshToken', auth.refreshToken);
     localStorage.setItem('userInfo', JSON.stringify(nextUser));
-    setPage('overview');
+    setPage('chat');
+    setConsoleMode('agent');
     toast('登录成功', 'success');
   };
 
@@ -81,12 +84,32 @@ export default function App() {
       return;
     }
     setNotice('');
+    if (key === 'traces') {
+      setTraceUserId('');
+    }
     setPage(key);
   };
 
-  const visibleGroups = navGroups
-    .map((group) => ({ ...group, items: group.admin && !admin ? [] : group.items }))
-    .filter((group) => group.items.length > 0);
+  const openUserTraces = (userId) => {
+    setTraceUserId(userId || '');
+    setPage('traces');
+    setNotice('');
+  };
+
+  const enterAdminConsole = () => {
+    setConsoleMode('admin');
+    setTraceUserId('');
+    setPage('traces');
+    setNotice('');
+  };
+
+  const leaveAdminConsole = () => {
+    setConsoleMode('agent');
+    setPage('chat');
+    setNotice('');
+  };
+
+  const visibleGroups = consoleMode === 'admin' && admin ? adminNavGroups : userNavGroups;
   const activeItem = visibleGroups.flatMap((group) => group.items).find((item) => item.key === page);
 
   return (
@@ -97,7 +120,7 @@ export default function App() {
             <div className="brand-mark"><Brain size={20} /></div>
             <div>
               <div className="brand-title">Data Agent</div>
-              <div className="brand-subtitle">Enterprise AI Platform</div>
+              <div className="brand-subtitle">{consoleMode === 'admin' ? 'Agent Control Plane' : 'Java Agent Harness'}</div>
             </div>
           </div>
           {visibleGroups.map((group) => (
@@ -119,10 +142,12 @@ export default function App() {
           <header className="topbar">
             <div className="topbar-title">
               <span>{activeItem?.label || '工作台'}</span>
-              <small>Data Agent 控制台</small>
+              <small>{consoleMode === 'admin' ? 'Runtime · Capabilities · Governance' : 'Reference App · 由 Agent Harness 驱动'}</small>
             </div>
             <div className="toolbar">
               {notice && <span className="notice-text">{notice}</span>}
+              {admin && consoleMode === 'agent' && <button className="btn" onClick={enterAdminConsole}><ShieldCheck size={16} />Control Plane</button>}
+              {consoleMode === 'admin' && <button className="btn" onClick={leaveAdminConsole}><ArrowLeft size={16} />返回我的 Agent</button>}
               <div className="account-chip">
                 <strong>{user.nickname || user.username}</strong>
                 <span>{user.tenantId || 'default'}</span>
@@ -132,24 +157,23 @@ export default function App() {
             </div>
           </header>
           <section className="content">
-            {page === 'overview' && <OverviewPage api={api} user={user} admin={admin} goPage={goPage} toast={toast} />}
-            {page === 'chat' && <ChatPage api={api} token={token} toast={toast} />}
-            {page === 'resources' && <ResourceCenterPage api={api} toast={toast} />}
+            {page === 'chat' && <ChatPage api={api} token={token} toast={toast} onOpenExperts={() => goPage('experts')} />}
+            {page === 'experts' && <ExpertsPage api={api} toast={toast} />}
             {page === 'memory' && <MemoryPage api={api} toast={toast} />}
             {page === 'knowledge' && <KnowledgePage api={api} toast={toast} />}
             {page === 'files' && <FilesPage api={api} toast={toast} />}
-            {page === 'admin-request' && <AdminRequestPage api={api} user={user} admin={admin} toast={toast} goPage={goPage} />}
             {page === 'users' && admin && <UsersPage api={api} toast={toast} />}
             {page === 'roles' && admin && <RolesPage api={api} toast={toast} />}
             {page === 'models' && admin && <ModelsPage api={api} toast={toast} />}
             {page === 'skills' && admin && <SkillsPage api={api} toast={toast} />}
-            {page === 'agents' && admin && <AgentsPage api={api} toast={toast} />}
+            {page === 'agents' && admin && <AgentsPage api={api} toast={toast} onOpenTraces={openUserTraces} />}
             {page === 'datasources' && admin && <DatasourcesPage api={api} toast={toast} />}
             {page === 'approvals' && admin && <AgentApprovalsPage api={api} toast={toast} />}
+            {page === 'resources' && admin && <ResourceCenterPage api={api} toast={toast} />}
             {page === 'stats' && admin && <StatsPage api={api} />}
             {page === 'quality' && admin && <QualityPage api={api} toast={toast} />}
-            {page === 'traces' && admin && <TracePage api={api} />}
-            {page === 'feedbacks' && admin && <FeedbackPage api={api} toast={toast} />}
+            {page === 'agent-evals' && admin && <AgentEvalPage api={api} toast={toast} />}
+            {page === 'traces' && admin && <TracePage key={traceUserId || 'all-users'} api={api} initialUserId={traceUserId} />}
             {page === 'audit' && admin && <AuditPage api={api} />}
           </section>
         </main>

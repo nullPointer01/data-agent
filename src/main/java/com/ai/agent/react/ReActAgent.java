@@ -28,6 +28,7 @@ import com.ai.agent.orchestrator.ParallelPlanExecutionResult;
 import com.ai.agent.orchestrator.ParallelPlanExecutor;
 import com.ai.agent.orchestrator.ParallelPlanStepResult;
 import com.ai.agent.orchestrator.TaskPlanner;
+import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.tool.AgentToolInvoker;
 import com.ai.agent.tool.governance.AgentToolInvocationContext;
 import com.ai.agent.tool.governance.AgentToolInvocationContextFactory;
@@ -99,6 +100,7 @@ public class ReActAgent {
      * @return 分析响应
      */
     public AnalysisResponse execute(AnalysisRequest request, String fileContent) {
+        AgentRunScope.requireCurrent().control().ensureActive();
         String modelId = request.hasModel() ? request.getModelId() : null;
         ConversationSession session = getSession(request);
         ReActRequestContext requestContext = requestContextBuilder.build(request, fileContent);
@@ -187,14 +189,13 @@ public class ReActAgent {
      * @return 完整分析响应
      */
     public AnalysisResponse executeStreaming(AnalysisRequest request, String fileContent, Consumer<String> eventEmitter) {
+        AgentRunScope.requireCurrent().control().ensureActive();
         String modelId = request.hasModel() ? request.getModelId() : null;
         ConversationSession session = getSession(request);
         final ConversationSession finalSession = session;
 
         ReActRequestContext requestContext = requestContextBuilder.build(request, fileContent);
-        if (requestContext.ragContext().hasContext()) {
-            streamEventWriter.emitRagContext(eventEmitter, requestContext.ragContext().getHitCount());
-        }
+        streamEventWriter.emitRagContext(eventEmitter, requestContext.ragContext());
 
         // 自主模式：跳过分类/快路/规划/预检，直接进循环，决策权全交模型
         if (reasoningProperties != null && reasoningProperties.isAutonomousMode()) {

@@ -1,10 +1,12 @@
 package com.ai.security.auth;
 import com.ai.security.auth.JwtTokenProvider;
 import com.ai.security.SecurityConstants;
+import com.ai.security.SysUser;
+import com.ai.security.SysUserRepository;
 import com.ai.security.TenantUser;
+import com.ai.security.rbac.RolePermissionService;
 
 import com.ai.logging.RequestCorrelationContext;
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,7 +24,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * 从 Bearer JWT 中认证请求身份。
@@ -36,8 +37,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
+    private final SysUserRepository userRepository;
+
+    private final RolePermissionService rolePermissionService;
+
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, SysUserRepository userRepository,
+            RolePermissionService rolePermissionService) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRepository = userRepository;
+        this.rolePermissionService = rolePermissionService;
     }
 
     @Override
@@ -47,8 +55,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
             try {
-                Claims claims = jwtTokenProvider.parseToken(token);
-                setAuthentication(claims);
+                String userId = jwtTokenProvider.getUserId(token);
+                userRepository.findById(userId)
+                        .filter(SysUser::isEnabled)
+                        .ifPresent(this::setAuthentication);
             } catch (Exception e) {
                 LOGGER.warn("JWT 认证失败: {}", e.getMessage());
             }
@@ -57,12 +67,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private void setAuthentication(Claims claims) {
-        Set<SimpleGrantedAuthority> authorities = parseAuthorities(claims.get("roles", String.class));
+    private void setAuthentication(SysUser user) {
+        Set<SimpleGrantedAuthority> authorities = rolePermissionService.toRoleCodes(user.getRoles()).stream()
+                .map(role -> new SimpleGrantedAuthority(SecurityConstants.ROLE_PREFIX + role))
+                .collect(Collectors.toSet());
         TenantUser principal = new TenantUser(
-                claims.getSubject(),
-                claims.get("username", String.class),
-                claims.get("tenantId", String.class),
+                user.getId(),
+                user.getUsername(),
+                user.getTenantId(),
                 authorities);
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(principal, null, authorities);
@@ -80,17 +92,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(value)) {
             MDC.put(key, value);
         }
-    }
-
-    private Set<SimpleGrantedAuthority> parseAuthorities(String rolesText) {
-        if (!StringUtils.hasText(rolesText)) {
-            return Set.of();
-        }
-        return Stream.of(rolesText.split(","))
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .map(role -> new SimpleGrantedAuthority(SecurityConstants.ROLE_PREFIX + role))
-                .collect(Collectors.toSet());
     }
 
     private String extractToken(HttpServletRequest request) {

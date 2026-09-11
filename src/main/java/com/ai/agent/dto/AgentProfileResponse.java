@@ -13,32 +13,30 @@ import java.util.List;
 public record AgentProfileResponse(
         String agentId,
         String name,
-        String type,
         String description,
         String systemPrompt,
         String modelId,
-        String skillId,
-        String datasourceId,
         String executionMode,
-        List<String> tools,
+        List<String> capabilityBindings,
+        boolean defaultAgent,
         boolean enabled,
         String tenantId,
         String createdBy,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
-    public static AgentProfileResponse from(AgentProfile profile) {
+    public static AgentProfileResponse from(
+            AgentProfile profile,
+            List<String> capabilityBindings) {
         return new AgentProfileResponse(
                 profile.getAgentId(),
                 profile.getName(),
-                profile.getTypeCode(),
                 profile.getDescription(),
                 profile.getSystemPrompt(),
                 profile.getModelId(),
-                profile.getSkillId(),
-                profile.getDatasourceId(),
                 profile.getExecutionMode(),
-                profile.getToolList(),
+                capabilityBindings == null ? List.of() : List.copyOf(capabilityBindings),
+                profile.isDefaultAgent(),
                 profile.isEnabled(),
                 profile.getTenantId(),
                 profile.getCreatedBy(),

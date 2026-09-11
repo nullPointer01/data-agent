@@ -78,24 +78,6 @@ CREATE TABLE IF NOT EXISTS sys_user_roles (
     KEY idx_sys_user_roles_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='旧用户角色关联表，仅用于旧库迁移';
 
-CREATE TABLE IF NOT EXISTS admin_role_request (
-    request_id VARCHAR(64) NOT NULL COMMENT '申请ID',
-    user_id VARCHAR(64) NOT NULL COMMENT '申请用户ID',
-    username VARCHAR(64) NOT NULL COMMENT '申请用户名',
-    tenant_id VARCHAR(64) NOT NULL COMMENT '租户ID',
-    reason VARCHAR(512) NOT NULL COMMENT '申请原因',
-    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态',
-    reviewer_id VARCHAR(64) DEFAULT NULL COMMENT '审核人ID',
-    reviewer_name VARCHAR(64) DEFAULT NULL COMMENT '审核人名称',
-    review_comment VARCHAR(512) DEFAULT NULL COMMENT '审核备注',
-    created_at DATETIME(6) DEFAULT NULL COMMENT '创建时间',
-    updated_at DATETIME(6) DEFAULT NULL COMMENT '更新时间',
-    reviewed_at DATETIME(6) DEFAULT NULL COMMENT '审核时间',
-    PRIMARY KEY (request_id),
-    KEY idx_admin_role_request_user_status (user_id, status),
-    KEY idx_admin_role_request_tenant_status_created (tenant_id, status, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员角色申请表';
-
 -- ============================================================
 -- 2. 配置类资源
 -- ============================================================
@@ -163,12 +145,12 @@ CREATE TABLE IF NOT EXISTS skill_prompt_history (
 CREATE TABLE IF NOT EXISTS agent_profile (
     agent_id VARCHAR(64) NOT NULL COMMENT 'Agent ID',
     name VARCHAR(64) NOT NULL COMMENT 'Agent名称',
-    type VARCHAR(32) DEFAULT 'REACT' COMMENT '类型',
     description VARCHAR(512) DEFAULT NULL COMMENT '描述',
     system_prompt TEXT DEFAULT NULL COMMENT '系统提示词',
     model_id VARCHAR(64) DEFAULT NULL COMMENT '绑定模型ID',
-    skill_id VARCHAR(64) DEFAULT NULL COMMENT '绑定技能ID',
-    datasource_id VARCHAR(64) DEFAULT NULL COMMENT '绑定数据源ID',
+    capability_bindings TEXT NOT NULL COMMENT '统一能力稳定身份JSON数组；[]表示明确无能力',
+    execution_mode VARCHAR(16) NOT NULL DEFAULT 'auto' COMMENT 'auto/chat/react/orchestrated执行模式',
+    default_agent BIT(1) NOT NULL DEFAULT 0 COMMENT '是否为用户默认Agent',
     enabled BIT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
     tenant_id VARCHAR(64) DEFAULT NULL COMMENT '租户ID',
     created_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
@@ -176,7 +158,8 @@ CREATE TABLE IF NOT EXISTS agent_profile (
     updated_at DATETIME(6) DEFAULT NULL COMMENT '更新时间',
     PRIMARY KEY (agent_id),
     KEY idx_agent_profile_tenant (tenant_id),
-    KEY idx_agent_profile_tenant_enabled (tenant_id, enabled)
+    KEY idx_agent_profile_tenant_enabled (tenant_id, enabled),
+    KEY idx_agent_profile_user_default (tenant_id, created_by, default_agent)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent配置表';
 
 CREATE TABLE IF NOT EXISTS datasource_config (
@@ -267,6 +250,8 @@ CREATE TABLE IF NOT EXISTS memory_entry (
     source_content_length BIGINT DEFAULT 0 COMMENT '原始文本长度',
     stored_content_length BIGINT DEFAULT 0 COMMENT '入库存储长度',
     metadata_json TEXT DEFAULT NULL COMMENT '元数据JSON',
+    semantic_key VARCHAR(160) DEFAULT NULL COMMENT '语义去重键',
+    confidence DOUBLE DEFAULT 0 COMMENT '语义提取置信度',
     key_entities_json TEXT DEFAULT NULL COMMENT '关键实体JSON',
     topic_tags_json TEXT DEFAULT NULL COMMENT '主题标签JSON',
     vector_id VARCHAR(128) DEFAULT NULL COMMENT '向量索引ID',
@@ -280,6 +265,7 @@ CREATE TABLE IF NOT EXISTS memory_entry (
     PRIMARY KEY (memory_id),
     KEY idx_memory_tenant_user (tenant_id, user_id),
     KEY idx_memory_tenant_user_tier (tenant_id, user_id, tier),
+    UNIQUE KEY uk_memory_semantic (tenant_id, user_id, type, semantic_key),
     KEY idx_memory_expire (expires_at),
     KEY idx_memory_decay (tier, decay_weight, access_count),
     KEY idx_memory_updated (tier, updated_at)
@@ -339,10 +325,12 @@ CREATE TABLE IF NOT EXISTS conversation_message (
     tokens BIGINT DEFAULT 0 COMMENT '本条消息消耗Token',
     skill_used VARCHAR(64) DEFAULT NULL COMMENT '使用的技能',
     model_used VARCHAR(64) DEFAULT NULL COMMENT '使用的模型',
+    run_id VARCHAR(64) DEFAULT NULL COMMENT '关联的Agent Run ID',
     created_at DATETIME(6) DEFAULT NULL COMMENT '创建时间',
     PRIMARY KEY (id),
     KEY idx_conversation_message_session_id (session_id),
     KEY idx_conversation_message_role (role),
+    KEY idx_conversation_message_run_id (run_id),
     KEY idx_conversation_message_created_at (created_at),
     CONSTRAINT fk_conversation_message_session FOREIGN KEY (session_id) REFERENCES conversation_session (session_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话消息表';
@@ -394,7 +382,7 @@ CREATE TABLE IF NOT EXISTS agent_execution_trace (
     user_id VARCHAR(64) DEFAULT NULL COMMENT '用户ID',
     session_id VARCHAR(128) DEFAULT NULL COMMENT '会话ID',
     selected_agent VARCHAR(128) DEFAULT NULL COMMENT '选中的Agent',
-    selected_type VARCHAR(32) DEFAULT NULL COMMENT '选中的Agent类型',
+    selected_type VARCHAR(32) DEFAULT NULL COMMENT '运行模式（历史字段名）',
     intent VARCHAR(32) DEFAULT NULL COMMENT '意图',
     complexity VARCHAR(32) DEFAULT NULL COMMENT '复杂度',
     success BIT(1) NOT NULL DEFAULT 0 COMMENT '是否成功',
@@ -414,26 +402,6 @@ CREATE TABLE IF NOT EXISTS agent_execution_trace (
     KEY idx_agent_execution_trace_user_created (user_id, created_at),
     KEY idx_agent_execution_trace_session (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent执行轨迹表';
-
-CREATE TABLE IF NOT EXISTS agent_feedback (
-    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    feedback_id VARCHAR(64) NOT NULL COMMENT '反馈ID',
-    tenant_id VARCHAR(64) DEFAULT NULL COMMENT '租户ID',
-    user_id VARCHAR(64) DEFAULT NULL COMMENT '用户ID',
-    session_id VARCHAR(128) DEFAULT NULL COMMENT '会话ID',
-    trace_id VARCHAR(64) DEFAULT NULL COMMENT '执行轨迹ID',
-    rating VARCHAR(16) NOT NULL COMMENT '评分',
-    question VARCHAR(1024) DEFAULT NULL COMMENT '问题',
-    answer VARCHAR(2048) DEFAULT NULL COMMENT '答案摘要',
-    comment VARCHAR(1024) DEFAULT NULL COMMENT '反馈备注',
-    created_at DATETIME(6) DEFAULT NULL COMMENT '创建时间',
-    updated_at DATETIME(6) DEFAULT NULL COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_agent_feedback_feedback_id (feedback_id),
-    UNIQUE KEY uk_agent_feedback_trace_user (trace_id, tenant_id, user_id),
-    KEY idx_agent_feedback_tenant_created (tenant_id, created_at),
-    KEY idx_agent_feedback_trace_user (trace_id, tenant_id, user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent回答质量反馈表';
 
 -- ============================================================
 -- 5. 持久化 Agent Run、人工审批与隔离沙箱

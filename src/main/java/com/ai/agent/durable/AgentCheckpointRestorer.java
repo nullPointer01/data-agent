@@ -1,6 +1,7 @@
 package com.ai.agent.durable;
 
 import com.ai.agent.AgentExecutionContext;
+import com.ai.agent.AgentRunOrigin;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.event.AgentEventSink;
 import com.ai.agent.tool.governance.AgentToolAuthorizationSnapshot;
@@ -52,7 +53,9 @@ public class AgentCheckpointRestorer {
         request.setModelId(checkpoint.modelId());
         request.setSessionId(run.getSessionId());
         request.setAgentId(run.getAgentId());
-        AgentExecutionContext executionContext = new AgentExecutionContext(request, null, null);
+        request.setTaskContract(checkpoint.taskContract());
+        AgentExecutionContext executionContext = new AgentExecutionContext(
+                request, null, null, AgentRunOrigin.DURABLE_RESUME);
         Set<String> currentAllowedTools = checkpoint.allowedToolsAtRequest().stream()
                 .filter(ownerAuthorization.serverEnabledTools()::contains)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());

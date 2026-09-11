@@ -60,10 +60,39 @@ public class AsyncConfig {
         return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-task-", taskDecorator);
     }
 
+    @Bean(name = "memoryExtractionExecutor")
+    public Executor memoryExtractionExecutor(TaskDecorator taskDecorator) {
+        return buildExecutor(1, 2, 100, "memory-extraction-", taskDecorator);
+    }
+
+    /**
+     * Agent Eval 使用独立有界线程池，避免离线回归任务挤占交互式 Agent 执行资源。
+     */
+    @Bean(name = "agentEvalExecutor")
+    public Executor agentEvalExecutor(
+            @Value("${app.agent-eval.core-pool-size:1}") int corePoolSize,
+            @Value("${app.agent-eval.max-pool-size:2}") int maxPoolSize,
+            @Value("${app.agent-eval.queue-capacity:20}") int queueCapacity,
+            TaskDecorator taskDecorator) {
+        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-eval-", taskDecorator);
+    }
+
     @Bean(name = "agentToolExecutor")
     public AsyncTaskExecutor agentToolExecutor(AgentToolGovernanceProperties properties, TaskDecorator taskDecorator) {
         return buildExecutor(properties.getCorePoolSize(), properties.getMaxPoolSize(),
                 properties.getQueueCapacity(), "agent-tool-", taskDecorator);
+    }
+
+    /**
+     * 委派调用使用独立线程池，避免父委派占用普通 Tool worker 后等待子 Agent 再次调用 Tool。
+     */
+    @Bean(name = "agentDelegationExecutor")
+    public AsyncTaskExecutor agentDelegationExecutor(
+            @Value("${app.agent-delegation.core-pool-size:2}") int corePoolSize,
+            @Value("${app.agent-delegation.max-pool-size:4}") int maxPoolSize,
+            @Value("${app.agent-delegation.queue-capacity:20}") int queueCapacity,
+            TaskDecorator taskDecorator) {
+        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-delegation-", taskDecorator);
     }
 
     @Bean(name = "agentResumeExecutor")

@@ -1,0 +1,180 @@
+- generic [ref=e27]:
+  - complementary [ref=e28]:
+    - generic [ref=e39]:
+      - generic [ref=e40]: Data Agent
+      - generic [ref=e41]: Agent Control Plane
+    - generic [ref=e351]:
+      - generic [ref=e352]: 运行与质量
+      - button "运行追踪" [ref=e353] [cursor=pointer]
+      - button "动作审批" [ref=e359] [cursor=pointer]
+      - button "质量观测" [ref=e365] [cursor=pointer]
+      - button "Agent 评测" [ref=e370] [cursor=pointer]
+      - button "资源统计" [active] [ref=e374] [cursor=pointer]
+    - generic [ref=e378]:
+      - generic [ref=e379]: 能力配置
+      - button "模型目录" [ref=e380] [cursor=pointer]
+      - button "技能目录" [ref=e385] [cursor=pointer]
+      - button "知识与 RAG" [ref=e389] [cursor=pointer]
+      - button "数据连接" [ref=e393] [cursor=pointer]
+    - generic [ref=e399]:
+      - generic [ref=e400]: 平台治理
+      - button "用户" [ref=e401] [cursor=pointer]
+      - button "用户 Agent" [ref=e408] [cursor=pointer]
+      - button "角色权限" [ref=e413] [cursor=pointer]
+      - button "审计" [ref=e418] [cursor=pointer]
+  - main [ref=e71]:
+    - generic [ref=e72]:
+      - generic [ref=e73]:
+        - generic [ref=e74]: 资源统计
+        - generic [ref=e75]: Runtime · Capabilities · Governance
+      - generic [ref=e76]:
+        - button "返回我的 Agent" [ref=e423] [cursor=pointer]
+        - generic [ref=e82]:
+          - strong [ref=e83]: 超级管理员
+          - generic [ref=e84]: default
+          - generic [ref=e85]: ADMIN
+        - button "退出" [ref=e86] [cursor=pointer]
+    - generic [ref=e90]:
+      - generic [ref=e665]:
+        - generic [ref=e666]:
+          - heading "Token 统计" [level=1] [ref=e667]
+          - paragraph [ref=e668]: 按租户、模型、技能和请求明细查看 Token 消耗
+        - button "刷新" [ref=e670] [cursor=pointer]
+      - generic [ref=e676]:
+        - generic [ref=e677]:
+          - generic [ref=e678]: 租户总消耗
+          - generic [ref=e679]: 164,595
+        - generic [ref=e680]:
+          - generic [ref=e681]: 当前用户消耗
+          - generic [ref=e682]: 154,357
+        - generic [ref=e683]:
+          - generic [ref=e684]: 输入 Token
+          - generic [ref=e685]: 147,013
+        - generic [ref=e686]:
+          - generic [ref=e687]: 输出 Token
+          - generic [ref=e688]: 17,582
+      - generic [ref=e689]:
+        - generic [ref=e690]:
+          - generic [ref=e691]: 模型消耗
+          - img "图表" [ref=e693]:
+            - generic [ref=e694]:
+              - generic [ref=e695]: "1"
+              - generic [ref=e697]: "1"
+              - generic [ref=e699]: "0"
+              - generic [ref=e701]: "120587"
+              - generic [ref=e703]: "90440"
+              - generic [ref=e705]: "60294"
+              - generic [ref=e707]: "30147"
+              - generic [ref=e709]: "0"
+              - generic [ref=e711]: 默认模型
+              - generic [ref=e714]: Qwen Plus...
+              - generic [ref=e717]: deepseek
+              - generic [ref=e720]: 5.6-terra
+        - generic [ref=e723]:
+          - generic [ref=e724]: 技能消耗
+          - img "图表" [ref=e726]
+      - generic [ref=e729]:
+        - table [ref=e731]:
+          - rowgroup [ref=e732]:
+            - row [ref=e733]:
+              - columnheader "时间" [ref=e734]
+              - columnheader "用户" [ref=e735]
+              - columnheader "模型" [ref=e736]
+              - columnheader "技能" [ref=e737]
+              - columnheader "输入" [ref=e738]
+              - columnheader "输出" [ref=e739]
+              - columnheader "合计" [ref=e740]
+          - rowgroup [ref=e741]:
+            - row [ref=e742]:
+              - cell "2026/9/10 14:28:48" [ref=e743]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e744]
+              - cell "默认模型" [ref=e745]
+              - cell "直接调用" [ref=e746]
+              - cell "451" [ref=e747]
+              - cell "90" [ref=e748]
+              - cell "541" [ref=e749]
+            - row [ref=e750]:
+              - cell "2026/9/10 13:37:09" [ref=e751]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e752]
+              - cell "默认模型" [ref=e753]
+              - cell "直接调用" [ref=e754]
+              - cell "451" [ref=e755]
+              - cell "74" [ref=e756]
+              - cell "525" [ref=e757]
+            - row [ref=e758]:
+              - cell "2026/9/10 11:45:52" [ref=e759]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e760]
+              - cell "默认模型" [ref=e761]
+              - cell "直接调用" [ref=e762]
+              - cell "451" [ref=e763]
+              - cell "90" [ref=e764]
+              - cell "541" [ref=e765]
+            - row [ref=e766]:
+              - cell "2026/9/10 11:09:51" [ref=e767]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e768]
+              - cell "默认模型" [ref=e769]
+              - cell "直接调用" [ref=e770]
+              - cell "451" [ref=e771]
+              - cell "85" [ref=e772]
+              - cell "536" [ref=e773]
+            - row [ref=e774]:
+              - cell "2026/9/9 20:19:44" [ref=e775]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e776]
+              - cell "默认模型" [ref=e777]
+              - cell "直接调用" [ref=e778]
+              - cell "81" [ref=e779]
+              - cell "255" [ref=e780]
+              - cell "336" [ref=e781]
+            - row [ref=e782]:
+              - cell "2026/9/9 20:18:34" [ref=e783]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e784]
+              - cell "默认模型" [ref=e785]
+              - cell "直接调用" [ref=e786]
+              - cell "507" [ref=e787]
+              - cell "76" [ref=e788]
+              - cell "583" [ref=e789]
+            - row [ref=e790]:
+              - cell "2026/9/9 20:18:31" [ref=e791]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e792]
+              - cell "默认模型" [ref=e793]
+              - cell "直接调用" [ref=e794]
+              - cell "448" [ref=e795]
+              - cell "89" [ref=e796]
+              - cell "537" [ref=e797]
+            - row [ref=e798]:
+              - cell "2026/9/9 20:18:28" [ref=e799]
+              - cell "dd062c0c-3b1b-4db5-9f4e-ab72f5988fa8" [ref=e800]
+              - cell "默认模型" [ref=e801]
+              - cell "直接调用" [ref=e802]
+              - cell "370" [ref=e803]
+              - cell "74" [ref=e804]
+              - cell "444" [ref=e805]
+            - row [ref=e806]:
+              - cell "2026/9/9 17:44:40" [ref=e807]
+              - cell "0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e808]
+              - cell "默认模型" [ref=e809]
+              - cell "直接调用" [ref=e810]
+              - cell "1316" [ref=e811]
+              - cell "405" [ref=e812]
+              - cell "1721" [ref=e813]
+            - row [ref=e814]:
+              - cell "2026/9/9 17:44:30" [ref=e815]
+              - cell "0c85ec7c-541d-11f1-acdc-3f6e6bcbb940" [ref=e816]
+              - cell "5.6-terra" [ref=e817]
+              - cell "直接调用" [ref=e818]
+              - cell "1035" [ref=e819]
+              - cell "564" [ref=e820]
+              - cell "1599" [ref=e821]
+        - generic "分页导航" [ref=e822]:
+          - generic [ref=e823]: 第 1-10 条，共 83 条
+          - generic [ref=e824]:
+            - generic [ref=e825]: 每页
+            - combobox "每页条数" [ref=e826]:
+              - option "10" [selected]
+              - option "20"
+              - option "50"
+            - generic [ref=e827]: 条
+          - generic [ref=e828]:
+            - button "上一页" [disabled] [ref=e829]
+            - generic [ref=e832]: 1 / 9
+            - button "下一页" [ref=e833] [cursor=pointer]

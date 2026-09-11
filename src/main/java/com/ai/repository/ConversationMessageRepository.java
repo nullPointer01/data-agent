@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 持久化对话消息仓储。
@@ -56,4 +57,15 @@ public interface ConversationMessageRepository extends JpaRepository<Conversatio
      */
     @Query("SELECT m FROM ConversationMessage m WHERE m.sessionId = :sessionId ORDER BY m.createdAt DESC")
     List<ConversationMessage> findRecentBySessionId(@Param("sessionId") String sessionId, Pageable pageable);
+
+    /**
+     * 查询一个 Run 在会话中关联的助手消息。
+     *
+     * @param sessionId 会话 ID
+     * @param runId Agent Run ID
+     * @param role 消息角色
+     * @return 最早关联的消息
+     */
+    Optional<ConversationMessage> findFirstBySessionIdAndRunIdAndRoleOrderByCreatedAtAsc(
+            String sessionId, String runId, String role);
 }

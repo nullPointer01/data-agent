@@ -11,6 +11,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 工具注册与执行中心：从 {@link AgentTools} 的 {@code @Tool} 注解自动生成工具规格并按参数名绑定执行。
@@ -74,42 +75,27 @@ public class AgentToolInvoker {
     public List<ToolSpecification> buildToolSpecifications() {
         return registry.specifications().stream()
                 .filter(specification -> registry.isEnabled(specification.name()))
+                .filter(specification -> !AgentTools.isCapabilityAdapter(specification.name()))
                 .toList();
     }
 
     /**
-     * 按工具名过滤，返回指定工具的规格列表。
+     * 按服务端已经解析出的精确名称集合返回工具规格。
      *
-     * @param toolNames 要保留的工具方法名，为空时返回全部
-     * @return 过滤后的工具规格
+     * <p>与旧列表接口不同，空集合严格表示零工具；该入口允许 Configurable Agent
+     * 在有有效 Skill 绑定时显式加入 Harness 内部适配器。</p>
+     *
+     * @param toolNames 服务端允许的精确工具名称
+     * @return 已启用且名称匹配的工具规格
      */
-    public List<ToolSpecification> buildToolSpecifications(List<String> toolNames) {
+    public List<ToolSpecification> buildExactToolSpecifications(Set<String> toolNames) {
         if (toolNames == null || toolNames.isEmpty()) {
-            return buildToolSpecifications();
+            return List.of();
         }
         return registry.specifications().stream()
                 .filter(specification -> registry.isEnabled(specification.name()))
-                .filter(spec -> toolNames.contains(spec.name()))
+                .filter(specification -> toolNames.contains(specification.name()))
                 .toList();
     }
 
-    /**
-     * 返回所有已注册工具的名称和描述，供前端展示可选工具。
-     *
-     * @return 工具信息列表
-     */
-    public List<ToolInfo> getAllToolInfo() {
-        return buildToolSpecifications().stream()
-                .map(spec -> new ToolInfo(spec.name(), spec.description()))
-                .toList();
-    }
-
-    /**
-     * 工具摘要信息。
-     *
-     * @param name 工具名
-     * @param description 工具描述
-     */
-    public record ToolInfo(String name, String description) {
-    }
 }

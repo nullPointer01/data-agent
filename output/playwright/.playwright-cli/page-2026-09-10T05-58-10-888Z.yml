@@ -1,0 +1,12 @@
+- generic [ref=e1113]:
+  - generic [ref=e1124]:
+    - generic [ref=e1125]: My Agent
+    - generic [ref=e1126]: 可配置的个人 Agent Runtime
+  - generic [ref=e1127]:
+    - button "登录" [ref=e1128] [cursor=pointer]
+    - button "注册" [ref=e1129] [cursor=pointer]
+    - button "初始化管理员" [ref=e1130] [cursor=pointer]
+  - generic [ref=e1131]:
+    - textbox "用户名" [ref=e1132]
+    - textbox "密码" [ref=e1133]
+    - button "登录" [ref=e1134] [cursor=pointer]

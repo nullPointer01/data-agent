@@ -13,9 +13,9 @@ spring:
       max-request-size: 50MB
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      host: localhost
+      port: 6379
+      password: ""
       timeout: 3000ms
       lettuce:
         pool:
@@ -24,191 +24,168 @@ spring:
 
 langchain4j:
   open-ai:
-    api-key: ${LANGCHAIN_API_KEY:}
-    model-name: ${LANGCHAIN_MODEL_NAME:qwen-plus}
-    base-url: ${LANGCHAIN_BASE_URL:https://api.openai.com/v1}
+    api-key: "sk-9864ee2e574873b4c1c728dcd0cee86dc97d1603e3854235ce0bdc66f48e379a"
+    model-name: gpt-5.6-terra
+    base-url: http://ap-southeast-1-7x82o.gptdy.17usoft.com
     temperature: 0
     timeout: 30000
 
 milvus:
-  host: ${MILVUS_HOST:localhost}
-  port: ${MILVUS_PORT:19530}
+  host: localhost
+  port: 19530
   collection-name: data_agent_vectors
   index-type: IVF_FLAT
 
 app:
   embedding:
-    dimension: ${EMBEDDING_DIMENSION}
-    index-version: ${EMBEDDING_INDEX_VERSION:v1}
-    normalize: ${EMBEDDING_NORMALIZE:true}
-    metric: ${EMBEDDING_METRIC:COSINE}
+    dimension: 1024
+    index-version: bge-m3-v1
+    normalize: true
+    metric: COSINE
     api:
-      base-url: ${EMBEDDING_API_BASE_URL}
-      api-key: ${EMBEDDING_API_KEY:}
-      model-name: ${EMBEDDING_MODEL_NAME}
-      timeout: ${EMBEDDING_API_TIMEOUT:30s}
-      output-dimensions: ${EMBEDDING_API_OUTPUT_DIMENSIONS:}
-      batch-size: ${EMBEDDING_API_BATCH_SIZE:32}
-      max-attempts: ${EMBEDDING_API_MAX_ATTEMPTS:3}
-      initial-backoff: ${EMBEDDING_API_INITIAL_BACKOFF:200ms}
-      circuit-failure-threshold: ${EMBEDDING_API_CIRCUIT_FAILURE_THRESHOLD:5}
-      circuit-open-duration: ${EMBEDDING_API_CIRCUIT_OPEN_DURATION:30s}
-      query-prefix: ${EMBEDDING_QUERY_PREFIX:}
-      document-prefix: ${EMBEDDING_DOCUMENT_PREFIX:}
+      base-url: https://api.siliconflow.cn/v1
+      api-key: "sk-wwokpnbclbfyifeaouihjuakunwjhdjzhvpyyalvvztvjkdm"
+      model-name: BAAI/bge-m3
+      timeout: 30s
+      output-dimensions: ""
+      batch-size: 32
+      max-attempts: 3
+      initial-backoff: 200ms
+      circuit-failure-threshold: 5
+      circuit-open-duration: 30s
+      query-prefix: ""
+      document-prefix: ""
   cors:
-    allowed-origins: ${APP_CORS_ORIGINS:""}
+    allowed-origins: ""
   encryption:
-    key: ${APP_ENCRYPTION_KEY:}
+    key: ""
   rate-limit:
-    requests-per-minute: ${RATE_LIMIT_RPM:20}
+    requests-per-minute: 20
   token-quota:
-    daily-limit-per-user: ${TOKEN_QUOTA_DAILY:1000000}
+    daily-limit-per-user: 1000000
   security:
-    bootstrap-admin-users: ${BOOTSTRAP_ADMIN_USERS:super}
+    bootstrap-admin-users: super
+    registration:
+      enabled: false
+      tenant-id: default
   file-processing:
-    core-pool-size: ${FILE_PROCESSING_CORE_POOL_SIZE:2}
-    max-pool-size: ${FILE_PROCESSING_MAX_POOL_SIZE:4}
-    queue-capacity: ${FILE_PROCESSING_QUEUE_CAPACITY:100}
+    core-pool-size: 2
+    max-pool-size: 4
+    queue-capacity: 100
   knowledge-vector:
-    core-pool-size: ${KNOWLEDGE_VECTOR_CORE_POOL_SIZE:1}
-    max-pool-size: ${KNOWLEDGE_VECTOR_MAX_POOL_SIZE:2}
-    queue-capacity: ${KNOWLEDGE_VECTOR_QUEUE_CAPACITY:100}
+    core-pool-size: 1
+    max-pool-size: 2
+    queue-capacity: 100
   sse:
-    timeout-ms: ${APP_SSE_TIMEOUT_MS:600000}
-    core-pool-size: ${APP_SSE_CORE_POOL_SIZE:2}
-    max-pool-size: ${APP_SSE_MAX_POOL_SIZE:8}
-    queue-capacity: ${APP_SSE_QUEUE_CAPACITY:100}
+    timeout-ms: 600000
+    core-pool-size: 2
+    max-pool-size: 8
+    queue-capacity: 100
   agent:
     runtime:
       # 保护性默认值，后续应依据执行轨迹的 P95/P99 分布调优。
-      timeout: ${AGENT_RUNTIME_TIMEOUT:5m}
-      max-iterations: ${AGENT_RUNTIME_MAX_ITERATIONS:8}
-      max-model-calls: ${AGENT_RUNTIME_MAX_MODEL_CALLS:24}
-      max-tool-calls: ${AGENT_RUNTIME_MAX_TOOL_CALLS:32}
-      max-tokens: ${AGENT_RUNTIME_MAX_TOKENS:100000}
+      timeout: 5m
+      max-iterations: 8
+      max-model-calls: 24
+      max-tool-calls: 32
+      max-tokens: 100000
+    context:
+      # 模型目录尚未维护统一窗口元数据时使用保守默认值；可按项目模型 ID 覆盖。
+      default-model-window-tokens: 32768
+      reserved-output-tokens: 4096
+      safety-margin-tokens: 1024
+      protected-recent-messages: 4
+      model-window-overrides: {}
+      compaction:
+        # 默认只检查并明确拒绝超限请求；未评测前不静默裁剪或调用摘要模型。
+        enabled: false
+        model-summary-enabled: false
     durable:
-      # 默认关闭，只有显式启用后才创建可恢复 Run 和审批单。
-      enabled: ${AGENT_DURABLE_ENABLED:false}
-      sandbox-tool-enabled: ${AGENT_DURABLE_SANDBOX_TOOL_ENABLED:false}
-      approval-ttl: ${AGENT_DURABLE_APPROVAL_TTL:24h}
-      lease-duration: ${AGENT_DURABLE_LEASE_DURATION:60s}
-      scan-interval: ${AGENT_DURABLE_SCAN_INTERVAL:PT15S}
-      terminal-retention: ${AGENT_DURABLE_TERMINAL_RETENTION:30d}
-      scan-batch-size: ${AGENT_DURABLE_SCAN_BATCH_SIZE:50}
-      max-resume-attempts: ${AGENT_DURABLE_MAX_RESUME_ATTEMPTS:3}
+      # 是否启用持久化审批及沙箱工具由各环境 Profile 显式决定。
+      approval-ttl: 24h
+      lease-duration: 60s
+      scan-interval: PT15S
+      terminal-retention: 30d
+      scan-batch-size: 50
+      max-resume-attempts: 3
       # 恢复执行不能占用调度线程，否则同一调度器无法按时续租。
-      resume-core-pool-size: ${AGENT_DURABLE_RESUME_CORE_POOL_SIZE:2}
-      resume-max-pool-size: ${AGENT_DURABLE_RESUME_MAX_POOL_SIZE:4}
-      resume-queue-capacity: ${AGENT_DURABLE_RESUME_QUEUE_CAPACITY:100}
-      # 即使这里列出，仍需同时开启 durable 和 sandbox-tool-enabled；默认不会暴露写工具。
-      enabled-approval-tools: ${AGENT_DURABLE_ENABLED_APPROVAL_TOOLS:updateHotelPrice}
+      resume-core-pool-size: 2
+      resume-max-pool-size: 4
+      resume-queue-capacity: 100
     tool-governance:
       # 工具代码声明安全属性；这里仅提供环境级启用集合与统一保护上限。
-      max-argument-length: ${AGENT_TOOL_MAX_ARGUMENT_LENGTH:16384}
-      max-result-length: ${AGENT_TOOL_MAX_RESULT_LENGTH:20000}
-      default-timeout: ${AGENT_TOOL_DEFAULT_TIMEOUT:20s}
-      max-attempts: ${AGENT_TOOL_MAX_ATTEMPTS:2}
-      initial-backoff: ${AGENT_TOOL_INITIAL_BACKOFF:100ms}
-      max-backoff: ${AGENT_TOOL_MAX_BACKOFF:1s}
-      journal-capacity: ${AGENT_TOOL_JOURNAL_CAPACITY:64}
-      max-risk: ${AGENT_TOOL_MAX_RISK:HIGH}
+      max-argument-length: 16384
+      max-result-length: 20000
+      default-timeout: 20s
+      max-attempts: 2
+      initial-backoff: 100ms
+      max-backoff: 1s
+      journal-capacity: 64
+      max-risk: HIGH
       enabled-tools: []
-      core-pool-size: ${AGENT_TOOL_CORE_POOL_SIZE:2}
-      max-pool-size: ${AGENT_TOOL_MAX_POOL_SIZE:8}
-      queue-capacity: ${AGENT_TOOL_QUEUE_CAPACITY:100}
+      core-pool-size: 2
+      max-pool-size: 8
+      queue-capacity: 100
     reasoning:
       # 自主模式：true 绕过分类/快路/规划/预检，直接进 ReAct 循环，决策权全交模型。
       # 默认开启（模型优先）；设为 false 切回编排式用于对比
-      autonomous-mode: ${AGENT_REASONING_AUTONOMOUS_MODE:true}
-      fast-path-enabled: ${AGENT_REASONING_FAST_PATH_ENABLED:true}
-      planning-enabled: ${AGENT_REASONING_PLANNING_ENABLED:true}
-      parallel-precheck-enabled: ${AGENT_REASONING_PARALLEL_PRECHECK_ENABLED:true}
-      reflection-enabled: ${AGENT_REASONING_REFLECTION_ENABLED:true}
-      working-memory-enabled: ${AGENT_REASONING_WORKING_MEMORY_ENABLED:true}
-  orchestrator:
-    llm-intent-enabled: ${ORCHESTRATOR_LLM_INTENT_ENABLED:false}
-    llm-planning-enabled: ${ORCHESTRATOR_LLM_PLANNING_ENABLED:false}
-    model-id: ${ORCHESTRATOR_MODEL_ID:}
-    intent-confidence-threshold: ${ORCHESTRATOR_INTENT_CONFIDENCE_THRESHOLD:0.8}
-    max-plan-tasks: ${ORCHESTRATOR_MAX_PLAN_TASKS:6}
+      autonomous-mode: true
+      fast-path-enabled: true
+      planning-enabled: true
+      parallel-precheck-enabled: true
+      reflection-enabled: true
+      working-memory-enabled: true
   rag:
-    enabled: ${RAG_ENABLED:true}
-    top-k: ${RAG_TOP_K:6}
-    candidate-top-k: ${RAG_CANDIDATE_TOP_K:20}
-    min-score: ${RAG_MIN_SCORE:0.25}
-    max-context-chars: ${RAG_MAX_CONTEXT_CHARS:5000}
+    enabled: true
+    top-k: 6
+    candidate-top-k: 20
+    min-score: 0.25
+    max-context-chars: 5000
     reranker:
-      enabled: ${RERANK_ENABLED:true}
-      base-url: ${RERANK_API_BASE_URL:https://api.siliconflow.cn/v1/rerank}
-      api-key: ${RERANK_API_KEY:}
-      model-name: ${RERANK_MODEL_NAME:BAAI/bge-reranker-v2-m3}
-      timeout: ${RERANK_API_TIMEOUT:5s}
-      max-candidates: ${RERANK_MAX_CANDIDATES:20}
-      max-document-chars: ${RERANK_MAX_DOCUMENT_CHARS:4000}
-      fail-open: ${RERANK_FAIL_OPEN:true}
-      max-attempts: ${RERANK_MAX_ATTEMPTS:2}
-      initial-backoff: ${RERANK_INITIAL_BACKOFF:200ms}
-      circuit-failure-threshold: ${RERANK_CIRCUIT_FAILURE_THRESHOLD:5}
-      circuit-open-duration: ${RERANK_CIRCUIT_OPEN_DURATION:30s}
+      enabled: true
+      base-url: https://api.siliconflow.cn/v1/rerank
+      api-key: "sk-wwokpnbclbfyifeaouihjuakunwjhdjzhvpyyalvvztvjkdm"
+      model-name: BAAI/bge-reranker-v2-m3
+      timeout: 5s
+      max-candidates: 20
+      max-document-chars: 4000
+      fail-open: true
+      max-attempts: 2
+      initial-backoff: 200ms
+      circuit-failure-threshold: 5
+      circuit-open-duration: 30s
     health:
-      es-latency-threshold-ms: ${RAG_ES_LATENCY_THRESHOLD_MS:100}
-      milvus-latency-threshold-ms: ${RAG_MILVUS_LATENCY_THRESHOLD_MS:50}
-      rag-latency-threshold-ms: ${RAG_TOTAL_LATENCY_THRESHOLD_MS:2000}
+      es-latency-threshold-ms: 100
+      milvus-latency-threshold-ms: 50
+      rag-latency-threshold-ms: 2000
     benchmark:
-      dataset-path: ${RAG_BENCHMARK_DATASET_PATH:./config/rag-golden-dataset.json}
-      minimum-cases: ${RAG_BENCHMARK_MINIMUM_CASES:30}
-      maximum-cases: ${RAG_BENCHMARK_MAXIMUM_CASES:200}
+      dataset-path: ./config/rag-golden-dataset.json
+      minimum-cases: 30
+      maximum-cases: 200
     elasticsearch:
-      base-url: ${RAG_ELASTICSEARCH_BASE_URL:http://localhost:9200}
-      index-name: ${RAG_ELASTICSEARCH_INDEX:data-agent-rag-v2}
-      username: ${RAG_ELASTICSEARCH_USERNAME:}
-      password: ${RAG_ELASTICSEARCH_PASSWORD:}
-      connect-timeout: ${RAG_ELASTICSEARCH_CONNECT_TIMEOUT:2s}
-      request-timeout: ${RAG_ELASTICSEARCH_REQUEST_TIMEOUT:5s}
+      base-url: http://localhost:9200
+      index-name: data-agent-rag-v2
+      username: ""
+      password: ""
+      connect-timeout: 2s
+      request-timeout: 5s
   memory:
-    model-compression-enabled: ${MEMORY_MODEL_COMPRESSION_ENABLED:false}
-    retention-batch-size: ${MEMORY_RETENTION_BATCH_SIZE:200}
-    short-term-retention-days: ${MEMORY_SHORT_TERM_RETENTION_DAYS:30}
-    max-memories-per-user: ${MEMORY_MAX_MEMORIES_PER_USER:500}
-    retention-cron: ${MEMORY_RETENTION_CRON:0 15 3 * * *}
-    decay-cron: ${MEMORY_DECAY_CRON:0 0 3 * * *}
-    promotion-access-count-threshold: ${MEMORY_PROMOTION_ACCESS_COUNT_THRESHOLD:3}
-    promotion-decay-weight-threshold: ${MEMORY_PROMOTION_DECAY_WEIGHT_THRESHOLD:0.8}
-    short-term-delete-threshold: ${MEMORY_SHORT_TERM_DELETE_THRESHOLD:0.1}
-    long-term-decay-after-days: ${MEMORY_LONG_TERM_DECAY_AFTER_DAYS:90}
-    short-term-decay-rate: ${MEMORY_SHORT_TERM_DECAY_RATE:0.95}
-    long-term-decay-rate: ${MEMORY_LONG_TERM_DECAY_RATE:0.99}
-  agent-feedback:
-    insight:
-      healthy-recommendation: 当前负向反馈样本较少，先持续观察趋势，无需立即调整主流程。
-      high-negative-recommendation: 负向反馈较多，建议优先复盘最近失败样本的执行轨迹，定位高频工具或检索问题。
-      other-recommendation: 人工抽检未命中规则的样本，补充新的分类规则或优化反馈备注采集。
-      analyze-sample-limit: ${AGENT_FEEDBACK_ANALYZE_SAMPLE_LIMIT:100}
-      issue-sample-limit: ${AGENT_FEEDBACK_ISSUE_SAMPLE_LIMIT:3}
-      issue-rules:
-        - type: ACCURACY
-          name: 答案准确性
-          recommendation: 优先复盘负向样本的事实依据和计算过程，强化答案校验与引用约束。
-          keywords: [不准确, 错误, 错了, 算错, 幻觉, 不对, 胡说]
-        - type: RAG_GAP
-          name: 知识或引用缺口
-          recommendation: 检查知识库覆盖范围、分块质量和检索阈值，必要时补充文档或下调最小相似度。
-          keywords: [没找到, 找不到, 知识库, 资料, 引用, 来源, 文档, 上下文]
-        - type: TOOL_FAILURE
-          name: 工具或数据源失败
-          recommendation: 优先查看执行追踪中的工具调用结果，补齐 SQL、图表和数据源异常的恢复策略。
-          keywords: [报错, 失败, 异常, sql, 数据库, 工具, 图表失败, 图表异常, 计算失败]
-        - type: COMPLETENESS
-          name: 回答完整性不足
-          recommendation: 优化提示词中的输出结构要求，要求 Agent 明确结论、依据、限制和下一步建议。
-          keywords: [不完整, 太少, 漏了, 没有分析, 没说清, 不详细, 缺少]
-        - type: EXPERIENCE
-          name: 交互体验问题
-          recommendation: 检查流式输出、格式化和响应耗时，减少冗余内容并保持答案结构稳定。
-          keywords: [太慢, 卡, 格式, 看不懂, 啰嗦, 重复, 体验]
-
+    model-compression-enabled: false
+    semantic-extraction-enabled: true
+    semantic-extraction-min-confidence: 0.85
+    retention-batch-size: 200
+    short-term-retention-days: 30
+    max-memories-per-user: 500
+    retention-cron: "0 15 3 * * *"
+    decay-cron: "0 0 3 * * *"
+    promotion-access-count-threshold: 3
+    promotion-decay-weight-threshold: 0.8
+    short-term-delete-threshold: 0.1
+    long-term-decay-after-days: 90
+    short-term-decay-rate: 0.95
+    long-term-decay-rate: 0.99
 jwt:
-  secret: ${JWT_SECRET:}
+  secret: ""
   access-token-validity-ms: 7200000
   refresh-token-validity-ms: 604800000
 

@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 @Component
 public class AgentToolInvocationContextFactory {
 
-    public static final Set<String> ORCHESTRATOR_PRECHECK_TOOLS = Set.of(
+    public static final Set<String> PLANNER_PRECHECK_TOOLS = Set.of(
             "searchKnowledge", "listDataSources", "searchMemory");
 
     private final AgentToolRegistry registry;
@@ -34,15 +34,8 @@ public class AgentToolInvocationContextFactory {
         return fromSpecifications(executorId, specifications);
     }
 
-    public AgentToolInvocationContext specialist(String specialistId, List<ToolSpecification> specifications) {
-        String executorId = specialistId == null || specialistId.isBlank()
-                ? "specialist:anonymous"
-                : "specialist:" + specialistId;
-        return fromSpecifications(executorId, specifications);
-    }
-
-    public AgentToolInvocationContext orchestratorPrecheck() {
-        return fromNames("orchestrator:precheck", ORCHESTRATOR_PRECHECK_TOOLS);
+    public AgentToolInvocationContext plannerPrecheck() {
+        return fromNames("react:precheck", PLANNER_PRECHECK_TOOLS);
     }
 
     public AgentToolInvocationContext fromSpecifications(String executorId,

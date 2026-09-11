@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:zym190457}
+    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: zym190457
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -20,16 +20,30 @@ langchain4j:
 
 app:
   embedding:
-    dimension: ${EMBEDDING_DIMENSION:1024}
-    index-version: ${EMBEDDING_INDEX_VERSION:bge-m3-v1}
+    dimension: 1024
+    index-version: bge-m3-v1
     api:
-      base-url: ${EMBEDDING_API_BASE_URL:https://api.siliconflow.cn/v1}
-      model-name: ${EMBEDDING_MODEL_NAME:BAAI/bge-m3}
+      base-url: https://api.siliconflow.cn/v1
+      model-name: BAAI/bge-m3
   cors:
     allowed-origins: http://localhost:5173,http://127.0.0.1:5173
   encryption:
     key: local-development-encryption-key-32chars
+  agent:
+    context:
+      # 本地环境同样保持保守默认：先观察治理证据，再显式打开压缩。
+      compaction:
+        enabled: false
+        model-summary-enabled: false
+    durable:
+      # 本地只开放隔离沙箱写工具，便于直接验收审批与恢复链路。
+      enabled: true
+      sandbox-tool-enabled: true
+      enabled-approval-tools: updateHotelPrice
   security:
+    registration:
+      enabled: true
+      tenant-id: default
     outbound:
       # 本地开发允许连接受信任的私网模型端点；生产环境保持默认 false
       allow-private-network: true

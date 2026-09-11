@@ -26,16 +26,11 @@ public interface AgentExecutionStrategy {
     Result execute(AgentRunContext context, AgentRunRoute route);
 
     /**
-     * 策略返回的响应、可选追踪细节与过程事件状态。
+     * 策略返回的响应与过程事件状态。
      *
      * @param response 分析响应
-     * @param traceDetail 模式专属追踪细节
      * @param processEventsEmitted 是否已经实时发布过程输出
      */
-    record Result(AnalysisResponse response, Object traceDetail, boolean processEventsEmitted) {
-
-        public Result(AnalysisResponse response, boolean processEventsEmitted) {
-            this(response, null, processEventsEmitted);
-        }
+    record Result(AnalysisResponse response, boolean processEventsEmitted) {
     }
 }

@@ -30,6 +30,8 @@ public record MemoryCaptureRequest(
         String content,
         String compressedContent,
         Map<String, Object> metadata,
+        String semanticKey,
+        double confidence,
         List<String> keyEntities,
         List<String> topicTags,
         int importance) {
@@ -50,6 +52,8 @@ public record MemoryCaptureRequest(
                 content,
                 compressedContent,
                 metadata == null ? Map.of() : metadata,
+                semanticKey,
+                Math.max(0D, Math.min(1D, confidence)),
                 keyEntities == null ? List.of() : keyEntities,
                 topicTags == null ? List.of() : topicTags,
                 importance <= 0 ? DEFAULT_IMPORTANCE : importance);

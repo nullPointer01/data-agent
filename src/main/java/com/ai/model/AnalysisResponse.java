@@ -1,5 +1,7 @@
 package com.ai.model;
 
+import com.ai.agent.outcome.AgentOutcomeStatus;
+import com.ai.agent.outcome.AgentOutcomeEvaluation;
 import com.ai.agent.runtime.AgentRunSnapshot;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -25,6 +27,8 @@ public class AnalysisResponse {
     private String executionMode;
     private String runStatus;
     private String terminationReason;
+    private AgentOutcomeStatus outcomeStatus = AgentOutcomeStatus.NOT_EVALUATED;
+    private AgentOutcomeEvaluation outcomeEvaluation;
     private String approvalId;
     private AgentRunSnapshot runUsage;
     private String error;
@@ -134,6 +138,23 @@ public class AnalysisResponse {
 
     public void setTerminationReason(String terminationReason) {
         this.terminationReason = terminationReason;
+    }
+
+    public AgentOutcomeStatus getOutcomeStatus() {
+        return outcomeStatus;
+    }
+
+    public void setOutcomeStatus(AgentOutcomeStatus outcomeStatus) {
+        this.outcomeStatus = outcomeStatus == null ? AgentOutcomeStatus.NOT_EVALUATED : outcomeStatus;
+    }
+
+    public AgentOutcomeEvaluation getOutcomeEvaluation() {
+        return outcomeEvaluation;
+    }
+
+    public void setOutcomeEvaluation(AgentOutcomeEvaluation outcomeEvaluation) {
+        this.outcomeEvaluation = outcomeEvaluation;
+        setOutcomeStatus(outcomeEvaluation == null ? AgentOutcomeStatus.NOT_EVALUATED : outcomeEvaluation.status());
     }
 
     public String getApprovalId() {

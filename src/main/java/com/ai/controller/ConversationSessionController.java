@@ -4,12 +4,16 @@ import com.ai.conversation.dto.SessionCreateResponse;
 import com.ai.conversation.dto.SessionListResponse;
 import com.ai.conversation.dto.SessionMessagesResponse;
 import com.ai.conversation.dto.SessionMutationResponse;
+import com.ai.conversation.dto.SessionRenameRequest;
 import com.ai.security.SecurityContextHelper;
 import com.ai.service.SessionManager;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,6 +29,7 @@ import java.util.List;
 public class ConversationSessionController {
 
     private static final String DESTROYED_MESSAGE = "会话已销毁";
+    private static final String RENAMED_MESSAGE = "会话已重命名";
 
     private final SessionManager sessionManager;
     private final SecurityContextHelper securityContextHelper;
@@ -43,6 +48,20 @@ public class ConversationSessionController {
     public SessionMutationResponse destroySession(@PathVariable String sessionId) {
         sessionManager.destroySession(sessionId);
         return new SessionMutationResponse(true, DESTROYED_MESSAGE);
+    }
+
+    /**
+     * 修改当前用户拥有的会话标题。
+     *
+     * @param sessionId 会话编号
+     * @param request 重命名请求
+     * @return 修改结果
+     */
+    @PutMapping("/session/{sessionId}/title")
+    public SessionMutationResponse renameSession(@PathVariable String sessionId,
+            @Valid @RequestBody SessionRenameRequest request) {
+        sessionManager.renameSession(sessionId, request.title());
+        return new SessionMutationResponse(true, RENAMED_MESSAGE);
     }
 
     @GetMapping("/sessions")

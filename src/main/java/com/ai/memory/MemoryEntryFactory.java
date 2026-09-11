@@ -46,6 +46,8 @@ public class MemoryEntryFactory {
         entry.setSourceContentLength(textLength(normalized.content()));
         entry.setStoredContentLength(textLength(normalized.effectiveContent()));
         entry.setMetadataJson(memoryJsonCodec.toJson(normalized.metadata()));
+        entry.setSemanticKey(normalized.semanticKey());
+        entry.setConfidence(normalized.confidence());
         entry.setKeyEntitiesJson(memoryJsonCodec.toJson(normalized.keyEntities()));
         entry.setTopicTagsJson(memoryJsonCodec.toJson(normalized.topicTags()));
         entry.setRelevanceScore(scoreImportance(normalized.importance()));

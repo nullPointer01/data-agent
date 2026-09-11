@@ -52,7 +52,8 @@ public class DataAnalysisAgentImpl implements DataAnalysisAgent {
             return AnalysisResponse.fail(EMPTY_FILE_MESSAGE);
         }
 
-        return agentRuntimeService.execute(new AgentExecutionContext(request, session, fileContent));
+        return agentRuntimeService.execute(new AgentExecutionContext(
+                request, session, fileContent, AgentRunOrigin.INTERACTIVE));
     }
 
     @Override
@@ -71,7 +72,8 @@ public class DataAnalysisAgentImpl implements DataAnalysisAgent {
             return AnalysisResponse.fail(EMPTY_FILE_MESSAGE);
         }
 
-        return agentRuntimeService.executeStreaming(new AgentExecutionContext(request, session, fileContent), eventSink);
+        return agentRuntimeService.executeStreaming(new AgentExecutionContext(
+                request, session, fileContent, AgentRunOrigin.INTERACTIVE), eventSink);
     }
 
     private ConversationSession resolveSession(AnalysisRequest request) {

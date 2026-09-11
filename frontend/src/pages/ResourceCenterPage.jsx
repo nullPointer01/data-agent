@@ -122,6 +122,10 @@ export function ResourceCenterPage({ api, toast }) {
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => assets, [assets]);
+  const relevanceMetric = (probe.quality?.metrics || []).find((metric) => metric.key === 'RELEVANCE');
+  const relevanceHint = probe.quality?.expectedKeywordCount > 0
+    ? `${probe.quality.matchedKeywordCount || 0}/${probe.quality.expectedKeywordCount} 标注关键词`
+    : relevanceMetric?.detail || '暂无相关性证据';
 
   const uploadFile = async (event) => {
     const file = event.target.files?.[0];
@@ -293,14 +297,14 @@ export function ResourceCenterPage({ api, toast }) {
             <div className="rag-quality-head">
               <div>
                 <strong>质量评估</strong>
-                <p>基于关键词覆盖、引用完整性、混合召回和链路延迟自动评估本次检索。</p>
+                <p>基于标注关键词或向量相关性、引用完整性、混合召回和链路延迟评估本次检索。</p>
               </div>
               <Badge tone={probe.quality.passed ? 'green' : 'amber'}>
                 {probe.quality.passed ? '通过' : '待优化'} {percentText(probe.quality.overallScore)}
               </Badge>
             </div>
             <div className="quality-metrics-grid">
-              <QualityMetric label="相关性" value={probe.quality.relevanceScore} hint={`${probe.quality.matchedKeywordCount || 0}/${probe.quality.expectedKeywordCount || 0} 关键词`} />
+              <QualityMetric label="相关性" value={probe.quality.relevanceScore} hint={relevanceHint} />
               <QualityMetric label="引用准确率" value={probe.quality.citationAccuracy} hint={`${probe.quality.validCitationCount || 0}/${probe.quality.citationCount || 0} 引用`} />
               <QualityMetric label="混合召回" value={probe.quality.hybridCoverage} hint="向量 + 全文" />
               <QualityMetric label="延迟健康度" value={probe.quality.latencyScore} hint={`${probe.rag.trace?.totalTimeMs || 0} ms`} />

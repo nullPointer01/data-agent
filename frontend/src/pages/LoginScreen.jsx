@@ -14,7 +14,9 @@ export function LoginScreen({ api, onAuth, notice, setNotice }) {
         : '/api/v1/auth/register';
     const payload = mode === 'login'
       ? { username: form.username, password: form.password }
-      : { username: form.username, password: form.password, nickname: form.nickname, email: form.email, tenantId: form.tenantId };
+      : mode === 'bootstrap'
+        ? { username: form.username, password: form.password, nickname: form.nickname, email: form.email, tenantId: form.tenantId }
+        : { username: form.username, password: form.password, nickname: form.nickname, email: form.email };
     const res = await api.post(endpoint, payload);
     if (res.success && res.data) {
       onAuth(res.data);
@@ -29,8 +31,8 @@ export function LoginScreen({ api, onAuth, notice, setNotice }) {
         <div className="login-brand">
           <div className="brand-mark"><Brain size={20} /></div>
           <div>
-            <div className="login-title">Data Agent</div>
-            <div className="login-subtitle">企业级数据分析智能体</div>
+            <div className="login-title">My Agent</div>
+            <div className="login-subtitle">可配置的个人 Agent Runtime</div>
           </div>
         </div>
         <div className="tabs">
@@ -45,9 +47,9 @@ export function LoginScreen({ api, onAuth, notice, setNotice }) {
             <>
               <input className="input" placeholder="昵称" value={form.nickname} onChange={(event) => setForm({ ...form, nickname: event.target.value })} />
               <input className="input" placeholder="邮箱，可选" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              <input className="input" placeholder="租户 ID，可选" value={form.tenantId} onChange={(event) => setForm({ ...form, tenantId: event.target.value })} />
             </>
           )}
+          {mode === 'bootstrap' && <input className="input" placeholder="租户 ID，可选" value={form.tenantId} onChange={(event) => setForm({ ...form, tenantId: event.target.value })} />}
           {mode === 'bootstrap' && <div className="login-hint">仅系统没有任何管理员时可用；已有管理员后会自动拒绝。</div>}
           <button className="btn primary" type="submit">{mode === 'login' ? '登录' : mode === 'bootstrap' ? '创建首个管理员' : '创建普通账号'}</button>
           {notice && <div className="login-notice">{notice}</div>}

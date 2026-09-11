@@ -1,6 +1,7 @@
 package com.ai.agent.runtime;
 
 import com.ai.agent.AgentExecutionContext;
+import com.ai.agent.outcome.AgentTaskContract;
 import com.ai.agent.runtime.event.AgentEventSink;
 import com.ai.agent.tool.governance.AgentToolAuthorizationSnapshot;
 import com.ai.agent.tool.governance.AgentToolExecutionJournal;
@@ -19,6 +20,7 @@ import com.ai.agent.tool.governance.AgentToolExecutionJournal;
  * @param eventSink 统一事件接收端
  * @param toolAuthorization 工具权限快照
  * @param toolJournal 有界工具执行 Journal
+ * @param taskContract 创建 Run 时固化的可选任务合同
  * @author data-agent
  */
 public record AgentRunContext(
@@ -32,7 +34,28 @@ public record AgentRunContext(
         AgentRunControl control,
         AgentEventSink eventSink,
         AgentToolAuthorizationSnapshot toolAuthorization,
-        AgentToolExecutionJournal toolJournal) {
+        AgentToolExecutionJournal toolJournal,
+        AgentTaskContract taskContract) {
+
+    /**
+     * 从准备完成的执行上下文捕获任务合同，兼容现有 Run 构造调用。
+     */
+    public AgentRunContext(String runId,
+            String tenantId,
+            String userId,
+            String sessionId,
+            String agentId,
+            AgentExecutionMode mode,
+            AgentExecutionContext executionContext,
+            AgentRunControl control,
+            AgentEventSink eventSink,
+            AgentToolAuthorizationSnapshot toolAuthorization,
+            AgentToolExecutionJournal toolJournal) {
+        this(runId, tenantId, userId, sessionId, agentId, mode, executionContext, control, eventSink,
+                toolAuthorization, toolJournal,
+                executionContext == null || executionContext.getRequest() == null
+                        ? null : executionContext.getRequest().getTaskContract());
+    }
 
     public AgentRunContext {
         if (runId == null || runId.isBlank()) {

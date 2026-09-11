@@ -4,8 +4,6 @@ import com.ai.agent.dto.AgentProfileListResponse;
 import com.ai.agent.dto.AgentProfileMutationResponse;
 import com.ai.agent.dto.AgentProfileRequest;
 import com.ai.agent.dto.AgentProfileResponse;
-import com.ai.agent.dto.AgentTestRequest;
-import com.ai.model.AnalysisResponse;
 import com.ai.service.AgentProfileService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +42,14 @@ public class CustomAgentController {
     }
 
     /**
+     * 获取当前用户的默认个人 Agent，首次访问时自动创建。
+     */
+    @GetMapping("/default")
+    public AgentProfileResponse defaultAgent() {
+        return agentProfileService.getOrCreateMyDefaultAgent();
+    }
+
+    /**
      * 查询当前用户自定义 Agent 详情。
      *
      * @param agentId Agent 编号
@@ -79,6 +85,14 @@ public class CustomAgentController {
     }
 
     /**
+     * 将指定配置设为当前用户的默认 Agent。
+     */
+    @PutMapping("/{agentId}/default")
+    public AgentProfileResponse setDefault(@PathVariable String agentId) {
+        return agentProfileService.setMyDefaultAgent(agentId);
+    }
+
+    /**
      * 启用或停用当前用户自定义 Agent。
      *
      * @param agentId Agent 编号
@@ -87,18 +101,6 @@ public class CustomAgentController {
     @PutMapping("/{agentId}/enabled")
     public AgentProfileMutationResponse toggle(@PathVariable String agentId) {
         return agentProfileService.toggleMyAgent(agentId);
-    }
-
-    /**
-     * 试运行当前用户自定义 Agent。
-     *
-     * @param agentId Agent 编号
-     * @param request 试运行请求
-     * @return Agent 执行结果
-     */
-    @PostMapping("/{agentId}/test")
-    public AnalysisResponse test(@PathVariable String agentId, @RequestBody AgentTestRequest request) {
-        return agentProfileService.testMyAgent(agentId, request);
     }
 
     /**
