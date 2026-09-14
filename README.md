@@ -180,7 +180,6 @@ app:
 - 统计
 - 质量
 - 执行追踪
-- 反馈
 - 审计
 
 前端构建：
@@ -203,7 +202,6 @@ com.ai.security.auth    登录、JWT、SecurityFilterChain
 com.ai.security.rbac    角色和权限管理
 com.ai.agent            Agent 主流程
 com.ai.agent.react      ReAct 循环
-com.ai.agent.orchestrator ReAct 执行计划与并行预检
 com.ai.agent.runtime     统一 Run、路由与执行策略
 com.ai.agent.tool       Agent 工具
 com.ai.skill            动态技能
@@ -214,6 +212,8 @@ com.ai.vector           Embedding 与 Milvus
 com.ai.service          应用服务
 com.ai.repository       JPA Repository
 ```
+
+`examples/graph-agent` 是不参与应用构建的状态图教学示例，不属于生产运行时。
 
 ## Agent Run Harness
 
@@ -366,7 +366,6 @@ MEMORY_MODEL_COMPRESSION_ENABLED=false
 
 - 修复旧库中缺失的用户 token 配额字段
 - 初始化 RBAC 角色和权限
-- 迁移旧 `sys_user_roles` 到 `sys_user_role`
 - 给 `BOOTSTRAP_ADMIN_USERS` 指定用户补管理员角色
 - 初始化默认模型
 - 初始化默认技能

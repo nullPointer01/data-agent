@@ -8,7 +8,6 @@ import { AuditPage } from './pages/AuditPage.jsx';
 import { AgentEvalPage } from './pages/AgentEvalPage.jsx';
 import { ChatPage } from './pages/ChatPage.jsx';
 import { ExpertsPage } from './pages/ExpertsPage.jsx';
-import { FilesPage } from './pages/FilesPage.jsx';
 import { KnowledgePage } from './pages/KnowledgePage.jsx';
 import { LoginScreen } from './pages/LoginScreen.jsx';
 import { MemoryPage } from './pages/MemoryPage.jsx';
@@ -161,7 +160,6 @@ export default function App() {
             {page === 'experts' && <ExpertsPage api={api} toast={toast} />}
             {page === 'memory' && <MemoryPage api={api} toast={toast} />}
             {page === 'knowledge' && <KnowledgePage api={api} toast={toast} />}
-            {page === 'files' && <FilesPage api={api} toast={toast} />}
             {page === 'users' && admin && <UsersPage api={api} toast={toast} />}
             {page === 'roles' && admin && <RolesPage api={api} toast={toast} />}
             {page === 'models' && admin && <ModelsPage api={api} toast={toast} />}

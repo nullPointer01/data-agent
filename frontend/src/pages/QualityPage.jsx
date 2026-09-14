@@ -53,7 +53,6 @@ function levelText(level) {
 
 export function QualityPage({ api, toast }) {
   const [dashboard, setDashboard] = useState({});
-  const [reasoningHealth, setReasoningHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState('200');
 
@@ -61,14 +60,11 @@ export function QualityPage({ api, toast }) {
     setLoading(true);
     try {
       const response = await api.get(`/api/v1/agent-quality/dashboard?limit=${encodeURIComponent(limit)}`);
-      const health = await api.get(`/api/v1/agent-quality/reasoning-health?limit=${encodeURIComponent(limit)}`)
-        .catch(() => null);
       if (response.success === false) {
         toast?.(response.message || '质量看板加载失败', 'error');
         return;
       }
       setDashboard(response);
-      setReasoningHealth(health);
     } catch (error) {
       toast?.(error.message || '质量看板加载失败', 'error');
     } finally {
@@ -211,7 +207,6 @@ export function QualityPage({ api, toast }) {
         <Metric label="回退率" value={percent(dashboard.fallbackRate)} hint="越低越稳定" />
         <Metric label="平均耗时" value={`${dashboard.averageDurationMs || 0} ms`} hint="最近样本平均值" />
       </div>
-      {reasoningHealth && <ReasoningHealthPanel health={reasoningHealth} />}
       <section className="grid grid-2 chart-grid quality-trend-section">
         <div className="card quality-trend-card">
           <div className="section-title">质量趋势</div>
@@ -292,84 +287,6 @@ export function QualityPage({ api, toast }) {
       ]} rows={agentStats} rowKey="agentKey" />
     </>
   );
-}
-
-function ReasoningHealthPanel({ health }) {
-  const checks = Array.isArray(health.acceptanceChecks) ? health.acceptanceChecks : [];
-  const statusTone = health.accepted ? 'green' : health.healthy ? 'amber' : 'red';
-  return (
-    <section className="rag-health-panel reasoning-health-panel">
-      <div className="rag-health-head">
-        <div>
-          <strong>增强推理验收</strong>
-          <p>{health.accepted ? 'Phase 3 推理能力验收已通过。' : '仍有推理能力需要真实执行样本或配置确认。'}</p>
-        </div>
-        <div className="toolbar">
-          <Badge tone={statusTone}>{health.accepted ? '已验收' : health.healthy ? '待样本' : '有失败项'}</Badge>
-          <Badge tone={health.fastPathEnabled ? 'green' : 'red'}>快速路径</Badge>
-          <Badge tone={health.planningEnabled ? 'green' : 'red'}>规划</Badge>
-          <Badge tone={health.reflectionEnabled ? 'green' : 'red'}>反思</Badge>
-        </div>
-      </div>
-      <div className="trace-metrics-grid">
-        <ReasoningMetric label="轨迹样本" value={health.sampleSize || 0} hint="最近样本" />
-        <ReasoningMetric label="简单样本" value={health.simpleSampleSize || 0} hint={`${health.averageSimpleDurationMs || 0} ms`} />
-        <ReasoningMetric label="复杂样本" value={health.complexSampleSize || 0} hint={`${health.averageComplexDurationMs || 0} ms`} />
-        <ReasoningMetric label="恢复样本" value={`${health.retryRecoveredCount || 0}/${health.retryCandidateCount || 0}`} hint={percent(health.retryRecoveryRate)} />
-        <ReasoningMetric label="并行预检" value={health.parallelPrecheckEnabled ? '启用' : '关闭'} hint="配置状态" />
-        <ReasoningMetric label="工作记忆" value={health.workingMemoryEnabled ? '启用' : '关闭'} hint="配置状态" />
-      </div>
-      <div className="rag-check-grid">
-        {checks.map((check) => (
-          <div className={`rag-check ${reasoningCheckClass(check.status)}`} key={check.key}>
-            <Badge tone={reasoningStatusTone(check.status)}>{reasoningStatusText(check.status)}</Badge>
-            <strong>{check.name}</strong>
-            <span>{check.detail}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ReasoningMetric({ label, value, hint }) {
-  return (
-    <div className="trace-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{hint}</small>
-    </div>
-  );
-}
-
-function reasoningCheckClass(status) {
-  if (status === 'PASSED') {
-    return 'passed';
-  }
-  if (status === 'FAILED') {
-    return 'failed';
-  }
-  return 'pending';
-}
-
-function reasoningStatusTone(status) {
-  if (status === 'PASSED') {
-    return 'green';
-  }
-  if (status === 'FAILED') {
-    return 'red';
-  }
-  return 'amber';
-}
-
-function reasoningStatusText(status) {
-  if (status === 'PASSED') {
-    return '通过';
-  }
-  if (status === 'FAILED') {
-    return '失败';
-  }
-  return '待验收';
 }
 
 function QualityAttribution({ item }) {

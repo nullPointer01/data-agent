@@ -145,7 +145,7 @@ RESUMING -> WAITING_APPROVAL | COMPLETED | FAILED | CANCELLED | TIMED_OUT | BUDG
 
 模型和工具网关通过 `AgentRunScope` 获取当前 Run。模型调用在业务调用边界消耗一次名额，SDK 内部重试不会重复扣业务额度；返回后优先结算厂商 TokenUsage，缺失时使用 `TokenMonitor` 估算。Token 在响应返回后才能准确结算，因此单次在途请求可能产生 overshoot，但越界后不会再准入新模型或工具调用。
 
-并行预检和子 Agent 委派线程通过 `ContextPropagatingTaskDecorator` 继承同一个 Run Context，各任务竞争共享原子预算；线程任务结束后恢复原上下文，避免线程池复用造成串 Run。
+子 Agent 委派线程通过 `ContextPropagatingTaskDecorator` 继承同一个 Run Context，各任务竞争共享原子预算；线程任务结束后恢复原上下文，避免线程池复用造成串 Run。
 
 工具预算统计的是实际进入工具实现的尝试次数，而不是模型提出工具调用的次数。未知工具、参数非法、无权限和风险策略拒绝都发生在预算前；一次允许重试的逻辑调用可能消耗多个工具预算，但始终共享同一个 `toolCallId`。
 
@@ -214,7 +214,8 @@ Profile 的唯一组合字段是 `capability_bindings`：显式 `[]` 表示用�
 
 当前已实现组合式个人 Agent、三层受限委派、MySQL Checkpoint/Resume、单级人工审批和数据库恢复租约，但没有通用图引擎、任意 DAG、跨 Run 消息总线、多级会签、事件 replay 或跨系统 exactly-once。个人 Orchestrated 只开放 Profile 显式绑定的子 Agent，不等同于把租户全部专家开放给模型。内置 `updateHotelPrice` 只操作隔离沙箱，以 `approvalId + toolCallId` 数据库唯一键证明本地去重；真实支付、发布、发消息或业务写入仍需把幂等键传给下游，并提供对账与补偿。timeout 和租约都是协作式边界，不能强制终止忽略线程中断的 JDBC/HTTP 请求。组合运行链路目前完成静态验证，真实模型的父子委派、预算共享和取消行为仍需后端重启后的运行证据。
 
-项目不再维护旧 `OrchestratorAgent`、系统专家注册表或专家适配器。顶层 Orchestrated 模式只由配置化 Agent
-在能力快照内通过 `delegateToAgent` 受控委派；`com.ai.agent.orchestrator` 中保留的类只服务于 ReAct 内部执行计划与并行预检。
+项目不再维护旧 `OrchestratorAgent`、系统专家注册表、专家适配器、关键词复杂度分类或并行预检。
+顶层 Orchestrated 模式只由配置化 Agent 在能力快照内通过 `delegateToAgent` 受控委派；请求级资源和模式选择统一由
+`PersonalAgentRequestPlanner` 完成。
 
 面试或验收按 [Agent Harness 求职演示手册](../interview/AGENT_HARNESS_DEMO.md) 执行，未产生真实 Run 证据的步骤只能标记为未验证。

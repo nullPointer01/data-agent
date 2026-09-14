@@ -51,15 +51,6 @@ public class AsyncConfig {
         return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "sse-", taskDecorator);
     }
 
-    @Bean(name = "agentTaskExecutor")
-    public Executor agentTaskExecutor(
-            @Value("${app.agent-task.core-pool-size:2}") int corePoolSize,
-            @Value("${app.agent-task.max-pool-size:6}") int maxPoolSize,
-            @Value("${app.agent-task.queue-capacity:100}") int queueCapacity,
-            TaskDecorator taskDecorator) {
-        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-task-", taskDecorator);
-    }
-
     @Bean(name = "memoryExtractionExecutor")
     public Executor memoryExtractionExecutor(TaskDecorator taskDecorator) {
         return buildExecutor(1, 2, 100, "memory-extraction-", taskDecorator);

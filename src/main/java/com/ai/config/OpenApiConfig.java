@@ -43,12 +43,4 @@ public class OpenApiConfig {
                 .build();
     }
 
-    @Bean
-    public GroupedOpenApi legacyApi() {
-        return GroupedOpenApi.builder()
-                .group("legacy")
-                .pathsToMatch("/api/**", "/agent/**")
-                .pathsToExclude("/api/v1/**")
-                .build();
-    }
 }

@@ -33,14 +33,10 @@ public class ReActStreamEventWriter {
     private static final String KEY_RETRIEVAL_AVAILABLE = "retrievalAvailable";
     private static final String KEY_SESSION_ID = "sessionId";
     private static final String KEY_TRACE_ID = "traceId";
-    private static final String KEY_TITLE = "title";
     private static final String TYPE_RAG_CONTEXT = "rag_context";
     private static final String TYPE_THINKING_START = "thinking_start";
     private static final String TYPE_TOKEN = "token";
     private static final String TYPE_REFLECTION = "reflection";
-    private static final String TYPE_EXECUTION_PLAN = "execution_plan";
-    private static final String TYPE_PARALLEL_PRECHECK = "parallel_precheck";
-    private static final String TYPE_ORCHESTRATION = "orchestration";
     private static final String TYPE_DONE = "done";
     private static final String TYPE_ERROR = "error";
     private static final String EMPTY_VALUE = "";
@@ -49,27 +45,6 @@ public class ReActStreamEventWriter {
 
     public ReActStreamEventWriter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-    }
-
-    /**
-     * 发送 RAG 上下文通知。
-     *
-     * @param emitter 事件消费者
-     * @param hitCount 命中的上下文数量
-     */
-    public void emitRagContext(Consumer<String> emitter, int hitCount) {
-        emitRagContext(emitter, hitCount, List.of());
-    }
-
-    /**
-     * 发送包含引用的 RAG 上下文通知。
-     *
-     * @param emitter 事件消费者
-     * @param hitCount 命中的上下文数量
-     * @param citations 命中的引用
-     */
-    public void emitRagContext(Consumer<String> emitter, int hitCount, List<RagCitation> citations) {
-        emitRagContext(emitter, hitCount, citations, true);
     }
 
     /**
@@ -121,56 +96,6 @@ public class ReActStreamEventWriter {
     public void emitReflection(Consumer<String> emitter, String content) {
         emitProcess(emitter, AgentEventType.REFLECTION,
                 Map.of(KEY_TYPE, TYPE_REFLECTION, KEY_CONTENT, content == null ? EMPTY_VALUE : content));
-    }
-
-    /**
-     * 发送增强推理执行计划事件。
-     *
-     * @param emitter 事件消费者
-     * @param content 执行计划内容
-     */
-    public void emitExecutionPlan(Consumer<String> emitter, String content) {
-        emitProcess(emitter, AgentEventType.EXECUTION_PLAN, Map.of(
-                KEY_TYPE, TYPE_EXECUTION_PLAN,
-                KEY_TITLE, "执行计划",
-                KEY_CONTENT, content == null ? EMPTY_VALUE : content));
-    }
-
-    /**
-     * 发送并行预检结果事件。
-     *
-     * @param emitter 事件消费者
-     * @param content 并行预检内容
-     */
-    public void emitParallelPrecheck(Consumer<String> emitter, String content) {
-        emitProcess(emitter, AgentEventType.PARALLEL_PRECHECK, Map.of(
-                KEY_TYPE, TYPE_PARALLEL_PRECHECK,
-                KEY_TITLE, "并行预检",
-                KEY_CONTENT, content == null ? EMPTY_VALUE : content));
-    }
-
-    /**
-     * 发送编排轨迹事件。
-     *
-     * @param emitter 事件消费者
-     * @param title 轨迹标题
-     * @param content 轨迹内容
-     */
-    public void emitOrchestration(Consumer<String> emitter, String title, String content) {
-        emitProcess(emitter, AgentEventType.ORCHESTRATION, Map.of(
-                KEY_TYPE, TYPE_ORCHESTRATION,
-                KEY_TITLE, title == null ? EMPTY_VALUE : title,
-                KEY_CONTENT, content == null ? EMPTY_VALUE : content));
-    }
-
-    /**
-     * 发送流式结束事件。
-     *
-     * @param emitter 事件消费者
-     * @param sessionId 会话 ID
-     */
-    public void emitDone(Consumer<String> emitter, String sessionId) {
-        emitDone(emitter, sessionId, null);
     }
 
     /**

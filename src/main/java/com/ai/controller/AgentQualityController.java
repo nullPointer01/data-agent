@@ -1,9 +1,7 @@
 package com.ai.controller;
 
 import com.ai.agent.dto.AgentQualityDashboardResponse;
-import com.ai.agent.dto.AgentReasoningHealthResponse;
 import com.ai.service.AgentQualityService;
-import com.ai.service.AgentReasoningHealthService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,12 +20,9 @@ public class AgentQualityController {
     private static final int DEFAULT_LIMIT = 200;
 
     private final AgentQualityService agentQualityService;
-    private final AgentReasoningHealthService reasoningHealthService;
 
-    public AgentQualityController(AgentQualityService agentQualityService,
-            AgentReasoningHealthService reasoningHealthService) {
+    public AgentQualityController(AgentQualityService agentQualityService) {
         this.agentQualityService = agentQualityService;
-        this.reasoningHealthService = reasoningHealthService;
     }
 
     /**
@@ -43,16 +38,4 @@ public class AgentQualityController {
         return agentQualityService.getCurrentTenantDashboard(limit);
     }
 
-    /**
-     * 查询当前租户 Agent 增强推理验收状态。
-     *
-     * @param limit 最近执行轨迹样本数量
-     * @return Agent 增强推理健康状态
-     */
-    @GetMapping("/reasoning-health")
-    @PreAuthorize("hasRole('ADMIN')")
-    public AgentReasoningHealthResponse reasoningHealth(
-            @RequestParam(value = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit) {
-        return reasoningHealthService.getCurrentTenantHealth(limit);
-    }
 }

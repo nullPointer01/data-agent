@@ -127,12 +127,6 @@ app:
       max-pool-size: 8
       queue-capacity: 100
     reasoning:
-      # 自主模式：true 绕过分类/快路/规划/预检，直接进 ReAct 循环，决策权全交模型。
-      # 默认开启（模型优先）；设为 false 切回编排式用于对比
-      autonomous-mode: true
-      fast-path-enabled: true
-      planning-enabled: true
-      parallel-precheck-enabled: true
       reflection-enabled: true
       working-memory-enabled: true
   rag:

@@ -15,7 +15,7 @@ Data Agent 是一个数据分析智能体系统，后端基于 Spring Boot 3.2�
 - RAG 检索
 - 长短期记忆
 - 模型配置与 Kimi/OpenAI 兼容接入
-- RBAC、管理员控制台、审计、质量反馈、执行追踪
+- RBAC、管理员控制台、审计、离线评测、质量观测和执行追踪
 
 Maven 工程、前端和 `docker-compose.yml` 都位于仓库根目录。
 
@@ -96,7 +96,6 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 - 统计
 - 质量
 - 追踪
-- 反馈
 - 审计
 
 修改前端后需要跑：
@@ -214,9 +213,12 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 
 个人 Agent 的 Orchestrated 模式通过统一 Capability 和 `delegateToAgent` 完成受控委派，不扫描系统专家，也不维护第二套顶层执行器。父 Agent 只能看到 Profile 显式绑定的子 Agent；子 Agent 使用自己的模型、Prompt 和能力快照，同时共享根 Run 的预算、取消、工具治理和 Trace。
 
-`com.ai.agent.orchestrator` 仅保留 ReAct 内部使用的执行计划和并行预检结构。请求级模式选择由 `PersonalAgentRequestPlanner` 负责，运行推理开关位于 `app.agent.reasoning.*`；预检工具上下文使用 `react:precheck` 标识，不属于顶层 Orchestrated 模式。
+旧的 `ReActAgent`、关键词复杂度分类、Fast Path、预规划和并行预检已经移除。请求级资源和模式选择统一由
+`PersonalAgentRequestPlanner` 完成，实际 ReAct 循环统一由 `ConfigurableAgentExecutor -> ReActLoopRunner` 驱动。
+`app.agent.reasoning.*` 只保留当前循环真实读取的反思和工作记忆开关。
 
-执行轨迹会写入 `agent_execution_trace`，质量和反馈相关数据写入 `agent_feedback` 等表。
+执行轨迹写入 `agent_execution_trace`；质量观测来自运行轨迹，确定性成功标准和回归指标由 Agent Eval 数据集维护。
+`examples/graph-agent` 是独立教学示例，不参与 Spring Boot 主工程编译和运行。
 
 ## Skill 系统
 

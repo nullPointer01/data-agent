@@ -43,13 +43,13 @@
 |---|---|---|
 | 我的 Agent / `chat` | Reference App / 工作台 | 保留为首屏，加入 Run 摘要、时间线和 Harness 状态 |
 | 知识库 / `knowledge` | Reference App / 知识 | 保留，强调它是 Agent 的证据来源 |
-| 文件 / `files` | Reference App / 知识来源 | 一级导航并入“知识”，页面暂时保留为二级入口 |
+| 文件 / `files` | Reference App / 知识来源 | 一级导航并入“知识”，旧独立页面已删除 |
 | 记忆 / `memory` | Reference App / 上下文 | 保留但改为 Agent 上下文语义，后续展示上下文治理证据 |
 | 执行追踪、动作审批 | Control Plane / Runtime | 放在运行治理组，围绕 `runId` 关联 |
-| 统计、质量、反馈 | Control Plane / Observability | 放在质量与观测组；Quality 是线上健康，Agent Eval 是离线回归 |
+| 统计、质量 | Control Plane / Observability | 放在质量与观测组；Quality 是线上健康，Agent Eval 是离线回归 |
 | Agent 模板、模型、技能、数据源、RAG 调试 | Control Plane / Capabilities | 放在能力配置组，避免与用户任务入口平级 |
 | 用户、角色权限、审计 | Control Plane / Governance | 放在访问与治理组 |
-| `OverviewPage` | 无当前路由 | 视为遗留未使用页面，不作为新首页；清理需独立确认引用后执行 |
+| `OverviewPage` | 无当前路由 | 已确认无引用并删除，不再作为产品入口 |
 
 普通用户一级导航目标为 3 项：`我的 Agent`、`知识`、`上下文`。管理员控制台分为 4 个概念组，但保留现有 RBAC 与页面权限，不通过导航隐藏代替服务端授权。
 

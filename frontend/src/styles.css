@@ -1879,131 +1879,6 @@ tr:hover td {
   background: var(--surface);
 }
 
-.task-contract-editor {
-  margin-bottom: 9px;
-  border-bottom: 1px solid var(--border);
-}
-
-.task-contract-toggle {
-  width: 100%;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 2px 8px;
-  border: 0;
-  background: transparent;
-  color: #475569;
-  cursor: pointer;
-  text-align: left;
-}
-
-.task-contract-toggle > span {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.task-contract-toggle strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.task-contract-toggle small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.task-contract-toggle > svg:last-child {
-  transition: transform 180ms ease;
-}
-
-.task-contract-toggle > svg:last-child.open {
-  transform: rotate(180deg);
-}
-
-.task-contract-body {
-  display: grid;
-  gap: 10px;
-  padding: 2px 0 11px;
-}
-
-.task-contract-switch,
-.task-required-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #475569;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.task-contract-switch {
-  justify-self: start;
-}
-
-.task-contract-goal {
-  display: grid;
-  gap: 5px;
-}
-
-.task-contract-goal > span,
-.task-criteria-heading strong {
-  color: #475569;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.task-criteria-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.btn.compact {
-  min-height: 28px;
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
-.task-criteria-list {
-  display: grid;
-}
-
-.task-criterion-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 24px minmax(132px, 0.85fr) minmax(160px, 1.2fr) auto 34px;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-}
-
-.task-criterion-index {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.task-criterion-row .select,
-.task-criterion-row .input {
-  min-width: 0;
-  height: 34px;
-  padding: 6px 8px;
-  font-size: 11px;
-}
-
 .composer-controls {
   margin-bottom: 10px;
 }
@@ -3508,10 +3383,6 @@ tr:hover td {
   font-size: 11px;
 }
 
-.reasoning-health-panel {
-  margin-bottom: 16px;
-}
-
 .rag-quality-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -3977,21 +3848,8 @@ tr:hover td {
 
   .composer-input,
   .form-grid,
-  .capability-option-list,
-  .task-criterion-row {
+  .capability-option-list {
     grid-template-columns: 1fr;
-  }
-
-  .task-criterion-index {
-    display: none;
-  }
-
-  .task-required-check {
-    min-height: 28px;
-  }
-
-  .task-criterion-row .icon-button {
-    justify-self: end;
   }
 
   .field.span-2,

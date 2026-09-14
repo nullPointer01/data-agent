@@ -95,7 +95,7 @@ Query
 - 检索层：Recall@K、MRR/NDCG、引用命中率、各通道召回数和耗时。
 - 生成层：groundedness、答案相关性、引用正确性、无答案时是否拒答。
 
-如实说：项目已有检索 Trace、质量接口和用户反馈，但系统化离线 Golden Dataset 还不完整，这是下一步最优先补的能力。
+如实说：项目已有检索 Trace、质量接口和版本化 Agent Eval 数据集；当前仍缺少足量、人工标注且持续维护的真实 Golden Dataset，不能因为评测框架存在就宣称质量达标。
 
 ### 4.8 Memory 和 RAG 有什么区别？
 
@@ -129,7 +129,7 @@ R：多步工具链稳定性提升。认知是“模型能力差异先用机制�
 
 ### 故事二：补齐 ReAct 流式路径 Trace
 
-S：同步 Orchestrator 有 Trace，但默认流式 ReAct 的 `done` 事件没有 `traceId`，事后无法关联用户反馈和执行过程。
+S：早期同步路径有 Trace，但默认流式 ReAct 的 `done` 事件没有 `traceId`，事后无法关联最终回答和执行过程。
 
 T：让流式 ReAct 也可复现、可审计。
 

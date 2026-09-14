@@ -319,13 +319,6 @@ public class AgentRunCoordinator {
             }
             if ("reflection".equals(type)) {
                 emit(context, AgentEventType.REFLECTION, Map.of("content", content));
-            } else if ("plan".equals(type)) {
-                emit(context, AgentEventType.EXECUTION_PLAN, Map.of("title", "执行计划", "content", content));
-            } else if ("parallel_precheck".equals(type)) {
-                emit(context, AgentEventType.PARALLEL_PRECHECK, Map.of("title", "并行预检", "content", content));
-            } else if ("orchestrator".equals(type) || "orchestrator_task".equals(type)) {
-                String title = "orchestrator".equals(type) ? "编排决策" : "编排任务 " + step.getStep();
-                emit(context, AgentEventType.ORCHESTRATION, Map.of("title", title, "content", content));
             }
         }
     }

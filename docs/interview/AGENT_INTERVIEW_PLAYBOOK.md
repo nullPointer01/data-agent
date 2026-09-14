@@ -109,7 +109,7 @@ LLM 负责推理和决策，工具负责接触真实世界，RAG/Memory 负责�
 
 你能说：
 
-> Agent demo 主要看模型会不会调工具；生产系统更关注工具权限、失败恢复、token 成本、执行轨迹、RAG 质量、上下文污染、prompt injection 和用户反馈闭环。
+> Agent demo 主要看模型会不会调工具；生产系统更关注工具权限、失败恢复、token 成本、执行轨迹、RAG 质量、上下文污染、prompt injection 和可重复评测闭环。
 
 这会显得你不是只会“玩模型”。
 
@@ -186,7 +186,7 @@ LangGraph 关注：长任务、状态图、持久化、Human-in-the-loop、可�
 
 - `AgentExecutionTraceService`
 - `StructuredLogger`
-- `AgentFeedbackService`
+- `AgentEvalService`
 - `AgentQualityService`
 - `RagQualityEvaluationService`
 
@@ -278,7 +278,7 @@ Tool-call Recovery
 
 > 我这个项目叫 Data Agent，是一个企业数据分析 Agent 平台。它解决的问题是：企业内部有知识库、上传文件、数据源和业务指标，用户希望用自然语言直接做分析，而不是自己去找资料、写 SQL 或拼图表。
 >
-> 架构上我分了几层。入口层是 React 控制台和 Spring MVC API；安全层是 JWT、RBAC、管理员初始化和租户隔离；Agent Runtime 层负责路由，请求进来后由 `AgentRuntimeService` 判断走命令、Skill、自定义 Agent、Orchestrator，还是 ReAct 兜底；能力层包括模型网关、RAG、记忆、工具、文件解析、数据源查询和图表生成；最后是可观测层，记录执行轨迹、结构化日志、反馈和审计。
+> 架构上我分了几层。入口层是 React 控制台和 Spring MVC API；安全层是 JWT、RBAC、管理员初始化和租户隔离；Agent Runtime 由 `AgentRunCoordinator` 统一建 Run，再按固化路线走命令、Skill 或配置化 Agent；能力层包括模型网关、RAG、记忆、工具、文件解析、数据源查询和图表生成；最后是可观测与评测层，记录执行轨迹、结构化日志、质量指标、离线评测和审计。
 >
 > Agent 的核心是 ReAct。模型不是直接回答，而是在最多几轮内循环执行“思考、行动、观察”。如果它需要知识，就调用 `searchKnowledge`；需要数据，就调用 `executeSql` 或数据源预览；需要计算，就调用 `calculate`；需要酒店业务指标，就调用我扩展的 `queryHotelOccupancy`。这些工具通过 LangChain4j 的 `@Tool` 注解生成 schema，模型根据 description 选择工具，后端执行后把结果再喂回模型。
 >
@@ -312,7 +312,7 @@ Tool-call Recovery
 
 项目细节：
 
-- `ReActAgent`：组织执行入口。
+- `ConfigurableAgentExecutor`：组装 Profile、上下文和能力快照。
 - `ReActLoopRunner`：循环控制。
 - `ReActStepHandler`：处理单步结果。
 - `AgentToolInvoker`：执行工具。
@@ -475,7 +475,7 @@ query rewrite
 结构：
 
 ```text
-背景：系统有 Orchestrator、分类器、规划器、Fast Path。
+背景：系统早期叠加了 Orchestrator、分类器、规划器和 Fast Path，后来已删除这些重复决策层。
 问题：过度确定性编排会提前替模型做决定，削弱 Agent 自主性。
 思考：企业需要可控，但不该把推理也编排死。
 结论：推理交给模型，动作交给权限/审批/审计。

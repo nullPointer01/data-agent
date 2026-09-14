@@ -69,16 +69,11 @@ Agent 配置不提供旁路试运行；保存并设为默认配置后直接从�
 
 ## 5. Agent 实现细节
 
-### 5.1 ReAct Agent
+### 5.1 ReAct 循环
 
-`ReActAgent` 的核心是让模型不是直接回答，而是按“思考、行动、观察”的模式工作。系统提示词中明确要求：
-
-- 先分析用户意图；
-- 需要数据时调用工具；
-- 需要计算时使用计算工具；
-- 搜索知识时使用 `searchKnowledge` 或 `searchMemory`；
-- 每轮只调用一个工具；
-- 最终回答必须整合工具结果。
+配置化 Agent 由 `ConfigurableAgentExecutor` 准备消息、模型和精确能力白名单，再交给
+`ReActLoopRunner` 执行模型调用、工具 Observation 回填和终止判断。模型可以自主决定是否调用工具，
+但每次实际工具执行仍必须经过 Registry、RBAC、Profile allowlist、风险策略和 Run 预算。
 
 `ReActLoopRunner` 负责真正的循环。它的关键机制：
 
@@ -91,7 +86,7 @@ Agent 配置不提供旁路试运行；保存并设为默认配置后直接从�
 
 面试说法：
 
-> ReAct 的难点不是写一个 prompt，而是要把循环边界、工具解析、异常恢复、流式输出、工作记忆和日志追踪都控制住。我这里把循环本身放在 `ReActLoopRunner`，工具执行放在 `AgentToolInvoker`，请求上下文构建放在 `ReActRequestContextBuilder`，这样每个模块职责比较清楚。
+> ReAct 的难点不是写一个 prompt，而是要把循环边界、工具解析、异常恢复、流式输出、工作记忆和日志追踪都控制住。我这里由 `ConfigurableAgentExecutor` 组装一次请求的上下文和能力快照，`ReActLoopRunner` 负责循环，`AgentToolInvoker` 负责受治理的工具执行。
 
 ### 5.2 工具系统
 
@@ -110,29 +105,23 @@ Agent 可调用的工具集中在 `AgentTools`，再由 `AgentToolInvoker` 注�
 
 > SQL 工具不是让模型随便执行任意 SQL，而是通过数据源服务做约束，设计上只支持查询类操作。面试时我会强调：Agent 工具必须有权限和行为边界，否则模型一旦生成危险指令就会影响真实系统。
 
-### 5.3 Fast Path 和规划
+### 5.3 请求规划
 
-`ReActAgent` 中还有两个优化：
-
-- Fast Path：简单问题可以直接回答，减少不必要的工具循环。
-- Planning / Parallel Precheck：复杂任务先生成执行计划，必要时并行做预检。
-
-这些开关在 `application.yml` 中：
+旧的关键词复杂度分类、Fast Path、预规划和并行预检已经删除。现在只保留一层
+`PersonalAgentRequestPlanner`，它在 Run 创建前固化本次是否需要模型、RAG、记忆、候选工具和执行模式。
+规划只能从 Profile 已绑定能力中收窄，不能扩大权限。ReAct 循环内仍保留两个真实生效的行为开关：
 
 ```yaml
 app:
   agent:
     reasoning:
-      fast-path-enabled: true
-      planning-enabled: true
-      parallel-precheck-enabled: true
       reflection-enabled: true
       working-memory-enabled: true
 ```
 
 讲法：
 
-> 请求规划器先决定本次 Run 需要哪些资源。简单问题走 Chat Fast Path，降低成本和延迟；需要工具时进入 ReAct，只有存在有效子 Agent 绑定的多步骤任务才进入 Orchestrated。模式选择不能扩大 Profile 的能力权限。
+> 请求规划器先决定本次 Run 需要哪些资源。可由本地确定性回答的问题不调用模型；普通回答走 Chat；需要工具时进入 ReAct；只有存在有效子 Agent 绑定的多步骤任务才进入 Orchestrated。模式选择不能扩大 Profile 的能力权限。
 
 ## 6. 多 Agent 编排怎么讲
 
@@ -213,7 +202,7 @@ app:
 - `UserProfileMemoryService`：用户画像记忆；
 - `VectorMemoryService`：把对话、文件、知识、技能、长期记忆写入 Milvus。
 
-请求进入 ReAct 前，`ReActRequestContextBuilder` 会做两类增强：
+请求进入执行器前，`PersonalAgentRequestPlanner` 和 `ConfigurableAgentExecutor` 会按需做两类增强：
 
 - RAG 上下文：企业资料检索结果；
 - Memory 上下文：当前会话和用户相关记忆。
@@ -327,15 +316,14 @@ Agent 工具包括：
 
 ## 13. 可观测性和质量闭环
 
-这个项目的亮点之一是 Agent 不只是“回答完就结束”，而是有追踪和反馈闭环。
+这个项目的亮点之一是 Agent 不只是“回答完就结束”，而是有运行追踪、质量观测和离线评测闭环。
 
 相关模块：
 
 - `StructuredLogger`：结构化日志；
 - `AgentExecutionTraceService`：执行轨迹；
-- `AgentFeedbackService`：用户反馈；
 - `AgentQualityService`：质量看板；
-- `AgentReasoningHealthService`：推理健康；
+- `AgentEvalService`：固定数据集回归评测；
 - `RagHealthService`：RAG 健康；
 - `RagQualityEvaluationService`：RAG 质量评估。
 
@@ -399,13 +387,13 @@ Agent 工具包括：
 
 答：
 
-我把 ReAct 拆成四块：`ReActAgent` 负责组织执行，`ReActLoopRunner` 负责循环，`ReActResponseParser` 负责解析模型输出中的工具调用，`AgentToolInvoker` 负责执行工具。每轮模型输出后，如果检测到工具调用，就执行工具并把 Observation 追加回上下文；如果没有工具调用且是最终回答，就结束。为了避免死循环，我设置了最大迭代次数，并记录每轮结构化日志。
+我把 ReAct 拆成四块：`ConfigurableAgentExecutor` 负责组装 Profile、上下文和能力快照，`ReActLoopRunner` 负责循环，`ReActResponseParser` 负责解析模型工具调用，`AgentToolInvoker` 负责受治理的执行。每轮模型输出后，如果检测到工具调用，就执行工具并把 Observation 追加回上下文；如果得到最终回答就结束。Run Control 统一限制迭代、模型、工具、Token 和超时预算。
 
 ### Q3：RAG 是怎么做的？
 
 答：
 
-RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然后走混合检索：Milvus 做向量召回，全文检索做关键词召回，之后用 RRF 融合、重排、补父级上下文、压缩上下文，并生成引用信息。最后 `ReActRequestContextBuilder` 把检索上下文注入到 Agent prompt 中。
+RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然后走混合检索：Milvus 做向量召回，Elasticsearch 做 BM25，之后用 RRF 融合、重排、补父级上下文、压缩上下文，并生成引用信息。`ConfigurableAgentExecutor` 按请求计划调用检索并把证据注入当前模型消息。
 
 ### Q4：模型怎么支持 Kimi、Qwen、DeepSeek？
 
@@ -423,7 +411,7 @@ RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然
 
 答：
 
-当前项目定位是强依赖向量检索的数据分析平台，所以启动时会检查 Milvus 可用性。运行时向量写入和查询有异常捕获、collection 刷新和重试逻辑。对 RAG 查询来说，如果检索失败，`ReActRequestContextBuilder` 会回退到无上下文模式，并记录告警，保证主流程不会因为一次检索失败直接崩掉。
+当前项目定位是强依赖向量检索的数据分析平台，所以启动时会检查 Milvus 可用性。运行时向量写入和查询有异常捕获、collection 刷新和重试逻辑。对 Agent 内部 RAG 查询来说，如果检索失败，`ConfigurableAgentExecutor` 会显式记录不可用并回退到无知识上下文，保证主流程不会因为一次检索失败直接崩掉。
 
 ### Q7：为什么要做 Orchestrated 模式？
 
@@ -452,7 +440,7 @@ RAG 主流程在 `EnhancedRagPipeline`。用户问题先经过查询分析，然
 >
 > 为了让回答基于真实资料，我做了 RAG 管道：问题先改写，再走 Milvus 向量检索和全文检索，RRF 融合后重排，补父级上下文，压缩后注入 prompt，并生成引用。为了让 Agent 能操作真实数据，我做了工具系统，包括知识搜索、文件分析、SQL 查询、图表生成、计算器等。
 >
-> 模型层不是写死一家供应商，而是抽象成 `ModelConfig`，通过 OpenAI-compatible API 接入 Qwen、DeepSeek、Kimi/Moonshot 等模型。安全上使用 JWT、RBAC、管理员初始化、租户隔离和 SQL 只读策略。可观测性上记录模型调用、ReAct 每轮迭代、工具调用、RAG trace、用户反馈和审计日志。整体目标是让 Agent 不仅能回答，还能可控、可追踪、可治理。
+> 模型层不是写死一家供应商，而是抽象成 `ModelConfig`，通过 OpenAI-compatible API 接入 Qwen、DeepSeek、Kimi/Moonshot 等模型。安全上使用 JWT、RBAC、管理员初始化、租户隔离和 SQL 只读策略。可观测性上记录模型调用、ReAct 每轮迭代、工具调用、RAG trace、运行质量和审计日志，并用固定数据集做 Agent Eval。整体目标是让 Agent 不仅能回答，还能可控、可追踪、可治理。
 
 ## 17. 一分钟极简版
 

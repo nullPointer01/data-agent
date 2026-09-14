@@ -110,9 +110,7 @@ public class ConfigurableAgentExecutor {
                 ? retrieveRagContext(request) : RagContextResponse.empty();
         return switch (mode) {
             case CHAT -> executeChat(profile, request, fileContent, memoryContext, ragContext);
-            case REACT -> executeReAct(
-                    profile, request, fileContent, memoryContext, ragContext, requestPlan);
-            case ORCHESTRATED -> executeReAct(
+            case REACT, ORCHESTRATED -> executeReAct(
                     profile, request, fileContent, memoryContext, ragContext, requestPlan);
         };
     }

@@ -72,12 +72,6 @@ CREATE TABLE IF NOT EXISTS sys_role_permission (
     CONSTRAINT fk_sys_role_permission_permission FOREIGN KEY (permission_code) REFERENCES sys_permission (permission_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色权限关联表';
 
-CREATE TABLE IF NOT EXISTS sys_user_roles (
-    user_id VARCHAR(255) NOT NULL COMMENT '用户ID',
-    role VARCHAR(255) DEFAULT NULL COMMENT '旧角色标识',
-    KEY idx_sys_user_roles_user_id (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='旧用户角色关联表，仅用于旧库迁移';
-
 -- ============================================================
 -- 2. 配置类资源
 -- ============================================================

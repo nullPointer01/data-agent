@@ -76,8 +76,6 @@ public class AgentSseEventWriter {
             case APPROVAL_REQUIRED -> "approval_required";
             case REFLECTION -> "reflection";
             case EXECUTION_PLAN -> "execution_plan";
-            case PARALLEL_PRECHECK -> "parallel_precheck";
-            case ORCHESTRATION -> "orchestration";
             case CONTEXT_GOVERNED -> "context_governed";
             case BUDGET_UPDATED -> "budget_updated";
             case ERROR -> "error";

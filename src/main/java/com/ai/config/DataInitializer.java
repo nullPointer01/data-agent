@@ -36,8 +36,6 @@ public class DataInitializer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DataInitializer.class);
     private static final String TABLE_SYS_USER = "sys_user";
-    private static final String TABLE_SYS_USER_ROLES = "sys_user_roles";
-    private static final String TABLE_SYS_USER_ROLE = "sys_user_role";
     private static final String COLUMN_DAILY_TOKEN_LIMIT = "daily_token_limit";
     private static final String USERNAME_DELIMITER = ",";
     private static final String PERMISSION_ALL = "*:*";
@@ -59,7 +57,6 @@ public class DataInitializer {
         return args -> {
             repairUserTokenQuotaSchema(jdbcTemplate);
             initDefaultRbac(roleRepository, permissionRepository, rolePermissionService);
-            migrateLegacyUserRoles(jdbcTemplate);
             bootstrapAdminUsers(sysUserRepository, rolePermissionService);
             initDefaultSkill(skillConfigRepository, skillManager);
             loadExistingSkills(skillConfigRepository, skillManager);
@@ -145,46 +142,6 @@ public class DataInitializer {
             role.setPermissions(permissions);
             return repository.save(role);
         });
-    }
-
-    private void migrateLegacyUserRoles(JdbcTemplate jdbcTemplate) {
-        try {
-            if (!tableExists(jdbcTemplate, TABLE_SYS_USER_ROLES) || !tableExists(jdbcTemplate, TABLE_SYS_USER_ROLE)) {
-                return;
-            }
-            int migratedRows = jdbcTemplate.update("""
-                    INSERT INTO sys_user_role (user_id, role_code)
-                    SELECT old_roles.user_id, old_roles.role
-                    FROM sys_user_roles old_roles
-                    WHERE old_roles.role IS NOT NULL
-                      AND EXISTS (SELECT 1 FROM sys_role role_table WHERE role_table.role_code = old_roles.role)
-                      AND NOT EXISTS (
-                          SELECT 1 FROM sys_user_role new_roles
-                          WHERE new_roles.user_id = old_roles.user_id
-                            AND new_roles.role_code = old_roles.role
-                      )
-                    """);
-            if (migratedRows > 0) {
-                LOGGER.warn("Migrated {} legacy sys_user_roles rows into sys_user_role", migratedRows);
-            }
-        } catch (Exception e) {
-            LOGGER.warn("Could not migrate legacy sys_user_roles automatically: {}", e.getMessage());
-        }
-    }
-
-    private boolean tableExists(JdbcTemplate jdbcTemplate, String tableName) throws SQLException {
-        if (jdbcTemplate.getDataSource() == null) {
-            return false;
-        }
-        try (Connection connection = jdbcTemplate.getDataSource().getConnection()) {
-            return tableExists(connection, tableName) || tableExists(connection, tableName.toUpperCase());
-        }
-    }
-
-    private boolean tableExists(Connection connection, String tableName) throws SQLException {
-        try (ResultSet tables = connection.getMetaData().getTables(null, null, tableName, null)) {
-            return tables.next();
-        }
     }
 
     private void bootstrapAdminUsers(SysUserRepository userRepository, RolePermissionService rolePermissionService) {
