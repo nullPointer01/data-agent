@@ -4,6 +4,7 @@ import { CapabilityPicker } from '../CapabilityPicker.jsx';
 import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../ui.jsx';
 import { truncate } from '../../utils/format.js';
 
+/** 管理端通用资源页框架：复用列表、搜索、分页、编辑、启停和删除交互。 */
 export function ResourcePage({
   api,
   toast,

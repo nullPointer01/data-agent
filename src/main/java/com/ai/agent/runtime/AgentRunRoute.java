@@ -8,7 +8,7 @@ import com.ai.agent.runtime.planning.RequestExecutionPlan;
  *
  * @param target 路由目标
  * @param mode Agent 执行模式
- * @param profile 配置化路线的 Agent 配置，命令和 Skill 路线为空
+ * @param profile 配置化路线的 Agent 配置
  * @param requestPlan 模型调用前固化的请求执行计划
  * @author data-agent
  */
@@ -28,20 +28,6 @@ public record AgentRunRoute(
         if (target == Target.CONFIGURED_AGENT && profile == null) {
             throw new IllegalArgumentException("配置化 Agent 路线必须包含 AgentProfile");
         }
-        if (target != Target.CONFIGURED_AGENT && profile != null) {
-            throw new IllegalArgumentException("命令和 Skill 路线不能携带 AgentProfile");
-        }
-        if (target != Target.CONFIGURED_AGENT && mode != AgentExecutionMode.CHAT) {
-            throw new IllegalArgumentException("命令和 Skill 路线只能使用 Chat 执行策略");
-        }
-    }
-
-    public static AgentRunRoute command(RequestExecutionPlan requestPlan) {
-        return new AgentRunRoute(Target.COMMAND, AgentExecutionMode.CHAT, null, requestPlan);
-    }
-
-    public static AgentRunRoute skill(RequestExecutionPlan requestPlan) {
-        return new AgentRunRoute(Target.SKILL, AgentExecutionMode.CHAT, null, requestPlan);
     }
 
     public static AgentRunRoute configured(AgentProfile profile, RequestExecutionPlan requestPlan) {
@@ -52,11 +38,9 @@ public record AgentRunRoute(
     }
 
     /**
-     * Agent Runtime 保留的请求目标优先级。
+     * Agent Runtime 的配置化执行目标。
      */
     public enum Target {
-        COMMAND,
-        CONFIGURED_AGENT,
-        SKILL
+        CONFIGURED_AGENT
     }
 }

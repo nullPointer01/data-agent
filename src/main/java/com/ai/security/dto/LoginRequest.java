@@ -2,6 +2,7 @@ package com.ai.security.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
+/** 用户名密码登录请求。 */
 public record LoginRequest(
         @NotBlank(message = "用户名不能为空")
         String username,

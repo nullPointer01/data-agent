@@ -1,3 +1,4 @@
+// 统一处理 JSON/文本响应、JWT 失效和审批接口，页面不各自复制请求细节。
 async function parseResponse(response) {
   const text = await response.text();
   if (!text) {

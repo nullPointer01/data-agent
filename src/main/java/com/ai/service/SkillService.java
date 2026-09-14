@@ -5,8 +5,6 @@ import com.ai.skill.dto.SkillListResponse;
 import com.ai.skill.dto.SkillMutationResponse;
 import com.ai.skill.dto.SkillRequest;
 
-import java.util.Map;
-
 /**
  * 技能管理应用服务接口。
  *
@@ -71,13 +69,4 @@ public interface SkillService {
      */
     SkillMutationResponse rollbackSkill(String skillId, int version);
 
-    /**
-     * 执行技能。
-     *
-     * @param skillId 技能编号
-     * @param query 用户查询
-     * @param data 可选数据
-     * @return 执行结果
-     */
-    Map<String, Object> executeSkill(String skillId, String query, Map<String, Object> data);
 }

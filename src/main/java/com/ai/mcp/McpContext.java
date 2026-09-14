@@ -9,11 +9,9 @@ import dev.langchain4j.model.TokenCountEstimator;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 技能和直接模型调用期间使用的模型上下文。
+ * 单次 Skill 执行期间使用的短期模型对话窗口。
  *
  * <p>对话历史由 LangChain4j {@link ChatMemory} 维护（按 token 预算自动滚动淘汰，
  * 单条超长消息不会撑爆上下文），以消息对象形式参与模型调用，保留角色结构。</p>
@@ -29,37 +27,17 @@ public class McpContext {
     private static final String ROLE_ASSISTANT = "assistant";
 
     private final String contextId;
-    private final String skillId;
-    private final String modelType;
-    private final Date createTime;
     private Date lastAccessTime;
-    private final Map<String, Object> metadata;
     private final ChatMemory chatMemory;
 
-    public McpContext(String contextId, String skillId, String modelType) {
+    public McpContext(String contextId) {
         this.contextId = contextId;
-        this.skillId = skillId;
-        this.modelType = modelType;
-        this.createTime = new Date();
         this.lastAccessTime = new Date();
-        this.metadata = new ConcurrentHashMap<>();
         this.chatMemory = TokenWindowChatMemory.withMaxTokens(MAX_HISTORY_TOKENS, TOKEN_ESTIMATOR);
     }
 
     public String getContextId() {
         return contextId;
-    }
-
-    public String getSkillId() {
-        return skillId;
-    }
-
-    public String getModelType() {
-        return modelType;
-    }
-
-    public Date getCreateTime() {
-        return new Date(createTime.getTime());
     }
 
     public Date getLastAccessTime() {
@@ -68,10 +46,6 @@ public class McpContext {
 
     public void setLastAccessTime(Date lastAccessTime) {
         this.lastAccessTime = new Date(lastAccessTime.getTime());
-    }
-
-    public Map<String, Object> getMetadata() {
-        return metadata;
     }
 
     /**
@@ -95,17 +69,5 @@ public class McpContext {
      */
     public List<ChatMessage> historyMessages() {
         return chatMemory.messages();
-    }
-
-    @Override
-    public String toString() {
-        return "McpContext{" +
-                "contextId='" + contextId + '\'' +
-                ", skillId='" + skillId + '\'' +
-                ", modelType='" + modelType + '\'' +
-                ", createTime=" + createTime +
-                ", lastAccessTime=" + lastAccessTime +
-                ", metadata=" + metadata +
-                '}';
     }
 }

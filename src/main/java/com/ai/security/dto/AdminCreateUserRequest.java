@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.Set;
 
+/** 管理员创建用户时提交的账号、角色与配额配置。 */
 public record AdminCreateUserRequest(
         @NotBlank(message = "用户名不能为空")
         @Size(max = 64, message = "用户名不能超过64个字符")

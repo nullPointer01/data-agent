@@ -37,16 +37,34 @@ public class UserAdminController {
         this.userAdminService = userAdminService;
     }
 
+    /**
+     * 查询平台中的用户及其当前角色。
+     *
+     * @return 用户列表
+     */
     @GetMapping
     public ResponseEntity<Map<String, Object>> listUsers() {
         return ResponseEntity.ok(ApiResponse.success(userAdminService.listUsers()));
     }
 
+    /**
+     * 由管理员创建用户并分配初始角色。
+     *
+     * @param request 用户资料、租户、角色和配额
+     * @return 创建的用户信息或校验错误
+     */
     @PostMapping
     public ResponseEntity<Map<String, Object>> createUser(@Valid @RequestBody AdminCreateUserRequest request) {
         return toResponse(userAdminService.createUser(request), HttpStatus.CREATED);
     }
 
+    /**
+     * 由管理员更新指定用户的资料、状态或配额。
+     *
+     * @param userId 用户编号
+     * @param request 可变更的用户资料
+     * @return 更新后的用户信息或校验错误
+     */
     @PutMapping("/{userId}")
     public ResponseEntity<Map<String, Object>> updateUser(
             @PathVariable String userId,
@@ -54,6 +72,13 @@ public class UserAdminController {
         return toResponse(userAdminService.updateUser(userId, request), HttpStatus.OK);
     }
 
+    /**
+     * 由管理员替换指定用户的角色集合。
+     *
+     * @param userId 用户编号
+     * @param request 新的角色集合
+     * @return 更新后的用户信息或校验错误
+     */
     @PutMapping("/{userId}/roles")
     public ResponseEntity<Map<String, Object>> updateRoles(
             @PathVariable String userId,
@@ -61,6 +86,13 @@ public class UserAdminController {
         return toResponse(userAdminService.updateRoles(userId, request), HttpStatus.OK);
     }
 
+    /**
+     * 由管理员重置指定用户的登录密码。
+     *
+     * @param userId 用户编号
+     * @param request 新密码
+     * @return 密码重置结果
+     */
     @PatchMapping("/{userId}/password")
     public ResponseEntity<Map<String, Object>> resetPassword(
             @PathVariable String userId,

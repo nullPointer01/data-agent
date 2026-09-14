@@ -14,7 +14,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -32,7 +31,6 @@ public class FileProcessingWorker {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileProcessingWorker.class);
 
     private final FileMetadataLifecycleService metadataLifecycleService;
-    private final ApplicationEventPublisher eventPublisher;
     private final VectorMemoryService vectorMemoryService;
     private final TextChunker textChunker;
     private final FullTextIndexService fullTextIndexService;
@@ -41,7 +39,6 @@ public class FileProcessingWorker {
     private final AuditLogService auditLogService;
 
     public FileProcessingWorker(FileMetadataLifecycleService metadataLifecycleService,
-            ApplicationEventPublisher eventPublisher,
             VectorMemoryService vectorMemoryService,
             TextChunker textChunker,
             FullTextIndexService fullTextIndexService,
@@ -49,7 +46,6 @@ public class FileProcessingWorker {
             MeterRegistry meterRegistry,
             AuditLogService auditLogService) {
         this.metadataLifecycleService = metadataLifecycleService;
-        this.eventPublisher = eventPublisher;
         this.vectorMemoryService = vectorMemoryService;
         this.textChunker = textChunker;
         this.fullTextIndexService = fullTextIndexService;
@@ -80,7 +76,6 @@ public class FileProcessingWorker {
                     metadata.getContentType());
 
             if (fileParserService.isIndexableFileContent(content)) {
-                eventPublisher.publishEvent(new FileUploadedEvent(this, fileId, metadata.getFilename(), content));
                 vectorMemoryService.indexFile(fileId, metadata.getFilename(), content,
                         metadata.getTenantId(), metadata.getUploadedBy());
                 indexFullText(metadata, content);

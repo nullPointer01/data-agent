@@ -62,6 +62,7 @@ function booleanText(value) {
   return value ? '是' : '否';
 }
 
+/** Agent 评测页：维护数据集、发起回归运行并查看样本级证据。 */
 export function AgentEvalPage({ api, toast }) {
   const [datasets, setDatasets] = useState([]);
   const [agents, setAgents] = useState([]);

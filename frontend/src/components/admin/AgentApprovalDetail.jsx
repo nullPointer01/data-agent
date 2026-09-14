@@ -44,6 +44,7 @@ function ApprovalIdentifier({ label, value, onCopy }) {
   );
 }
 
+/** 审批详情弹窗：展示申请人、参数、Run 与执行状态，并提交批准/拒绝决策。 */
 export function AgentApprovalDetail({ detail, loading, now, submitting, toast, onClose, onDecision }) {
   const [comment, setComment] = useState('');
   const [confirmAction, setConfirmAction] = useState('');

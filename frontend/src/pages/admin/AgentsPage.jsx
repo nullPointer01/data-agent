@@ -4,6 +4,7 @@ import { ResourcePage } from '../../components/admin/ResourcePage.jsx';
 import { Badge } from '../../components/ui.jsx';
 import { formatTime, truncate } from '../../utils/format.js';
 
+/** 用户 Agent 治理清单：按归属和角色查看，并允许管理员启停专家 Agent。 */
 export function AgentsPage({ api, toast, onOpenTraces }) {
   const [models, setModels] = useState([]);
   const [users, setUsers] = useState([]);

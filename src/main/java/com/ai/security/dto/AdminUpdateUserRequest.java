@@ -3,6 +3,7 @@ package com.ai.security.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 
+/** 管理员更新用户资料、启用状态与 Token 配额的请求。 */
 public record AdminUpdateUserRequest(
         @Size(max = 64, message = "昵称不能超过64个字符")
         String nickname,

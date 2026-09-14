@@ -27,11 +27,23 @@ public class AgentDurableRunController {
         this.evidenceService = evidenceService;
     }
 
+    /**
+     * 查询当前用户拥有的持久化 Run 及其执行证据。
+     *
+     * @param runId Run 编号
+     * @return Run 状态和执行证据
+     */
     @GetMapping("/{runId}")
     public AgentRunEvidenceResponse detail(@PathVariable String runId) {
         return evidenceService.getOwned(runId);
     }
 
+    /**
+     * 取消当前用户拥有且仍在等待审批的 Run。
+     *
+     * @param runId Run 编号
+     * @return 取消后的 Run 状态
+     */
     @PostMapping("/{runId}/cancel")
     public AgentDurableRunResponse cancel(@PathVariable String runId) {
         return runService.cancelWaitingOwned(runId);

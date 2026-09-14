@@ -24,6 +24,7 @@ function readJson(key, fallback) {
   }
 }
 
+/** 应用根组件：维护登录态、普通工作区与管理控制面的导航。 */
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('accessToken') || '');
   const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken') || '');

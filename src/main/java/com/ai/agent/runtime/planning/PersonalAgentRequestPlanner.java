@@ -51,7 +51,7 @@ public class PersonalAgentRequestPlanner {
             "分析", "读取", "打开", "查看", "看看", "总结", "提取", "解析", "上传", "处理");
     private static final List<String> DATA_PATTERNS = List.of(
             "数据", "指标", "数据库", "sql", "schema", "字段", "订单", "销售", "利润", "gmv",
-            "酒店", "入住率", "出租率", "revpar", "adr", "图表", "可视化", "报表");
+            "图表", "可视化", "报表");
     private static final List<String> DATA_REQUEST_PATTERNS = List.of(
             "查询", "查看", "统计", "分析", "比较", "计算", "生成", "多少", "趋势", "同比", "环比",
             "增长", "下降", "本月", "本周", "今天", "昨天");
@@ -375,7 +375,7 @@ public class PersonalAgentRequestPlanner {
             summaries.add("读取并分析你上传的文件");
         }
         if (containsAny(tools, Set.of("getDatabaseSchema", "listDataSources", "executeSql",
-                "previewDataSource", "queryHotelOccupancy"))) {
+                "previewDataSource"))) {
             summaries.add("查询和分析结构化数据与业务指标");
         }
         if (tools.contains("generateChart")) {

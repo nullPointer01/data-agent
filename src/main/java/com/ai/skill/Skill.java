@@ -24,23 +24,6 @@ public interface Skill {
     String getDescription();
 
     /**
-     * 判断技能是否可以处理当前查询。
-     *
-     * @param query 用户查询
-     * @return 可以处理时返回 true
-     */
-    boolean canHandle(String query);
-
-    /**
-     * 使用可选数据处理查询。
-     *
-     * @param query 用户查询
-     * @param data 可选数据
-     * @return 处理结果
-     */
-    String process(String query, Object data);
-
-    /**
      * 使用模型上下文处理查询。
      *
      * @param query 用户查询

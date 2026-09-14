@@ -562,10 +562,9 @@ CIRCUIT_OPEN_MS = 60_000ms，60 秒内拒绝所有请求
 
 #### ⑥ 技能系统（SkillManager）
 
-- 注册用 `ReadWriteLock`：写锁注册/注销，读锁匹配/执行，在并发请求下安全
-- 启动时只调 `registerSkillWithoutVectorRefresh`（不写 Milvus），创建/更新/启用才调 `registerSkill`（刷 Milvus 向量）
-  - 原因：向量写入是重型 IO，启动时批量刷会让应用延迟 10-30 秒，且无必要
-- 斜杠命令：`processWithCommand("/分析 xxx")` → 解析命令名 → 找对应 Skill → 执行，未命中当正常问题路由给 Agent
+- 运行时用 `ConcurrentHashMap` 按持久化 `skillId` 注册与精确查找，注册/替换和读取均为线程安全操作
+- 不建立 Skill 向量索引，不做关键词、名称或默认 Skill 回退
+- 只有当 Agent Profile 显式绑定 `skill:<skillId>` 时，模型才能通过 `listAvailableSkills/useSkill` 调用
 
 ---
 

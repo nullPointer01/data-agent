@@ -82,6 +82,7 @@ function axisLabel(value, maximum) {
   return Math.round(value).toLocaleString();
 }
 
+/** 将受限 ECharts 配置渲染为响应式图表，并应用项目的默认配色与边界处理。 */
 export function Chart({ option, height = 260 }) {
   const width = 640;
   const viewBox = `0 0 ${width} ${height}`;

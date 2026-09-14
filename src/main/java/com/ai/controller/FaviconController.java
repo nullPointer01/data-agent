@@ -17,6 +17,11 @@ public class FaviconController {
 
     private static final Duration FAVICON_CACHE_DURATION = Duration.ofDays(1);
 
+    /**
+     * 响应浏览器的站点图标探测，并缓存空响应以避免重复请求。
+     *
+     * @return 可缓存的无内容响应
+     */
     @GetMapping("/favicon.ico")
     public ResponseEntity<Void> favicon() {
         return ResponseEntity.noContent()

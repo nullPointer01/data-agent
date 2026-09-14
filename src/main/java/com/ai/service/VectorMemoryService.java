@@ -38,9 +38,6 @@ public class VectorMemoryService {
     private static final String FILE_LABEL_PREFIX = "文件[";
     private static final String FILE_LABEL_SUFFIX = "] ";
     private static final String MEMORY_LABEL_PREFIX = "记忆: ";
-    private static final String SKILL_LABEL_PREFIX = "技能[";
-    private static final String SKILL_LABEL_MIDDLE = "]: ";
-    private static final String SKILL_TEMPLATE_SEPARATOR = " | 模板: ";
 
     private final TextChunker textChunker;
 
@@ -103,14 +100,6 @@ public class VectorMemoryService {
                 FILE_LABEL_PREFIX + filename + FILE_LABEL_SUFFIX,
                 identity.tenantId(), identity.userId());
         LOGGER.debug("已索引文件: {} ({} 个分块)", filename, chunks.size());
-    }
-
-    public void indexSkill(String skillName, String description, String promptTemplate) {
-        VectorIdentity identity = identityNormalizer.normalize(null, null);
-        String text = SKILL_LABEL_PREFIX + skillName + SKILL_LABEL_MIDDLE + description
-                + SKILL_TEMPLATE_SEPARATOR + promptTemplate;
-        index(text, VectorDocumentTypes.SKILL, skillName, skillName, identity);
-        LOGGER.debug("已索引技能: {}", skillName);
     }
 
     public void indexKnowledge(String content, String source) {

@@ -15,7 +15,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -33,7 +32,6 @@ public class DynamicSkill implements Skill {
     private static final int REQUEST_BODY_INITIAL_CAPACITY = 2;
     private static final int STEP_NUMBER_OFFSET = 1;
     private static final double TRUNCATE_NEWLINE_RATIO = 0.7D;
-    private static final String CONFIG_KEY_KEYWORDS = "keywords";
     private static final String CONFIG_KEY_API_URL = "apiUrl";
     private static final String CONFIG_KEY_API_METHOD = "apiMethod";
     private static final String CONFIG_KEY_API_HEADERS = "apiHeaders";
@@ -45,7 +43,6 @@ public class DynamicSkill implements Skill {
     private static final String REQUEST_KEY_DATA = "data";
     private static final String EMPTY_STEP_LIST = "[]";
     private static final String STEP_JSON_ARRAY_PREFIX = "[";
-    private static final String KEYWORD_SPLIT_REGEX = "[,，\\s]+";
     private static final String HEADER_PAIR_DELIMITER = ";";
     private static final String HEADER_NAME_VALUE_DELIMITER = ":";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -81,33 +78,6 @@ public class DynamicSkill implements Skill {
     @Override
     public String getDescription() {
         return description;
-    }
-
-    @Override
-    public boolean canHandle(String query) {
-        if (query == null) {
-            return false;
-        }
-        String keywords = (String) config.get(CONFIG_KEY_KEYWORDS);
-        if (keywords != null && !keywords.isEmpty()) {
-            String[] keywordArr = keywords.split(KEYWORD_SPLIT_REGEX);
-            for (String keyword : keywordArr) {
-                if (!keyword.trim().isEmpty()
-                        && query.toLowerCase(Locale.ROOT).contains(keyword.trim().toLowerCase(Locale.ROOT))) {
-                    return true;
-                }
-            }
-        }
-        return query.toLowerCase(Locale.ROOT).contains(name.toLowerCase(Locale.ROOT));
-    }
-
-    @Override
-    public String process(String query, Object data) {
-        String apiUrl = (String) config.get(CONFIG_KEY_API_URL);
-        if (apiUrl != null && !apiUrl.isEmpty()) {
-            return callExternalApi(apiUrl, resolveApiMethod(), query, data);
-        }
-        return "DynamicSkill[" + name + "] 处理了查询: " + query;
     }
 
     @Override

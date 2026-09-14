@@ -15,7 +15,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * 隔离酒店价格演示流水，不连接任何真实酒店业务表。
+ * [演示功能][隔离数据] 酒店改价审批的演示流水实体。
+ *
+ * <p>该表仅用于验收 Agent 的高风险动作流程，不连接任何真实酒店业务表，
+ * {@code hotelId}、房型、价格和日期都是演示数据。</p>
  *
  * @author data-agent
  */

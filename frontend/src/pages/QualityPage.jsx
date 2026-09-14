@@ -51,6 +51,7 @@ function levelText(level) {
   return names[level] || level || '-';
 }
 
+/** 质量观测页：展示运行成功率、耗时、回退率和异常样本。 */
 export function QualityPage({ api, toast }) {
   const [dashboard, setDashboard] = useState({});
   const [loading, setLoading] = useState(true);

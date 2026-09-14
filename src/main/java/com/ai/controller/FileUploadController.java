@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * REST API for uploaded files.
+ * 当前用户上传文件的处理和查询接口。
  *
  * @author data-agent
  */
@@ -32,22 +32,45 @@ public class FileUploadController {
         this.fileProcessingService = fileProcessingService;
     }
 
+    /**
+     * 上传文件并提交异步解析和索引任务。
+     *
+     * @param file 待上传文件
+     * @return 文件元数据和处理状态
+     */
     @PostMapping("/upload")
     public FileResponse uploadFile(@RequestParam("file") MultipartFile file) {
         LOGGER.info("File upload request: {}", file.getOriginalFilename());
         return fileProcessingService.processFile(file);
     }
 
+    /**
+     * 查询当前用户上传的文件列表。
+     *
+     * @return 文件列表
+     */
     @GetMapping("/list")
     public FileListResponse listFiles() {
         return fileProcessingService.listFiles();
     }
 
+    /**
+     * 查询当前用户拥有的文件信息。
+     *
+     * @param fileId 文件编号
+     * @return 文件元数据和处理状态
+     */
     @GetMapping("/{fileId}")
     public FileResponse getFileInfo(@PathVariable String fileId) {
         return fileProcessingService.getFileInfo(fileId);
     }
 
+    /**
+     * 删除当前用户拥有的文件及其索引数据。
+     *
+     * @param fileId 文件编号
+     * @return 删除结果
+     */
     @DeleteMapping("/delete/{fileId}")
     public FileMutationResponse deleteFile(@PathVariable String fileId) {
         return fileProcessingService.deleteFile(fileId);

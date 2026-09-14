@@ -168,11 +168,10 @@ OpenAI-compatible 只表示当前项目复用 Chat 基线协议，不代表各�
 - `POST /api/v1/analysis/analyze`
 - `POST /api/v1/analysis/analyze/stream`
 
-`AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver` 解析一次路线，再创建唯一 `runId` 和 `AgentRunContext`：
-
-1. 斜杠命令：`ChatExecutionStrategy -> SkillManager.processWithCommand`
-2. 指定 `skillId`：`ChatExecutionStrategy -> SkillExecutionService`
-3. 指定或默认个人 Agent：`Chat/ReAct/OrchestratedExecutionStrategy -> ConfiguredAgentExecutionService -> ConfigurableAgentExecutor`
+`AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver`
+选择显式 `agentId` 或当前用户默认 Agent，再创建唯一 `runId` 和 `AgentRunContext`，统一进入
+`Chat/ReAct/OrchestratedExecutionStrategy -> ConfiguredAgentExecutionService -> ConfigurableAgentExecutor`。
+斜杠命令、请求直接指定 Skill 和默认 Skill 回退都已删除；Skill 只能由 Agent 通过已绑定的 `useSkill` 工具调用。
 
 `ConfiguredAgentExecutionService` 仅包内可见，只接受已经固化的 `AgentRunRoute`；`ConfigurableAgentExecutor`
 必须运行在 `AgentRunScope` 内并接收完整 `RequestExecutionPlan`，不再自行推断模式或创建 compatibility 路线。
@@ -218,7 +217,6 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 `app.agent.reasoning.*` 只保留当前循环真实读取的反思和工作记忆开关。
 
 执行轨迹写入 `agent_execution_trace`；质量观测来自运行轨迹，确定性成功标准和回归指标由 Agent Eval 数据集维护。
-`examples/graph-agent` 是独立教学示例，不参与 Spring Boot 主工程编译和运行。
 
 ## Skill 系统
 
@@ -226,10 +224,10 @@ Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据�
 
 重要约定：
 
-- 启动时只注册内存 Skill，不刷新 Milvus 技能向量索引，避免向量库抖动影响应用启动。
-- 创建、更新、启用 Skill 时才刷新向量索引。
-- 删除或禁用 Skill 时会从运行时注册表移除并清理向量索引。
-- `DynamicSkill` 支持 prompt template、steps、外部 API 调用、keywords 等配置。
+- Skill 仅按 `skillId` 注册和精确执行，不做关键词/向量自动匹配，不做默认回退。
+- Agent 只能调用 Profile `capabilityBindings` 已绑定且当前可用的 Skill。
+- 管理员可手工创建、生成、更新、回滚、启停和删除 Skill；对话、评分和文件上传不会自动生成 Skill。
+- `DynamicSkill` 支持 prompt template、steps 和可选外部 HTTP API 配置。
 
 ## 文件、知识库和 RAG
 
@@ -243,7 +241,8 @@ Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据�
 - `KnowledgeService`
 - `KnowledgeVectorIndexService`
 
-支持常见文本、Office、PDF、图片 OCR/解析扩展点。文件和知识库内容会进入 MySQL，同时由 Milvus 建向量索引。
+支持文本、CSV、Excel、Word、PowerPoint 和 PDF 的真实文本提取。未实现的文件类型（包括图片）会明确拒绝，
+不返回占位内容。可索引的文本会进入 MySQL，同时写入 Milvus 向量索引和 Elasticsearch 全文索引。
 
 RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25，向量召回使用 Milvus，两路通过 RRF 融合，再由外部 HTTP Cross-Encoder 对候选精排，最后执行父上下文解析、压缩和引用生成。Cross-Encoder 默认模型为 `BAAI/bge-reranker-v2-m3`；超时、限流、上游异常或响应契约错误时按 `RERANK_FAIL_OPEN` 决定是否降级到规则 Provider。真实黄金集对比尚未运行前，不得宣称模型精排已经提升指标。
 

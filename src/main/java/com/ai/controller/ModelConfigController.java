@@ -42,33 +42,69 @@ public class ModelConfigController {
         this.modelConnectionProbeService = modelConnectionProbeService;
     }
 
+    /**
+     * 为当前租户新增模型连接配置。
+     *
+     * @param request 模型厂商、端点、凭据和默认状态
+     * @return 创建结果
+     */
     @PostMapping("/add")
     public ModelConfigMutationResponse addModel(@RequestBody ModelConfigRequest request) {
         LOGGER.info("Add model request: {}", request.name());
         return modelConfigService.addModel(request);
     }
 
+    /**
+     * 更新当前租户拥有的模型连接配置。
+     *
+     * @param modelId 模型配置编号
+     * @param request 新的模型配置
+     * @return 更新结果
+     */
     @PutMapping("/update/{modelId}")
     public ModelConfigMutationResponse updateModel(@PathVariable String modelId,
             @RequestBody ModelConfigRequest request) {
         return modelConfigService.updateModel(modelId, request);
     }
 
+    /**
+     * 删除当前租户拥有的模型配置并清理客户端缓存。
+     *
+     * @param modelId 模型配置编号
+     * @return 删除结果
+     */
     @DeleteMapping("/delete/{modelId}")
     public ModelConfigMutationResponse deleteModel(@PathVariable String modelId) {
         return modelConfigService.deleteModel(modelId);
     }
 
+    /**
+     * 切换当前租户模型配置的启用状态。
+     *
+     * @param modelId 模型配置编号
+     * @return 切换结果
+     */
     @PutMapping("/toggle/{modelId}")
     public ModelConfigMutationResponse toggleModel(@PathVariable String modelId) {
         return modelConfigService.toggleModel(modelId);
     }
 
+    /**
+     * 查询当前租户的模型配置列表，响应不返回明文凭据。
+     *
+     * @return 模型配置列表
+     */
     @GetMapping("/list")
     public ModelConfigListResponse listModels() {
         return modelConfigService.listModels();
     }
 
+    /**
+     * 查询当前租户拥有的模型配置详情，凭据只返回脱敏值。
+     *
+     * @param modelId 模型配置编号
+     * @return 模型配置详情
+     */
     @GetMapping("/get/{modelId}")
     public ModelConfigDetailResponse getModel(@PathVariable String modelId) {
         return modelConfigService.getModelDetail(modelId);

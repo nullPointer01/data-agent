@@ -10,7 +10,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * 只写隔离演示流水的酒店价格沙箱服务。
+ * [演示功能][隔离写入] 酒店改价审批的本地落地服务。
+ *
+ * <p>它用真实 MySQL 事务和唯一约束验证动作幂等，但数据只进入
+ * {@code hotel_rate_sandbox}。初始价格是演示默认值，不会读取或更新真实酒店价格。</p>
  *
  * @author data-agent
  */
@@ -30,7 +33,9 @@ public class HotelRateSandboxService {
     }
 
     /**
-     * 按审批动作键最多写入一次价格变化，并始终返回第一次动作结果。
+     * [演示功能] 按审批动作键最多写入一次沙箱价格变化，并始终返回第一次动作结果。
+     *
+     * <p>这里的幂等性只覆盖本项目数据库，不能证明跨系统调用的 exactly-once。</p>
      */
     @Transactional
     public HotelRateSandboxResult updatePrice(String tenantId,

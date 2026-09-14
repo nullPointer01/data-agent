@@ -24,7 +24,6 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -41,22 +40,12 @@ public class SkillServiceImpl implements SkillService {
     private static final String DEFAULT_API_METHOD = "POST";
     private static final String DEFAULT_SKILL_SOURCE = "manual";
     private static final String EMPTY_VALUE = "";
-    private static final String KEY_SUCCESS = "success";
-    private static final String KEY_MESSAGE = "message";
-    private static final String KEY_SKILL_ID = "skillId";
-    private static final String KEY_RESULT = "result";
-    private static final String KEY_QUERY = "query";
-    private static final String KEY_DATA = "data";
     private static final String CONFIG_KEY_API_URL = "apiUrl";
     private static final String CONFIG_KEY_API_METHOD = "apiMethod";
     private static final String CONFIG_KEY_API_HEADERS = "apiHeaders";
     private static final String CONFIG_KEY_PROMPT_TEMPLATE = "promptTemplate";
-    private static final String CONFIG_KEY_RESPONSE_TEMPLATE = "responseTemplate";
-    private static final String CONFIG_KEY_KEYWORDS = "keywords";
     private static final String CONFIG_KEY_STEPS = "steps";
-    private static final String CONFIG_KEY_AUTO_ATTACH = "autoAttach";
     private static final String MESSAGE_NOT_FOUND_OR_DENIED = "Skill不存在或无权限";
-    private static final String MESSAGE_NOT_FOUND_OR_DISABLED = "Skill不存在或已禁用";
     private static final String DEFAULT_UPDATE_REMARK = "手动更新";
     private static final String ROLLBACK_REMARK = "回滚前自动保存";
 
@@ -210,37 +199,23 @@ public class SkillServiceImpl implements SkillService {
         return SkillMutationResponse.toggled(skillId, config.isEnabled());
     }
 
-    @Override
-    public Map<String, Object> executeSkill(String skillId, String query, Map<String, Object> data) {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        var configOptional = skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId);
-        if (configOptional.isPresent() && configOptional.get().isEnabled()) {
-            return Map.of(KEY_SUCCESS, true, KEY_RESULT,
-                    Map.of(KEY_SKILL_ID, skillId, KEY_QUERY, query, KEY_DATA, data));
-        }
-        return Map.of(KEY_SUCCESS, false, KEY_MESSAGE, MESSAGE_NOT_FOUND_OR_DISABLED);
-    }
-
+    /**
+     * 将持久化 Skill 配置转换为运行时对象，并按稳定 ID 注册给 Agent 工具调用。
+     *
+     * @param config 已保存的 Skill 配置
+     */
     public void registerToSkillManager(SkillConfig config) {
         DynamicSkill dynamicSkill = new DynamicSkill(
                 config.getName(),
                 config.getDescription(),
-                Map.of(
+                java.util.Map.of(
                         CONFIG_KEY_API_URL, nullToEmpty(config.getApiUrl()),
                         CONFIG_KEY_API_METHOD, config.getApiMethod() != null ? config.getApiMethod()
                                 : DEFAULT_API_METHOD,
                         CONFIG_KEY_API_HEADERS, nullToEmpty(config.getApiHeaders()),
                         CONFIG_KEY_PROMPT_TEMPLATE, nullToEmpty(config.getPromptTemplate()),
-                        CONFIG_KEY_RESPONSE_TEMPLATE, nullToEmpty(config.getResponseTemplate()),
-                        CONFIG_KEY_KEYWORDS, nullToEmpty(config.getKeywords()),
-                        CONFIG_KEY_STEPS, nullToEmpty(config.getSteps()),
-                        CONFIG_KEY_AUTO_ATTACH, nullToEmpty(config.getAutoAttach())));
+                        CONFIG_KEY_STEPS, nullToEmpty(config.getSteps())));
         skillManager.registerSkill(config.getSkillId(), dynamicSkill);
-    }
-
-    @Transactional(readOnly = true)
-    public List<SkillConfig> getEnabledSkills(String tenantId) {
-        return skillConfigRepository.findByTenantIdAndEnabledTrue(tenantId);
     }
 
     private void applyCreateRequest(SkillConfig config, SkillRequest request) {
@@ -252,10 +227,7 @@ public class SkillServiceImpl implements SkillService {
                 : DEFAULT_API_METHOD);
         config.setApiHeaders(request.apiHeaders());
         config.setPromptTemplate(request.promptTemplate());
-        config.setResponseTemplate(request.responseTemplate());
-        config.setKeywords(request.keywords());
         config.setSteps(request.steps());
-        config.setAutoAttach(request.autoAttach());
         config.setSource(StringUtils.hasText(request.source()) ? request.source().trim() : DEFAULT_SKILL_SOURCE);
     }
 
@@ -272,9 +244,6 @@ public class SkillServiceImpl implements SkillService {
         if (request.steps() != null) {
             config.setSteps(request.steps());
         }
-        if (request.keywords() != null) {
-            config.setKeywords(request.keywords());
-        }
         if (request.apiUrl() != null) {
             config.setApiUrl(request.apiUrl());
         }
@@ -283,12 +252,6 @@ public class SkillServiceImpl implements SkillService {
         }
         if (request.apiHeaders() != null) {
             config.setApiHeaders(request.apiHeaders());
-        }
-        if (request.responseTemplate() != null) {
-            config.setResponseTemplate(request.responseTemplate());
-        }
-        if (request.autoAttach() != null) {
-            config.setAutoAttach(request.autoAttach());
         }
         if (request.enabled() != null) {
             config.setEnabled(request.enabled());

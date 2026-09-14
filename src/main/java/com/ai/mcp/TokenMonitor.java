@@ -2,15 +2,11 @@ package com.ai.mcp;
 
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 内存令牌使用监控和轻量级令牌估算器。
+ * 在供应商未返回精确用量时使用的轻量级令牌估算器。
  *
  * @author data-agent
  */
@@ -22,29 +18,12 @@ public class TokenMonitor {
     private static final double WORD_TOKEN_WEIGHT = 1.3D;
     private static final double OTHER_TOKEN_WEIGHT = 0.25D;
 
-    private final Map<String, AtomicLong> skillTokenUsage = new ConcurrentHashMap<>();
-    private final Map<String, AtomicLong> modelTokenUsage = new ConcurrentHashMap<>();
-
-    public void recordSkillTokenUsage(String skillId, long tokens) {
-        skillTokenUsage.computeIfAbsent(skillId, k -> new AtomicLong(0)).addAndGet(tokens);
-    }
-
-    public void recordModelTokenUsage(String modelType, long tokens) {
-        modelTokenUsage.computeIfAbsent(modelType, k -> new AtomicLong(0)).addAndGet(tokens);
-    }
-
-    public Map<String, Long> getSkillTokenUsage() {
-        Map<String, Long> result = new LinkedHashMap<>();
-        skillTokenUsage.forEach((skillId, usage) -> result.put(skillId, usage.get()));
-        return result;
-    }
-
-    public Map<String, Long> getModelTokenUsage() {
-        Map<String, Long> result = new LinkedHashMap<>();
-        modelTokenUsage.forEach((modelType, usage) -> result.put(modelType, usage.get()));
-        return result;
-    }
-
+    /**
+     * 按中日韩字符、拉丁单词和其他字符估算 Token 数量。
+     *
+     * @param text 待估算文本
+     * @return 近似 Token 数量
+     */
     public long estimateTokens(String text) {
         if (text == null || text.isEmpty()) {
             return 0;
@@ -85,8 +64,4 @@ public class TokenMonitor {
                 || block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO;
     }
 
-    public void resetTokenUsage() {
-        skillTokenUsage.clear();
-        modelTokenUsage.clear();
-    }
 }

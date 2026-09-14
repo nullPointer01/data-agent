@@ -11,7 +11,6 @@ public class AnalysisRequest {
 
     private String question;
     private String fileId;
-    private String skillId;
     private String modelId;
     private String sessionId;
     private String agentId;
@@ -34,14 +33,6 @@ public class AnalysisRequest {
 
     public void setFileId(String fileId) {
         this.fileId = fileId;
-    }
-
-    public String getSkillId() {
-        return skillId;
-    }
-
-    public void setSkillId(String skillId) {
-        this.skillId = skillId;
     }
 
     public String getModelId() {
@@ -85,7 +76,6 @@ public class AnalysisRequest {
         AnalysisRequest copiedRequest = new AnalysisRequest();
         copiedRequest.setQuestion(question);
         copiedRequest.setFileId(fileId);
-        copiedRequest.setSkillId(skillId);
         copiedRequest.setModelId(modelId);
         copiedRequest.setSessionId(sessionId);
         copiedRequest.setAgentId(agentId);
@@ -95,10 +85,6 @@ public class AnalysisRequest {
 
     public boolean hasFile() {
         return fileId != null && !fileId.isEmpty();
-    }
-
-    public boolean hasSkill() {
-        return skillId != null && !skillId.isEmpty();
     }
 
     public boolean hasModel() {
@@ -117,7 +103,4 @@ public class AnalysisRequest {
         return taskContract != null;
     }
 
-    public boolean isCommand() {
-        return question != null && question.startsWith("/");
-    }
 }

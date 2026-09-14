@@ -7,6 +7,7 @@ const GROUPS = [
   ['AGGREGATOR', '聚合平台']
 ];
 
+/** 按官方目录分组、搜索并选择模型供应商。 */
 export function ModelProviderPicker({ providers, value, onChange, disabled }) {
   const [query, setQuery] = useState('');
   const keyword = query.trim().toLowerCase();

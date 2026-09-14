@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * REST API for skill management.
+ * [正式管理功能] Skill 的创建、更新、版本回滚和手动生成接口。
  *
  * @author data-agent
  */
@@ -38,27 +38,36 @@ public class SkillUploadController {
         this.skillGenerator = skillGenerator;
     }
 
+    /** 创建 Skill 配置并注册到运行时。 */
     @PostMapping("/create")
     public SkillMutationResponse createSkill(@RequestBody SkillRequest request) {
         LOGGER.info("Create skill request: {}", request.name());
         return skillService.createSkill(request);
     }
 
+    /** 更新 Skill 配置，同时保留新的历史版本。 */
     @PutMapping("/update/{skillId}")
     public SkillMutationResponse updateSkill(@PathVariable String skillId, @RequestBody SkillRequest request) {
         return skillService.updateSkill(skillId, request);
     }
 
+    /** 查询指定 Skill 的版本历史。 */
     @GetMapping("/{skillId}/history")
     public SkillHistoryListResponse getHistory(@PathVariable String skillId) {
         return skillService.listHistory(skillId);
     }
 
+    /** 将 Skill 配置回滚到指定历史版本。 */
     @PostMapping("/{skillId}/rollback/{version}")
     public SkillMutationResponse rollback(@PathVariable String skillId, @PathVariable int version) {
         return skillService.rollbackSkill(skillId, version);
     }
 
+    /**
+     * 由管理员手工提交样例数据和目标，调用模型生成可编辑的 Skill 草稿。
+     *
+     * <p>该接口不会在文件上传、普通对话或评分后自动触发。</p>
+     */
     @PostMapping("/generate")
     public Map<String, Object> generateSkill(@RequestBody Map<String, String> request) {
         String data = request.get("data");
@@ -67,29 +76,19 @@ public class SkillUploadController {
         return skillGenerator.generateFromData(data, description);
     }
 
-    @PostMapping("/generate-from-conversation")
-    public Map<String, Object> generateFromConversation(@RequestBody Map<String, String> request) {
-        String sessionId = request.get("sessionId");
-        LOGGER.info("Generate skill from conversation, session: {}", sessionId);
-        return skillGenerator.generateFromConversation(sessionId);
-    }
-
-    @PostMapping("/feedback/{skillId}")
-    public Map<String, Object> recordFeedback(@PathVariable String skillId, @RequestBody Map<String, Object> body) {
-        boolean positive = Boolean.TRUE.equals(body.get("positive"));
-        return skillGenerator.recordFeedback(skillId, positive);
-    }
-
+    /** 列出当前租户的 Skill 配置。 */
     @GetMapping("/list")
     public SkillListResponse listSkills() {
         return skillService.listSkills();
     }
 
+    /** 删除 Skill 配置、历史版本及运行时注册。 */
     @DeleteMapping("/delete/{skillId}")
     public SkillMutationResponse deleteSkill(@PathVariable String skillId) {
         return skillService.deleteSkill(skillId);
     }
 
+    /** 切换 Skill 启用状态，并同步运行时注册表。 */
     @PutMapping("/toggle/{skillId}")
     public SkillMutationResponse toggleSkill(@PathVariable String skillId) {
         return skillService.toggleSkill(skillId);

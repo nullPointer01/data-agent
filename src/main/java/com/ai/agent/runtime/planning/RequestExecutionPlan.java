@@ -70,27 +70,6 @@ public record RequestExecutionPlan(
     }
 
     /**
-     * 为命令和显式 Skill 路线提供不会被配置 Agent 消费的安全占位计划。
-     */
-    public static RequestExecutionPlan explicitRoute(String reason) {
-        return new RequestExecutionPlan(
-                CURRENT_VERSION,
-                RequestIntent.EXPLICIT_ROUTE,
-                AgentExecutionMode.CHAT,
-                true,
-                false,
-                false,
-                false,
-                Set.of(),
-                false,
-                AgentToolChoice.AUTO,
-                1.0D,
-                "explicit-route",
-                reason,
-                "");
-    }
-
-    /**
      * 返回可持久化和对用户展示的安全规划证据，不包含本地响应正文。
      */
     public Map<String, Object> toEvidence() {

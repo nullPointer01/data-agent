@@ -10,6 +10,7 @@ import {
   ToolbarSearch
 } from '../../components/ui.jsx';
 
+/** 模型接入管理页：维护供应商配置、默认模型和真实连接探测。 */
 export function ModelsPage({ api, toast }) {
   const [models, setModels] = useState([]);
   const [providers, setProviders] = useState([]);

@@ -272,9 +272,9 @@ public class ReActLoopRunner {
             }
 
             String llmResponse = describeAiMessage(aiMessage);
-            // [Day3 学习] 打印每轮模型原始输出，观察它如何思考、决定调哪个工具或给出最终回答
+            // [正式功能][可观测性] 记录每轮模型输出，用于排查工具选择和收敛过程。
             LOGGER.info("【ReAct第{}轮·模型原文】\n{}", iterations, llmResponse);
-            // [Day13 可观测性] 累计本轮发起的工具调用次数，用于执行轨迹统计
+            // [正式功能][可观测性] 累计本轮工具调用次数，写入 Run 用量和执行轨迹。
             if (aiMessage.hasToolExecutionRequests()) {
                 toolCallCount += aiMessage.toolExecutionRequests().size();
             }

@@ -98,7 +98,6 @@ public class AgentDelegationToolService {
         AnalysisRequest request = parentRequest == null ? new AnalysisRequest() : parentRequest.copy();
         request.setQuestion(task);
         request.setAgentId(childAgentId);
-        request.setSkillId(null);
         // 子 Agent 必须使用自己的 Profile 模型，不能继承父请求的临时模型覆盖。
         request.setModelId(null);
         return request;

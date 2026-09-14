@@ -31,15 +31,15 @@ Coordinator 解析完成后，只有包内的 `ConfiguredAgentExecutionService` 
 `RequestExecutionPlan`，不再提供自行读取 Profile 推断 Chat/ReAct 的兼容重载。业务 Controller 或 Service
 因此不能绕过 Harness 直接启动一个顶层配置化 Agent。
 
-同步和 SSE 只使用不同的 `AgentEventSink`，不会改变路由结果。路线优先级固定为：
+同步和 SSE 只使用不同的 `AgentEventSink`，不会改变路由结果。路由只会产生配置化 Agent 目标：
 
 ```text
-可识别斜杠命令 -> 显式 agentId -> 显式 skillId -> 当前用户默认个人 Agent
+显式 agentId -> 当前用户默认个人 Agent
 ```
 
 普通请求不会让用户选择模型、Agent 或执行模式。系统首次使用时创建一个 `default_agent=true` 的个人
 `AgentProfile`，后续始终加载该配置中的模型、System Prompt、统一能力绑定和执行模式。`AgentRunRouteResolver`
-先处理斜杠命令、显式 Agent 和显式 Skill；普通个人 Agent 请求再交给 `PersonalAgentRequestPlanner` 生成一次不可变
+只处理显式 Agent 和默认个人 Agent，然后交给 `PersonalAgentRequestPlanner` 生成一次不可变
 `RequestExecutionPlan`。计划同时固化意图、Chat/ReAct/Orchestrated 模式、模型/RAG/记忆开关、候选工具、置信度和
 可展示原因，同步与 SSE 共用同一个结果。
 
@@ -82,8 +82,8 @@ Agent 已绑定且用户仍有权限的 Capability 中缩小工具范围。规�
 | `你能干什么` | Harness 本地响应，0 次模型、0 RAG、0 Tool | 能力介绍不再消耗数千 Token |
 | `BM25 是什么` | Chat，无 RAG、无 Tool | 通用知识不污染个人检索 |
 | `手机号输错两次会触发限制吗` | Chat + 个人 RAG | 返回私有知识证据与引用 |
-| `查询杭州酒店入住率` | ReAct + `queryHotelOccupancy` 候选 | 只暴露完成任务需要的工具 |
-| `查询入住率并生成图表` | ReAct，或有有效子 Agent 时 Orchestrated | 多步骤任务允许受控协作 |
+| `列出已上传的文件并分析其中表格` | ReAct + 文件工具候选 | 只暴露完成任务需要的真实工具 |
+| `查询数据源并生成图表` | ReAct，或有有效子 Agent 时 Orchestrated | 多步骤任务允许受控协作 |
 | `把酒店价格改成 699` | ReAct + `updateHotelPrice` 候选，首轮 Tool Choice 为 Required | 直接提出工具请求，再经过风险策略和人工审批 |
 
 每次计划通过 `execution_plan` 事件和 Trace 安全投影留证，记录规则、置信度、资源开关和候选数量，不保存本地响应正文、
@@ -179,7 +179,7 @@ Checkpoint 与原工具请求使用 `APP_ENCRYPTION_KEY` 做 AES-GCM 加密。�
 
 ## Trace
 
-`runId` 直接复用为现有 `agent_execution_trace.trace_id`，不新增表或字段。Chat、ReAct、Orchestrated、命令和 Skill 都走 `recordRun`。运行模式、终态、耗时、迭代/模型/工具调用次数、Token 和 deadline 写入现有 JSON 元数据列；请求计划、Tool Journal、上下文治理和安全的可见步骤继续保留。
+`runId` 直接复用为现有 `agent_execution_trace.trace_id`，不新增表或字段。Chat、ReAct 和 Orchestrated 都走 `recordRun`。运行模式、终态、耗时、迭代/模型/工具调用次数、Token 和 deadline 写入现有 JSON 元数据列；请求计划、Tool Journal、上下文治理和安全的可见步骤继续保留。
 
 Trace 与事件不保存 API Key、完整 System Prompt 或隐藏 Chain-of-Thought。Trace 落库失败只影响可观测性，不反转已经确定的业务终态。
 
@@ -196,7 +196,7 @@ tenant + owner + required permissions
 risk metadata + lifecycle + availability
 ```
 
-统一身份使用 `tool:<name>`、`skill:<skillId>` 和 `agent:<agentId>`。Tool 的风险与权限来自 `@AgentToolPolicy`；Skill 的稳定身份、版本和归属来自 `skill_config`，运行时可用性由 `SkillManager` 的 `skillId` 别名确认；sub Agent 的版本使用 `AgentProfile.updatedAt` 修订标识，风险从当前有效工具集合保守推导。
+统一身份使用 `tool:<name>`、`skill:<skillId>` 和 `agent:<agentId>`。Tool 的风险与权限来自 `@AgentToolPolicy`；Skill 的稳定身份、版本和归属来自 `skill_config`，运行时可用性由 `SkillManager` 按稳定 `skillId` 精确确认；sub Agent 的版本使用 `AgentProfile.updatedAt` 修订标识，风险从当前有效工具集合保守推导。
 
 `GET /api/v1/my/capabilities` 会重新读取持久化用户权限，只返回当前租户可见、当前用户有权限了解的能力。停用但仍可见的能力保留安全原因，供设置页禁选或移除旧绑定。Profile 保存时服务端再次校验三类身份、可用性、自引用和已知引用环，不能依赖前端隐藏防伪造。目录中已经消失的历史绑定只在设置页显示安全占位，允许移除但不能重新选择。
 

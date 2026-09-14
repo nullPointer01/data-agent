@@ -4,7 +4,9 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 没有专门策略的文件的备用解析器。
+ * 不支持文件类型的显式拒绝解析器。
+ *
+ * <p>该解析器必须保持最低优先级，避免把图片或其他二进制文件按 UTF-8 文本读取并伪装成解析成功。</p>
  *
  * @author data-agent
  */
@@ -18,7 +20,7 @@ public class FallbackFileContentParser implements FileContentParser {
     }
 
     @Override
-    public String parse(FileParsingContext context) throws Exception {
-        return context.readText();
+    public String parse(FileParsingContext context) {
+        throw new IllegalArgumentException("不支持的文件类型: " + context.filename());
     }
 }

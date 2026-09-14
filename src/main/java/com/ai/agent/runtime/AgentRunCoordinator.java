@@ -207,7 +207,7 @@ public class AgentRunCoordinator {
         }
         finalResponse.setOutcomeEvaluation(evaluateOutcome(context, finalResponse, snapshot));
         applyRunMetadata(context, snapshot, finalResponse);
-        recordConversation(context, route, finalResponse, snapshot);
+        recordConversation(context, finalResponse, snapshot);
         recordTrace(context, route, finalResponse);
         try {
             if (snapshot.status() != AgentRunStatus.WAITING_APPROVAL) {
@@ -389,7 +389,7 @@ public class AgentRunCoordinator {
                         journalComplete));
     }
 
-    private void recordConversation(AgentRunContext context, AgentRunRoute route, AnalysisResponse response,
+    private void recordConversation(AgentRunContext context, AnalysisResponse response,
             AgentRunSnapshot snapshot) {
         if (!context.executionContext().getOrigin().isConversationPersistenceEnabled()) {
             return;
@@ -405,13 +405,8 @@ public class AgentRunCoordinator {
         if (snapshot.status() != AgentRunStatus.COMPLETED || !response.isSuccess()) {
             return;
         }
-        if (route.target() == AgentRunRoute.Target.COMMAND || route.target() == AgentRunRoute.Target.SKILL) {
-            conversationRecorder.recordSessionConversation(session, request, response.getResult(),
-                    response.getSkillUsed(), modelId, context.runId());
-        } else {
-            conversationRecorder.recordAnalysisConversation(session, request, response.getResult(),
-                    response.getSkillUsed(), modelId, context.runId());
-        }
+        conversationRecorder.recordAnalysisConversation(session, request, response.getResult(),
+                response.getSkillUsed(), modelId, context.runId());
     }
 
     private void recordTrace(AgentRunContext context, AgentRunRoute route, AnalysisResponse response) {

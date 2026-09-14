@@ -22,6 +22,14 @@ public class ResourceCenterController {
         this.resourceCenterService = resourceCenterService;
     }
 
+    /**
+     * 查询当前租户的文件和知识资源，可按关键字、类型及状态过滤。
+     *
+     * @param keyword 可选的搜索关键字
+     * @param resourceType 可选的资源类型
+     * @param status 可选的处理状态
+     * @return 聚合后的资源列表
+     */
     @GetMapping("/assets")
     public ResourceAssetsResponse listAssets(
             @RequestParam(value = "keyword", required = false) String keyword,
@@ -30,6 +38,11 @@ public class ResourceCenterController {
         return resourceCenterService.listAssets(keyword, resourceType, status);
     }
 
+    /**
+     * 汇总当前租户的资源数量、索引块和存储占用。
+     *
+     * @return 资源中心统计
+     */
     @GetMapping("/summary")
     public ResourceSummaryResponse getSummary() {
         return resourceCenterService.getSummary();

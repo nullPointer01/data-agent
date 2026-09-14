@@ -108,7 +108,8 @@ ReAct 不是无限循环。模型调用、工具调用、迭代、Token 和 dead
 AGENT_RUNTIME_MAX_MODEL_CALLS=1
 ```
 
-在管理员 Agent 配置中选择一个显式 `react` 模式的测试 Agent，并确保它能使用 `queryHotelOccupancy`。这样第一次模型调用选择 Tool 后，观察结果回填所需的第二次模型调用会被预算拒绝。
+选择一个显式 `react` 模式的测试 Agent，并绑定 `getCurrentTime` 工具。这样第一次模型调用选择 Tool 后，
+观察结果回填所需的第二次模型调用会被预算拒绝。
 
 ### 发起任务
 
@@ -116,14 +117,14 @@ AGENT_RUNTIME_MAX_MODEL_CALLS=1
 
 ```json
 {
-  "question": "必须先查询杭州上周的酒店经营指标，再判断是否应该调价。",
+  "question": "必须先调用工具获取当前时间，再根据工具结果说明当前日期。",
   "agentId": "替换为测试 Agent 的真实 agentId"
 }
 ```
 
 ### 预期证据
 
-- 首次模型调用和 `queryHotelOccupancy` Tool 证据仍保留。
+- 首次模型调用和 `getCurrentTime` Tool 证据仍保留。
 - 第二次模型准入被拒绝，Run 进入 `BUDGET_EXHAUSTED`，`terminationReason=MODEL_CALL_LIMIT`。
 - Run Inspector 展示模型调用已用量、工具调用已用量、耗时和终止原因；不会把技术终止包装成任务成功。
 

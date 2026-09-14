@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Badge, DataTable, EmptyState, Metric, PageHeader } from '../../components/ui.jsx';
 import { formatTime } from '../../utils/format.js';
 
+/** RBAC 只读概览页：展示角色、权限及当前绑定关系。 */
 export function RolesPage({ api }) {
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);

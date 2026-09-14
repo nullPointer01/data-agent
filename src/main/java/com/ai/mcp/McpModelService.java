@@ -47,7 +47,6 @@ public class McpModelService {
     private static final Logger LOGGER = LoggerFactory.getLogger(McpModelService.class);
     private static final int STREAMING_TIMEOUT_SECONDS = 300;
     private static final String DEFAULT_MODEL_KEY = "default";
-    private static final String DIRECT_SKILL_ID = "direct";
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
     private static final String ERROR_CIRCUIT_PREFIX = "模型[";
@@ -133,8 +132,6 @@ public class McpModelService {
             settleAgentModelCall(runControl, response, totalTokens);
 
             contextManager.addConversationTurn(contextId, ROLE_ASSISTANT, responseText);
-            tokenMonitor.recordSkillTokenUsage(skillId != null ? skillId : DIRECT_SKILL_ID, totalTokens);
-            tokenMonitor.recordModelTokenUsage(modelKey, totalTokens);
             tokenUsageRecorder.record(modelId, skillId, realInputTokens, outputTokens, totalTokens, null);
             structuredLogger.logLlmCall(contextId, resolveLogModelId(modelId, isDefault), realInputTokens, outputTokens,
                     System.currentTimeMillis() - startTime, true, null);
@@ -206,7 +203,6 @@ public class McpModelService {
             long outputTokens = realOutputTokens(response, responseText);
             long totalTokens = realInputTokens + outputTokens;
             settleAgentModelCall(runControl, response, totalTokens);
-            tokenMonitor.recordModelTokenUsage(modelKey, totalTokens);
             tokenUsageRecorder.record(isDefault ? null : modelId, null, realInputTokens, outputTokens, totalTokens,
                     null);
             structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), realInputTokens, outputTokens,
@@ -247,7 +243,6 @@ public class McpModelService {
             long totalTokens = inputTokens + outputTokens;
             settleAgentModelCall(runControl, null, totalTokens);
             String modelKey = modelClientRegistry.modelKey(modelId);
-            tokenMonitor.recordModelTokenUsage(modelKey, totalTokens);
             tokenUsageRecorder.record(isDefault ? null : modelId, null,
                     inputTokens, outputTokens, totalTokens, null);
             structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, outputTokens,
@@ -433,7 +428,6 @@ public class McpModelService {
                 : tokenMonitor.estimateTokens(responseText);
         long totalTokens = inputTokens + outputTokens;
         settleAgentModelCall(runControl, response, totalTokens);
-        tokenMonitor.recordModelTokenUsage(modelKey, totalTokens);
         boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
         tokenUsageRecorder.record(isDefault ? null : modelId, null, inputTokens, outputTokens, totalTokens, null);
         structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, outputTokens,

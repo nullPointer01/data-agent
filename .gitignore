@@ -71,3 +71,6 @@ logs/
 
 # Generated local artifacts
 pet-builds/
+.playwright-cli/
+output/playwright/
+outputs/

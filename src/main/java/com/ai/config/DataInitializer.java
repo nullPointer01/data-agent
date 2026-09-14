@@ -58,7 +58,6 @@ public class DataInitializer {
             repairUserTokenQuotaSchema(jdbcTemplate);
             initDefaultRbac(roleRepository, permissionRepository, rolePermissionService);
             bootstrapAdminUsers(sysUserRepository, rolePermissionService);
-            initDefaultSkill(skillConfigRepository, skillManager);
             loadExistingSkills(skillConfigRepository, skillManager);
         };
     }
@@ -165,41 +164,18 @@ public class DataInitializer {
         }
     }
 
-    private void initDefaultSkill(SkillConfigRepository repository, SkillManager skillManager) {
-        if (repository.countByIsDefaultTrue() == 0) {
-            SkillConfig defaultSkill = new SkillConfig();
-            defaultSkill.setName("通用数据分析");
-            defaultSkill.setDescription("默认数据分析技能，支持通用数据查询、统计分析和趋势预测");
-            defaultSkill.setVersion("1.0");
-            defaultSkill.setApiUrl("");
-            defaultSkill.setApiMethod("POST");
-            defaultSkill.setPromptTemplate(
-                    "你是数据分析助手。基于{{data}}回答{{query}}。规则:1.有数据时分析数据 2.无数据时提示用户上传 3.绝不编造数据 4.简洁专业");
-            defaultSkill.setKeywords("分析,数据,统计,查询,报表,趋势,预测,对比,汇总");
-            defaultSkill.setEnabled(true);
-            defaultSkill.setDefault(true);
-            defaultSkill.setTenantId("default");
-
-            repository.save(defaultSkill);
-            LOGGER.info("默认技能已初始化: {}", defaultSkill.getName());
-        }
-    }
-
+    /**
+     * 将数据库中已启用的 Skill 按稳定 ID 加载到运行时注册表。
+     *
+     * @param repository Skill 配置仓储
+     * @param skillManager Skill 运行时注册表
+     */
     private void loadExistingSkills(SkillConfigRepository repository, SkillManager skillManager) {
         List<SkillConfig> skills = repository.findByEnabledTrue();
         for (SkillConfig config : skills) {
-            if (config.isDefault()) {
-                registerDefaultSkillToManager(config, skillManager);
-            } else {
-                registerSkillToManager(config, skillManager);
-            }
+            registerSkillToManager(config, skillManager);
         }
         LOGGER.info("已加载 {} 个启用技能到 SkillManager", skills.size());
-    }
-
-    private void registerDefaultSkillToManager(SkillConfig config, SkillManager skillManager) {
-        DynamicSkill skill = buildDynamicSkill(config);
-        skillManager.registerDefaultSkillWithoutVectorRefresh(config.getSkillId(), skill);
     }
 
     private void registerSkillToManager(SkillConfig config, SkillManager skillManager) {
@@ -216,7 +192,6 @@ public class DataInitializer {
                         "apiMethod", config.getApiMethod() != null ? config.getApiMethod() : "POST",
                         "apiHeaders", config.getApiHeaders() != null ? config.getApiHeaders() : "",
                         "promptTemplate", config.getPromptTemplate() != null ? config.getPromptTemplate() : "",
-                        "responseTemplate", config.getResponseTemplate() != null ? config.getResponseTemplate() : "",
-                        "keywords", config.getKeywords() != null ? config.getKeywords() : ""));
+                        "steps", config.getSteps() != null ? config.getSteps() : ""));
     }
 }

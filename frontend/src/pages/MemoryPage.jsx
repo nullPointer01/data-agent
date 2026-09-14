@@ -204,6 +204,7 @@ function TagGroup({ title, items }) {
   );
 }
 
+/** 语义记忆页：查看、修正和删除长短期记忆及用户画像投影。 */
 export function MemoryPage({ api, toast }) {
   const [memories, setMemories] = useState([]);
   const [profile, setProfile] = useState({});

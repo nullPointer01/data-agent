@@ -21,6 +21,10 @@ public class AgentDurableRuntimeProperties {
 
     private boolean enabled;
 
+    /**
+     * [演示功能开关] 是否把酒店改价沙箱工具注册到工具目录。
+     * 该开关不控制通用持久化审批能力。
+     */
     private boolean sandboxToolEnabled;
 
     @NotNull

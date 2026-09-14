@@ -28,6 +28,7 @@ function parseJson(value, fallback) {
   }
 }
 
+/** 运行追踪列表：筛选 Agent Run 并进入单次运行的证据详情。 */
 export function TracePage({ api, initialUserId = '' }) {
   const [traces, setTraces] = useState([]);
   const [query, setQuery] = useState('');
@@ -93,6 +94,7 @@ export function TracePage({ api, initialUserId = '' }) {
   );
 }
 
+/** 展示单次 Run 的请求计划、预算终态、工具 Journal 和可见执行步骤。 */
 export function TraceDetail({ trace, api, onClose }) {
   const plan = parseJson(trace.planJson, {});
   const sharedContext = parseJson(trace.sharedContextJson, {});

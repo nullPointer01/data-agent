@@ -17,7 +17,10 @@ import java.time.LocalDate;
 import java.util.Objects;
 
 /**
- * 审批型演示工具适配器，只允许当前恢复 Run 的已批准动作进入沙箱。
+ * [演示功能][真实审批链路] 酒店改价沙箱的安全适配器。
+ *
+ * <p>本类真实校验 Run、租户、审批单、工具名称和审批执行状态；
+ * 校验通过后仅调用 {@link HotelRateSandboxService} 写入隔离表，不连接真实酒店系统。</p>
  *
  * @author data-agent
  */

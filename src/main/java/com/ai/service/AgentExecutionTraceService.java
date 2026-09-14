@@ -275,11 +275,7 @@ public class AgentExecutionTraceService {
         if (route.profile() != null) {
             return route.profile().getName();
         }
-        return switch (route.target()) {
-            case COMMAND -> "command";
-            case SKILL -> route.mode().name().toLowerCase() + ":skill";
-            case CONFIGURED_AGENT -> "configured-agent";
-        };
+        return "configured-agent";
     }
 
     private Map<String, Object> buildRunPlanPayload(AgentRunSnapshot snapshot,

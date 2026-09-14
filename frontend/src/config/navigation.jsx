@@ -17,6 +17,7 @@ import {
   Zap
 } from 'lucide-react';
 
+// 导航是产品入口的唯一前端清单：普通工作区与管理控制面在此明确分区。
 export const adminPages = ['users', 'roles', 'models', 'skills', 'agents', 'datasources', 'approvals', 'stats', 'quality', 'agent-evals', 'traces', 'audit', 'resources'];
 
 export const userNavGroups = [

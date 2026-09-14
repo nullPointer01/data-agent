@@ -49,43 +49,41 @@ public class FileParserService {
     }
 
     /**
-     * Checks whether the parsed content is useful for downstream reasoning.
+     * 判断解析结果是否可供下游推理使用。
      *
-     * @param content parsed content
-     * @return true when the content can be read by downstream services
+     * @param content 解析后的文本
+     * @return 下游可以读取时返回 true
      */
     public boolean isReadableContent(String content) {
         return content != null
-                && !content.isBlank()
-                && !content.startsWith(FileTypeSupport.IMAGE_FILE_PREFIX)
-                && !content.startsWith(FileTypeSupport.UNSUPPORTED_FILE_PREFIX);
+                && !content.isBlank();
     }
 
     /**
-     * Checks whether the parsed content is large enough to be indexed.
+     * 判断解析结果是否达到向量和全文索引的最小长度。
      *
-     * @param content parsed content
-     * @return true when the content is large enough for indexing
+     * @param content 解析后的文本
+     * @return 内容达到索引条件时返回 true
      */
     public boolean isIndexableFileContent(String content) {
         return isReadableContent(content) && content.length() > FileTypeSupport.MIN_INDEXABLE_FILE_CONTENT_LENGTH;
     }
 
     /**
-     * Exposes the configured parser list for focused tests.
+     * 返回按优先级排序的解析器列表，供定向测试验证。
      *
-     * @return parser list in evaluation order
+     * @return 解析器执行顺序
      */
     List<FileContentParser> getFileContentParsers() {
         return fileContentParsers;
     }
 
     /**
-     * Resolves the first parser that supports the given file and delegates parsing to it.
+     * 选择第一个支持当前文件的解析器并执行解析。
      *
-     * @param context normalized file context
-     * @return parsed content
-     * @throws Exception when no parser accepts the file or parsing fails
+     * @param context 规范化文件上下文
+     * @return 解析后的文本
+     * @throws Exception 没有解析器支持或解析失败时抛出
      */
     private String parse(FileParsingContext context) throws Exception {
         for (FileContentParser parser : fileContentParsers) {

@@ -7,6 +7,7 @@ function tone(status) {
   return status === 'SUCCESS' ? 'green' : status === 'FAILED' ? 'red' : 'gray';
 }
 
+/** 审计页：按动作、资源和用户检索平台操作日志。 */
 export function AuditPage({ api }) {
   const [logs, setLogs] = useState([]);
   const [query, setQuery] = useState('');

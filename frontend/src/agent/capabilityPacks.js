@@ -1,5 +1,6 @@
 import { BookOpenCheck, ChartNoAxesCombined, FileText, Sparkles } from 'lucide-react';
 
+// 将后端精确 Capability 投影成普通用户易理解的能力包，不改变服务端权限语义。
 const KNOWLEDGE_TOOLS = new Set([
   'searchKnowledge',
   'searchMemory',
@@ -15,7 +16,6 @@ const DATA_TOOLS = new Set([
   'executeSql',
   'previewDataSource',
   'generateChart',
-  'queryHotelOccupancy'
 ]);
 const ASSISTANCE_TOOLS = new Set(['askUserForInfo', 'updateHotelPrice']);
 

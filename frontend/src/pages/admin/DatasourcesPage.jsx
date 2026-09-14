@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ResourcePage } from '../../components/admin/ResourcePage.jsx';
 import { Modal } from '../../components/ui.jsx';
 
+/** 数据源管理页：维护连接配置，并查看真实连通性、Schema 和数据预览。 */
 export function DatasourcesPage({ api, toast }) {
   const [preview, setPreview] = useState(null);
   const [schema, setSchema] = useState(null);

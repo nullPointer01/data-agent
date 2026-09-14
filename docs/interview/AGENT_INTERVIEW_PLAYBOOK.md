@@ -95,7 +95,7 @@ LLM 负责推理和决策，工具负责接触真实世界，RAG/Memory 负责�
 
 - `AgentTools`：用 `@Tool` 声明工具。
 - `AgentToolInvoker`：从注解生成工具规格并执行。
-- `queryHotelOccupancy`：Day14 从“查一个出租率”升级为“酒店经营诊断能力”。
+- `executeSql`：工具 schema 只描述可读 SQL 能力，服务端还会再做 SELECT 语法限制、行数上限和租户准入。
 
 ### 卖点 3：你有“编排动作，不要编排推理”的新颖观点
 
@@ -233,14 +233,14 @@ LLM-as-judge：用模型辅助评价答案，但高风险场景要抽样人工�
 
 可以选 5-7 条放简历：
 
-- 设计统一 Agent Run 路由链路，支持 Chat、ReAct、受控子 Agent 委派以及命令和指定 Skill 执行。
-- 基于 LangChain4j Function Calling 实现工具系统，通过 `@Tool` 注解生成工具 schema，支持知识库搜索、文件分析、SQL 查询、图表生成、计算和酒店经营指标诊断。
+- 设计统一 Agent Run 路由链路，支持 Chat、ReAct 和受控子 Agent 委派；Skill 只能作为 Agent 显式绑定的受治理能力执行。
+- 基于 LangChain4j Function Calling 实现工具系统，支持知识库搜索、文件分析、只读 SQL、图表生成和计算。
 - 实现 ReAct 推理循环，支持“模型决策 -> 工具调用 -> 结果观察 -> 继续推理”，并通过最大迭代次数、错误恢复和 fallback 防止无限循环。
 - 构建 RAG 混合检索管道，结合 Milvus 向量检索、全文检索、RRF 融合、重排、父上下文补全和上下文压缩，提高企业知识问答的可追溯性。
 - 建设分层记忆能力，区分 working memory、short-term memory、long-term memory 和 user profile，减少长对话上下文膨胀。
 - 设计模型网关，支持 OpenAI-compatible 模型供应商接入，统一处理模型配置、API Key 加密、token 记账、限流配额、重试和错误分类。
 - 补齐 Agent 可观测性，记录 SSE thinking steps、工具调用次数、ReAct 迭代轮数、traceId、结构化日志和 `agent_execution_trace`，便于线上问题复盘。
-- 结合酒店业务设计 `queryHotelOccupancy` 工具，将出租率、ADR、RevPAR、预订提前期、取消率等指标封装为 Agent 可调用的经营诊断能力。
+- 实现高风险工具的持久化暂停、人工审批、数据库租约恢复和幂等沙箱验证。
 
 ### 4.4 简历里的高阶关键词
 
@@ -278,9 +278,9 @@ Tool-call Recovery
 
 > 我这个项目叫 Data Agent，是一个企业数据分析 Agent 平台。它解决的问题是：企业内部有知识库、上传文件、数据源和业务指标，用户希望用自然语言直接做分析，而不是自己去找资料、写 SQL 或拼图表。
 >
-> 架构上我分了几层。入口层是 React 控制台和 Spring MVC API；安全层是 JWT、RBAC、管理员初始化和租户隔离；Agent Runtime 由 `AgentRunCoordinator` 统一建 Run，再按固化路线走命令、Skill 或配置化 Agent；能力层包括模型网关、RAG、记忆、工具、文件解析、数据源查询和图表生成；最后是可观测与评测层，记录执行轨迹、结构化日志、质量指标、离线评测和审计。
+> 架构上我分了几层。入口层是 React 控制台和 Spring MVC API；安全层是 JWT、RBAC、管理员初始化和租户隔离；Agent Runtime 由 `AgentRunCoordinator` 统一建 Run，再让配置化 Agent 进入 Chat、ReAct 或 Orchestrated；能力层包括模型网关、RAG、记忆、工具、Skill、文件解析、数据源查询和图表生成；最后是可观测与评测层。
 >
-> Agent 的核心是 ReAct。模型不是直接回答，而是在最多几轮内循环执行“思考、行动、观察”。如果它需要知识，就调用 `searchKnowledge`；需要数据，就调用 `executeSql` 或数据源预览；需要计算，就调用 `calculate`；需要酒店业务指标，就调用我扩展的 `queryHotelOccupancy`。这些工具通过 LangChain4j 的 `@Tool` 注解生成 schema，模型根据 description 选择工具，后端执行后把结果再喂回模型。
+> Agent 的核心是 ReAct。模型在最多几轮内循环执行“思考、行动、观察”。需要知识时调用 `searchKnowledge`，需要数据时调用 `executeSql` 或数据源预览，需要计算时调用 `calculate`。工具由 `@Tool` 生成 schema，但真正执行前还要经过权限、Agent 白名单、参数、风险和预算准入。
 >
 > 为了减少幻觉，我做了 RAG 混合检索：向量召回负责语义相似，全文检索负责关键词精确匹配，再用 RRF 融合、重排、补父上下文、压缩后注入 prompt。为了支持连续任务，我做了记忆分层，区分当前工作记忆、会话短期记忆、长期记忆和用户画像。为了生产可控，我做了模型重试、token 记账、SQL 只读、租户隔离、SSE 流式输出和 `agent_execution_trace`。
 >
@@ -327,9 +327,9 @@ Tool-call Recovery
 
 > 后端把工具以 schema 形式传给模型，包括 name、description、parameters。模型不会真的执行工具，它只返回一个结构化的 tool call。后端再根据工具名找到执行器执行。模型选择工具主要看 description，所以 description 要写清楚“什么时候用”，不只是“这个工具是什么”。
 
-结合 Day14：
+结合项目：
 
-> 比如我把 `queryHotelOccupancy` 从“查询出租率”扩展成“查询并分析酒店经营表现”，description 里加了出租率、ADR、RevPAR、预订趋势、是否调价这些关键词，让模型在用户问经营诊断时更容易选中它。
+> `executeSql` 的 description 明确它只接受 SELECT；但我不把安全寄托在 description 上，服务端会再做只读语法、行数和数据源权限校验。
 
 ### Q4：ReAct 和 Orchestrator 有什么区别？
 
@@ -437,21 +437,21 @@ query rewrite
 
 ## 7. 你的三个高分技术故事
 
-### 故事 1：工具调用从 demo 到业务能力
+### 故事 1：高风险工具从直接执行到可恢复审批
 
 结构：
 
 ```text
-背景：Day5 做了 queryHotelOccupancy mock 工具。
-问题：只返回出租率，业务价值很薄。
-行动：Day14 扩展成酒店经营诊断能力，加入 ADR、RevPAR、取消率、预订提前期、环比和建议动作。
-结果：工具从“查一个数”变成“支撑 Agent 业务判断”的能力。
-认知：Agent 的价值不是会调工具，而是能把工具结果转成业务可用判断。
+背景：ReAct 已能调用工具，但高风险写操作不能只依赖模型判断。
+问题：进程重启或 SSE 断开后，内存等待无法保证任务继续。
+行动：将 Run、剩余预算和工具请求加密持久化，用审批状态机、数据库租约和恢复时二次授权推进。
+结果：审批前无副作用，批准后可恢复原 Run，重复恢复不重复写入沙箱。
+认知：模型只能提议动作，权限、风险、审批和幂等必须由 Harness 掌控。
 ```
 
 面试说法：
 
-> 我一开始给 Agent 加了一个酒店出租率工具，后来发现这只是工具调用 demo。真实业务不会只问“出租率是多少”，而是问“经营是否健康，要不要调价”。所以我把工具输出升级为一组 KPI：出租率、ADR、RevPAR、取消率和预订提前期，并把 KPI 定义和诊断逻辑一起返回。这样模型拿到的不是孤立数字，而是可以解释和行动的业务上下文。
+> 我没有让高风险工具在模型选中后直接执行。Run 会先持久化为 `WAITING_APPROVAL`，批准后由数据库租约 worker 领取，恢复前重新校验发起人、审批人、Tool Registry 和 Agent allowlist。沙箱用 `approvalId + toolCallId` 作唯一动作键，证明本地恢复幂等。
 
 ### 故事 2：ReAct 流式路径没有 trace
 
@@ -547,7 +547,7 @@ query rewrite
 
 验收：
 
-> 用 `queryHotelOccupancy` 举例讲清楚 tool schema、description、参数、执行和观察结果回填。
+> 用 `executeSql` 举例讲清楚 tool schema、description、参数、服务端准入、执行和观察结果回填。
 
 ### Day 3：RAG + Memory
 
@@ -682,72 +682,15 @@ query rewrite
 
 ---
 
-## 13. 酒店业务 Agent 场景稿
-
-### 13.1 业务问题
-
-用户不会说“调用工具”。用户会问：
-
-```text
-杭州上周酒店经营怎么样？要不要调价？
-```
-
-这个问题要拆成：
-
-- 出租率高不高？
-- ADR 是涨还是跌？
-- RevPAR 是否提升？
-- 取消率是否异常？
-- 预订提前期是否健康？
-- 如果要动作，是提价、促销还是观察？
-
-### 13.2 KPI 口径
-
-```text
-出租率 = 已售间夜 / 可售间夜
-ADR = 房费收入 / 已售间夜
-RevPAR = ADR * 出租率
-```
-
-面试要点：
-
-> 只看出租率会误判。出租率高可能是低价换量，ADR 高也可能压制需求。RevPAR 把价格和入住结合起来，更适合看综合收益。
-
-### 13.3 Agent 能力设计
-
-工具：
-
-```text
-queryHotelOccupancy(city, date)
-```
-
-返回：
-
-- 出租率
-- ADR
-- RevPAR
-- 环比变化
-- 取消率
-- 预订提前期
-- KPI 定义
-- 诊断结论
-- 建议动作
-
-讲法：
-
-> Day5 我只是做了一个查出租率的 mock 工具；Day14 我把它升级成酒店经营诊断工具。这个变化代表我对 Agent 的理解升级了：工具不是为了返回一个数，而是要给模型提供足够业务化、可解释的上下文，让模型能生成业务判断。
-
----
-
-## 14. 最后一页：面试前背这段
+## 13. 最后一页：面试前背这段
 
 > 我对 Agent 的理解是：它不是一个更会聊天的模型，而是一个由模型驱动的执行系统。模型负责理解任务、规划下一步、决定是否调用工具；工具负责连接真实世界的数据、知识库、文件、数据库和业务系统；RAG 和 Memory 负责给模型补充外部上下文；Runtime 负责循环、编排、错误恢复、权限、成本和可观测性。
 >
-> 我在 Data Agent 项目里从 ReAct、工具调用、RAG、记忆、多 Agent 编排、模型重试、SSE、执行轨迹到酒店业务能力都做过一遍。我的最大收获是：Agent 的生产落地不是让模型无限自主，而是在推理上给模型空间，在动作上加权限、审批和审计。也就是带刹车的自主。
+> 我在 Data Agent 项目里从 ReAct、工具治理、RAG、记忆、多 Agent 委派、模型重试、SSE、执行轨迹到持久化人工审批都做过一遍。我的最大收获是：Agent 的生产落地不是让模型无限自主，而是在推理上给模型空间，在动作上加权限、审批和审计。
 
 ---
 
-## 15. 参考补充
+## 14. 参考补充
 
 这些不是背诵材料，是用来让你的回答贴近当前市场：
 

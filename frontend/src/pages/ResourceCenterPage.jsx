@@ -81,6 +81,7 @@ function QualityMetric({ label, value, hint }) {
   );
 }
 
+/** 租户资源中心：统一查看和治理文件、知识等已入库资产。 */
 export function ResourceCenterPage({ api, toast }) {
   const [assets, setAssets] = useState([]);
   const [summary, setSummary] = useState({});

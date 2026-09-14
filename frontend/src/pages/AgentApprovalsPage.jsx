@@ -25,6 +25,7 @@ function ApprovalUser({ item }) {
   );
 }
 
+/** 动作审批页：查看申请人和运行证据，并对待审高风险工具作出决策。 */
 export function AgentApprovalsPage({ api, toast }) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('PENDING');

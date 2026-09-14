@@ -137,7 +137,7 @@ public class AnalysisStreamService {
                 : "分析请求未被接受";
         legacyEventWriter.emitError(event -> sendRawEvent(emitter, event), error);
         legacyEventWriter.emitDone(event -> sendRawEvent(emitter, event),
-                request == null ? null : request.getSessionId());
+                request == null ? null : request.getSessionId(), null);
     }
 
     private void cancelActiveRun(String runId, Future<?> task) {

@@ -11,7 +11,9 @@ import java.time.LocalDate;
 import java.util.Optional;
 
 /**
- * 酒店价格沙箱仓储，写入使用数据库唯一键完成幂等竞争。
+ * [演示功能][隔离表] 酒店价格沙箱仓储。
+ *
+ * <p>写入使用数据库唯一键完成幂等竞争；本仓储不是真实酒店价格库的 Repository。</p>
  *
  * @author data-agent
  */

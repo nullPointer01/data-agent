@@ -36,42 +36,91 @@ public class DataSourceController {
         this.dataConnectorService = dataConnectorService;
     }
 
+    /**
+     * 查询当前租户配置的全部数据源。
+     *
+     * @return 数据源列表
+     */
     @GetMapping("/list")
     public DataSourceListResponse list() {
         return dataSourceService.list();
     }
 
+    /**
+     * 为当前租户新增数据源配置。
+     *
+     * @param request 数据源连接配置
+     * @return 创建结果
+     */
     @PostMapping("/add")
     public DataSourceMutationResponse add(@RequestBody DataSourceRequest request) {
         return dataSourceService.create(request);
     }
 
+    /**
+     * 更新当前租户拥有的数据源配置。
+     *
+     * @param id 数据源编号
+     * @param request 新的数据源配置
+     * @return 更新结果
+     */
     @PutMapping("/update/{id}")
     public DataSourceMutationResponse update(@PathVariable String id, @RequestBody DataSourceRequest request) {
         return dataSourceService.update(id, request);
     }
 
+    /**
+     * 删除当前租户拥有的数据源配置。
+     *
+     * @param id 数据源编号
+     * @return 删除结果
+     */
     @DeleteMapping("/delete/{id}")
     public DataSourceMutationResponse delete(@PathVariable String id) {
         return dataSourceService.delete(id);
     }
 
+    /**
+     * 切换当前租户数据源的启用状态。
+     *
+     * @param id 数据源编号
+     * @return 切换结果
+     */
     @PutMapping("/toggle/{id}")
     public DataSourceMutationResponse toggle(@PathVariable String id) {
         return dataSourceService.toggle(id);
     }
 
+    /**
+     * 使用已保存配置真实测试数据源连接。
+     *
+     * @param id 数据源编号
+     * @return 连接测试结果
+     */
     @PostMapping("/test/{id}")
     public DataSourceTestResponse test(@PathVariable String id) {
         String result = dataConnectorService.test(id);
         return new DataSourceTestResponse(result.startsWith("连接成功"), result);
     }
 
+    /**
+     * 读取指定数据源的数据库结构。
+     *
+     * @param id 数据源编号
+     * @return Schema 查询结果
+     */
     @GetMapping("/schema/{id}")
     public DataSourceSchemaResponse schema(@PathVariable String id) {
         return new DataSourceSchemaResponse(true, dataConnectorService.schema(id));
     }
 
+    /**
+     * 预览指定数据源中的有限行数据。
+     *
+     * @param id 数据源编号
+     * @param limit 最大预览行数
+     * @return 数据预览结果
+     */
     @GetMapping("/preview/{id}")
     public DataSourcePreviewResponse preview(@PathVariable String id,
             @RequestParam(defaultValue = "50") int limit) {

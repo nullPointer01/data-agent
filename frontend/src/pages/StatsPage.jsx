@@ -16,6 +16,7 @@ function normalizePairs(value) {
   });
 }
 
+/** 资源统计页：展示持久化 Token 使用记录的用户、模型和时间分布。 */
 export function StatsPage({ api }) {
   const [summary, setSummary] = useState({});
   const [records, setRecords] = useState([]);

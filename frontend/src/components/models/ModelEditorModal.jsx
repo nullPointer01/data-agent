@@ -20,6 +20,7 @@ import { ModelProviderPicker } from './ModelProviderPicker.jsx';
 
 const CONNECTION_FIELDS = new Set(['provider', 'apiKey', 'baseUrl', 'modelName', 'temperature']);
 
+/** 模型配置编辑器：根据供应商契约收集参数、发起探测并保存配置。 */
 export function ModelEditorModal({ api, providers, initialModel, onClose, onSaved }) {
   const [form, setForm] = useState(() => normalizeForm(initialModel, providers));
   const [advancedOpen, setAdvancedOpen] = useState(false);

@@ -104,15 +104,9 @@ CREATE TABLE IF NOT EXISTS skill_config (
     api_method VARCHAR(8) DEFAULT 'POST' COMMENT 'API方法',
     api_headers TEXT DEFAULT NULL COMMENT 'API请求头JSON',
     prompt_template TEXT DEFAULT NULL COMMENT '提示词模板',
-    response_template TEXT DEFAULT NULL COMMENT '响应模板',
-    keywords VARCHAR(512) DEFAULT NULL COMMENT '匹配关键词',
     steps TEXT DEFAULT NULL COMMENT '执行步骤',
-    auto_attach VARCHAR(64) DEFAULT NULL COMMENT '自动挂载策略',
     source VARCHAR(32) DEFAULT 'manual' COMMENT '来源',
-    feedback_count INT DEFAULT 0 COMMENT '反馈次数',
-    positive_count INT DEFAULT 0 COMMENT '正向反馈次数',
     enabled BIT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
-    is_default BIT(1) DEFAULT 0 COMMENT '是否默认技能',
     tenant_id VARCHAR(64) DEFAULT NULL COMMENT '租户ID',
     created_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
     created_at DATETIME(6) DEFAULT NULL COMMENT '创建时间',
@@ -523,32 +517,3 @@ VALUES
     ('ADMIN', 'app:use'),
     ('ADMIN', 'agent:approval:review'),
     ('ADMIN', '*:*');
-
-INSERT INTO skill_config (
-    skill_id, name, description, version, api_url, api_method, prompt_template, keywords,
-    enabled, is_default, tenant_id, created_by, created_at, updated_at
-)
-VALUES (
-    'default-data-analysis',
-    '通用数据分析',
-    '默认数据分析技能，支持通用数据查询、统计分析和趋势预测',
-    '1.0',
-    '',
-    'POST',
-    '你是数据分析助手。基于{{data}}回答{{query}}。规则:1.有数据时分析数据 2.无数据时提示用户上传 3.绝不编造数据 4.简洁专业',
-    '分析,数据,统计,查询,报表,趋势,预测,对比,汇总',
-    1,
-    1,
-    'default',
-    NULL,
-    NOW(6),
-    NOW(6)
-)
-ON DUPLICATE KEY UPDATE
-    name = VALUES(name),
-    description = VALUES(description),
-    prompt_template = VALUES(prompt_template),
-    keywords = VALUES(keywords),
-    enabled = VALUES(enabled),
-    is_default = VALUES(is_default),
-    updated_at = NOW(6);

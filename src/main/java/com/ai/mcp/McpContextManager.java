@@ -25,11 +25,16 @@ public class McpContextManager {
 
     private final Map<String, McpContext> contexts = new ConcurrentHashMap<>();
 
-    public String createContext(String skillId, String modelType) {
+    /**
+     * 为一次 Skill 执行创建有超时回收的对话窗口。
+     *
+     * @return 上下文编号
+     */
+    public String createContext() {
         String contextId = UUID.randomUUID().toString();
-        McpContext context = new McpContext(contextId, skillId, modelType);
+        McpContext context = new McpContext(contextId);
         contexts.put(contextId, context);
-        LOGGER.debug("Context created: {} for skill: {}", contextId, skillId);
+        LOGGER.debug("Context created: {}", contextId);
         return contextId;
     }
 
@@ -37,13 +42,7 @@ public class McpContextManager {
         return contexts.get(contextId);
     }
 
-    public void updateContext(String contextId, String key, Object value) {
-        McpContext context = contexts.get(contextId);
-        if (context != null) {
-            context.getMetadata().put(key, value);
-        }
-    }
-
+    /** 向指定窗口追加一条消息，并刷新空闲超时时间。 */
     public void addConversationTurn(String contextId, String role, String content) {
         McpContext context = contexts.get(contextId);
         if (context != null) {
@@ -57,10 +56,7 @@ public class McpContextManager {
         LOGGER.debug("Context destroyed: {}", contextId);
     }
 
-    public Map<String, McpContext> getContexts() {
-        return Map.copyOf(contexts);
-    }
-
+    /** 定时回收长时间未访问的内存上下文。 */
     @Scheduled(fixedRate = CLEANUP_INTERVAL_MS)
     public void cleanupExpiredContexts() {
         long now = System.currentTimeMillis();

@@ -1,6 +1,7 @@
 import { Brain } from 'lucide-react';
 import { useState } from 'react';
 
+/** 认证入口：承载登录、可选注册和首个管理员初始化。 */
 export function LoginScreen({ api, onAuth, notice, setNotice }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ username: '', password: '', nickname: '', email: '', tenantId: '' });

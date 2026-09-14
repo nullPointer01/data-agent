@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+/** 普通用户自助注册请求；租户归属由服务端配置决定。 */
 public record RegisterRequest(
         @NotBlank(message = "用户名不能为空")
         @Size(max = 64, message = "用户名不能超过64个字符")

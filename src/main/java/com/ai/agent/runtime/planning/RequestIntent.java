@@ -34,8 +34,5 @@ public enum RequestIntent {
     ACTION,
 
     /** 包含多个目标或需要协作拆解的任务。 */
-    MULTI_STEP,
-
-    /** 命令、指定 Skill 等已经由上层显式确定的路线。 */
-    EXPLICIT_ROUTE
+    MULTI_STEP
 }

@@ -21,6 +21,7 @@ function presetBindings(preset, capabilities) {
     .flatMap((pack) => availablePackBindings(pack, capabilities)));
 }
 
+/** 专家助手页：管理非默认 Agent Profile，供个人 Agent 显式绑定后委派。 */
 export function ExpertsPage({ api, toast }) {
   const [experts, setExperts] = useState([]);
   const [parentBindings, setParentBindings] = useState([]);

@@ -213,8 +213,6 @@ com.ai.service          应用服务
 com.ai.repository       JPA Repository
 ```
 
-`examples/graph-agent` 是不参与应用构建的状态图教学示例，不属于生产运行时。
-
 ## Agent Run Harness
 
 入口：
@@ -224,13 +222,9 @@ com.ai.repository       JPA Repository
 
 每次被接受的分析请求都会创建唯一 `runId`。`AgentRunCoordinator` 统一负责路线解析、状态机、deadline、模型/工具/Token 预算、SSE 事件、取消、会话记录和 Trace；同步与流式请求使用相同路线。
 
-路由顺序：
-
-1. 斜杠命令进入 Skill 命令执行。
-2. 指定 `agentId` 时走自定义 Agent。
-3. 指定 `skillId` 时走动态技能。
-4. 未显式指定能力时，加载当前用户的默认个人 Agent。
-5. 个人 Agent 的 AUTO 模式对简单问题走 Chat；复杂任务存在有效子 Agent 时走 Orchestrated，否则走 ReAct。显式 Chat、ReAct 和 Orchestrated 不会在执行层被折叠成其他模式。
+路由只选择配置化 Agent：请求显式携带 `agentId` 时加载该 Agent，否则加载当前用户的默认个人 Agent。
+斜杠命令、请求直接指定 Skill 和默认 Skill 回退已删除；Skill 只作为 Profile 显式绑定的 `useSkill` 工具进入治理管道。
+个人 Agent 的 AUTO 模式对简单问题走 Chat；复杂任务存在有效子 Agent 时走 Orchestrated，否则走 ReAct。
 
 普通 Run 状态为 `CREATED -> RUNNING -> COMPLETED | FAILED | CANCELLED | TIMED_OUT | BUDGET_EXHAUSTED`。启用持久化审批后，ReAct 还允许 `RUNNING -> WAITING_APPROVAL -> RESUMING`，拒绝和过期分别进入 `REJECTED`、`EXPIRED` 终态，恢复后可以再次等待或进入普通终态。每次状态变化都通过 MySQL 的期望状态、版本和租约条件更新竞争唯一结果。
 

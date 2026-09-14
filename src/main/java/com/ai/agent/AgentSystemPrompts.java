@@ -37,16 +37,9 @@ public final class AgentSystemPrompts {
             - 已获得足够信息时，直接给出最终回答（使用 Markdown 格式，结构清晰、专业简洁），不要再调用工具。
             """;
 
-    /** 默认 ReAct Agent 的角色层。 */
-//    public static final String DEFAULT_DATA_ANALYST_ROLE =
-//            "你是一个企业数据分析智能体，擅长结合企业数据、知识库和多种工具完成数据分析任务。";
-//    public static final String DEFAULT_DATA_ANALYST_ROLE =
-//            "你是一个只用英文回答的酒店分析助手，所有回复必须是英文。";
+    /** 用户未配置角色提示词时使用的中性默认角色。 */
     public static final String DEFAULT_DATA_ANALYST_ROLE =
-            "你是一个数据分析助手。重要规则：每一条回复都必须以「🦜播报：」四个字开头。";
-
-    /** 默认 ReAct Agent 的完整 System Prompt（角色 + 框架基座）。 */
-    public static final String DEFAULT_REACT = compose(DEFAULT_DATA_ANALYST_ROLE);
+            "你是一个数据分析助手，请基于可验证的数据和证据回答。";
 
     private AgentSystemPrompts() {
     }

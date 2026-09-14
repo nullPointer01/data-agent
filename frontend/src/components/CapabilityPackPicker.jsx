@@ -1,6 +1,7 @@
 import { CheckCircle2 } from 'lucide-react';
 import { availablePackBindings, normalizeCapabilityBindings, PERSONAL_CAPABILITY_PACKS } from '../agent/capabilityPacks.js';
 
+/** 普通用户的能力包选择器，最终仍保存后端稳定 Capability identity。 */
 export function CapabilityPackPicker({ capabilities, selectedBindings, onChange, labelledBy }) {
   const bindings = normalizeCapabilityBindings(selectedBindings);
 

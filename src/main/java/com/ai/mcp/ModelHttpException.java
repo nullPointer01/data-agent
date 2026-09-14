@@ -1,7 +1,7 @@
 package com.ai.mcp;
 
 /**
- * HTTP model endpoint exception with retry semantics.
+ * 模型 HTTP 端点调用异常，携带响应状态码和是否允许重试的判定。
  *
  * @author data-agent
  */

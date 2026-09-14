@@ -1,6 +1,5 @@
 package com.ai.controller;
 
-import com.ai.mcp.TokenMonitor;
 import com.ai.model.TokenUsage;
 import com.ai.repository.TokenUsageRepository;
 import com.ai.security.SecurityContextHelper;
@@ -36,34 +35,26 @@ public class TokenController {
     private static final String KEY_TOTAL_PAGES = "totalPages";
     private static final String KEY_CURRENT_PAGE = "currentPage";
     private static final String KEY_SUCCESS = "success";
-    private static final String KEY_MESSAGE = "message";
     private static final String KEY_REMAINING_TOKENS = "remainingTokens";
     private static final int TENANT_SUMMARY_INITIAL_CAPACITY = 3;
     private static final int USAGE_RECORDS_INITIAL_CAPACITY = 4;
 
-    private final TokenMonitor tokenMonitor;
     private final TokenUsageRepository tokenUsageRepository;
     private final SecurityContextHelper securityContextHelper;
     private final TokenQuotaService tokenQuotaService;
 
-    public TokenController(TokenMonitor tokenMonitor, TokenUsageRepository tokenUsageRepository,
+    public TokenController(TokenUsageRepository tokenUsageRepository,
             SecurityContextHelper securityContextHelper, TokenQuotaService tokenQuotaService) {
-        this.tokenMonitor = tokenMonitor;
         this.tokenUsageRepository = tokenUsageRepository;
         this.securityContextHelper = securityContextHelper;
         this.tokenQuotaService = tokenQuotaService;
     }
 
-    @GetMapping("/skill-usage")
-    public Map<String, Long> getSkillTokenUsage() {
-        return tokenMonitor.getSkillTokenUsage();
-    }
-
-    @GetMapping("/model-usage")
-    public Map<String, Long> getModelTokenUsage() {
-        return tokenMonitor.getModelTokenUsage();
-    }
-
+    /**
+     * 汇总当前租户已持久化的 Token 用量，并按模型和 Skill 分组。
+     *
+     * @return 租户 Token 汇总
+     */
     @GetMapping("/tenant-summary")
     public Map<String, Object> getTenantTokenSummary() {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -78,6 +69,11 @@ public class TokenController {
         return result;
     }
 
+    /**
+     * 查询当前用户累计的 Token 用量。
+     *
+     * @return 用户 Token 汇总
+     */
     @GetMapping("/user-summary")
     public Map<String, Object> getUserTokenSummary() {
         String userId = securityContextHelper.getCurrentUserId();
@@ -85,6 +81,13 @@ public class TokenController {
         return Map.of(KEY_TOTAL_TOKENS, total != null ? total : 0);
     }
 
+    /**
+     * 分页查询当前租户的 Token 使用明细。
+     *
+     * @param page 从零开始的页码
+     * @param size 每页记录数
+     * @return Token 明细和分页信息
+     */
     @GetMapping("/usage-records")
     public Map<String, Object> getUsageRecords(
             @RequestParam(defaultValue = "" + DEFAULT_PAGE) int page,
@@ -101,12 +104,11 @@ public class TokenController {
         return result;
     }
 
-    @GetMapping("/reset")
-    public Map<String, Object> resetTokenUsage() {
-        tokenMonitor.resetTokenUsage();
-        return Map.of(KEY_SUCCESS, true, KEY_MESSAGE, "Token usage statistics reset successfully");
-    }
-
+    /**
+     * 查询当前用户当天的剩余 Token 配额。
+     *
+     * @return 剩余配额，返回 -1 表示未限制
+     */
     @GetMapping("/remaining-quota")
     public Map<String, Object> getRemainingQuota() {
         String userId = securityContextHelper.getCurrentUserId();

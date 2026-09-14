@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../../components/ui.jsx';
 import { formatTime } from '../../utils/format.js';
 
+/** 用户治理页：管理账号、角色、启用状态、密码和 Token 配额。 */
 export function UsersPage({ api, toast }) {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);

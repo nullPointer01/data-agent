@@ -1,3 +1,4 @@
+// 将 SSE 事件和持久化 Run 响应收敛为同一份前端证据模型，供聊天与 Trace 复用。
 const MAX_TIMELINE_EVENTS = 80;
 const MAX_EVENT_SUMMARY_LENGTH = 1200;
 

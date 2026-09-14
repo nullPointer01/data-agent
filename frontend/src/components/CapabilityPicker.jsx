@@ -116,6 +116,7 @@ function CapabilityRow({ capability, selectedBindings, onToggleBinding }) {
   );
 }
 
+/** 精确 Capability 选择器：按 Tool、Skill 和子 Agent 展示可用性与风险。 */
 export function CapabilityPicker({ capabilities, selectedBindings, onToggleBinding, labelledBy }) {
   const [query, setQuery] = useState('');
   const [activeType, setActiveType] = useState('ALL');

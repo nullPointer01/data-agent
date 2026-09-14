@@ -36,8 +36,7 @@ public class AgentToolCandidateSelector {
             route("executeSql", "执行 sql", "select ", "数据库查询", "查数据库"),
             route("previewDataSource", "预览数据源", "数据预览", "看看数据源"),
             route("generateChart", "生成图表", "画图", "柱状图", "折线图", "饼图", "散点图"),
-            route("updateHotelPrice", "修改酒店价格", "更新酒店价格", "酒店调价", "房价改", "价格改成"),
-            route("queryHotelOccupancy", "酒店入住率", "酒店出租率", "revpar", "adr", "酒店经营", "预订趋势"));
+            route("updateHotelPrice", "修改酒店价格", "更新酒店价格", "酒店调价", "房价改", "价格改成"));
 
     /**
      * 从已授权能力中选择本次值得发送给模型的候选工具。
@@ -95,10 +94,6 @@ public class AgentToolCandidateSelector {
         if (intent == RequestIntent.FILE_ANALYSIS) {
             addIfAllowed(allowed, candidates, "getFileContent");
             addIfAllowed(allowed, candidates, "analyzeFileData");
-        }
-        if (intent == RequestIntent.DATA_QUERY && containsAny(query,
-                "酒店", "入住率", "出租率", "revpar", "adr")) {
-            addIfAllowed(allowed, candidates, "queryHotelOccupancy");
         }
         if (intent == RequestIntent.DATA_QUERY && containsAny(query,
                 "数据库", "sql", "数据源", "表结构", "字段")) {

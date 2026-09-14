@@ -39,11 +39,22 @@ public class ConversationSessionController {
         this.securityContextHelper = securityContextHelper;
     }
 
+    /**
+     * 为当前用户创建一个空白对话会话。
+     *
+     * @return 新会话编号
+     */
     @PostMapping("/session")
     public SessionCreateResponse createSession() {
         return new SessionCreateResponse(true, sessionManager.createSession());
     }
 
+    /**
+     * 删除当前用户拥有的会话及其消息。
+     *
+     * @param sessionId 会话编号
+     * @return 删除结果
+     */
     @DeleteMapping("/session/{sessionId}")
     public SessionMutationResponse destroySession(@PathVariable String sessionId) {
         sessionManager.destroySession(sessionId);
@@ -64,6 +75,11 @@ public class ConversationSessionController {
         return new SessionMutationResponse(true, RENAMED_MESSAGE);
     }
 
+    /**
+     * 查询当前用户的会话列表。
+     *
+     * @return 会话列表
+     */
     @GetMapping("/sessions")
     public SessionListResponse listSessions() {
         try {
@@ -74,6 +90,12 @@ public class ConversationSessionController {
         }
     }
 
+    /**
+     * 查询当前用户拥有的指定会话消息。
+     *
+     * @param sessionId 会话编号
+     * @return 会话消息或失败信息
+     */
     @GetMapping("/session/{sessionId}/messages")
     public SessionMessagesResponse getSessionMessages(@PathVariable String sessionId) {
         try {

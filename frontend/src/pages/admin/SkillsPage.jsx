@@ -4,6 +4,7 @@ import { ResourcePage } from '../../components/admin/ResourcePage.jsx';
 import { Badge, DataTable, EmptyState, Field, Modal } from '../../components/ui.jsx';
 import { formatTime, truncate } from '../../utils/format.js';
 
+/** Skill 管理页：手工维护/生成 Skill，并查看版本历史与回滚。 */
 export function SkillsPage({ api, toast }) {
   const [historySkill, setHistorySkill] = useState(null);
   const [history, setHistory] = useState([]);
@@ -35,7 +36,7 @@ export function SkillsPage({ api, toast }) {
         api={api}
         toast={toast}
         title="技能管理"
-        desc="维护技能 Prompt、关键词、版本历史和外部 API 配置"
+        desc="维护技能 Prompt、执行步骤、版本历史和外部 API 配置"
         listUrl="/api/v1/skills/list"
         listKey="skills"
         idKey="skillId"
@@ -46,16 +47,14 @@ export function SkillsPage({ api, toast }) {
         fields={[
           ['name', '名称'],
           ['description', '描述'],
-          ['keywords', '关键词'],
           ['promptTemplate', 'Prompt', 'textarea'],
           ['apiUrl', '外部 API'],
           ['apiMethod', 'API Method', 'select', [{ value: 'POST', label: 'POST' }, { value: 'GET', label: 'GET' }]],
           ['apiHeaders', 'API Headers', 'textarea'],
           ['steps', '步骤', 'textarea'],
-          ['autoAttach', '自动挂载'],
           ['enabled', '启用', 'checkbox']
         ]}
-        visibleFields={['name', 'description', 'keywords', 'source']}
+        visibleFields={['name', 'description', 'source']}
         headerExtra={<button className="btn" onClick={() => setGenerateModal(true)}><Sparkles size={16} />生成技能</button>}
         extraRowAction={(item) => <button className="btn" onClick={() => openHistory(item)}><History size={16} />历史</button>}
       />

@@ -46,41 +46,19 @@ public record FileParsingContext(
     }
 
     /**
-     * Returns a lower-case filename for extension checks.
+     * 返回用于扩展名判断的小写文件名。
      *
-     * @return lower-case filename
+     * @return 小写文件名
      */
     public String lowerFilename() {
         return FileTypeSupport.lowerName(filename);
     }
 
     /**
-     * Checks whether the content type is an image mime type.
+     * 打开文件输入流供解析器读取。
      *
-     * @return true when the file is an image
-     */
-    public boolean isImage() {
-        return FileTypeSupport.isImage(contentType);
-    }
-
-    /**
-     * Returns the file size in bytes.
-     *
-     * @return file size
-     * @throws IOException when the underlying source cannot be measured
-     */
-    public long size() throws IOException {
-        if (path != null) {
-            return Files.size(path);
-        }
-        return multipartFile.getSize();
-    }
-
-    /**
-     * Opens the file as an input stream.
-     *
-     * @return input stream for parsing
-     * @throws IOException when the source cannot be opened
+     * @return 文件输入流
+     * @throws IOException 文件无法打开时抛出
      */
     public InputStream openInputStream() throws IOException {
         if (path != null) {
@@ -90,10 +68,10 @@ public record FileParsingContext(
     }
 
     /**
-     * Reads the file as UTF-8 text.
+     * 按 UTF-8 读取文本文件。
      *
-     * @return UTF-8 text content
-     * @throws IOException when the source cannot be read
+     * @return UTF-8 文本内容
+     * @throws IOException 文件无法读取时抛出
      */
     public String readText() throws IOException {
         if (path != null) {
@@ -102,13 +80,4 @@ public record FileParsingContext(
         return new String(multipartFile.getBytes(), StandardCharsets.UTF_8);
     }
 
-    /**
-     * Builds the standard image placeholder string.
-     *
-     * @return image placeholder text
-     * @throws IOException when file size cannot be resolved
-     */
-    public String imagePlaceholder() throws IOException {
-        return FileTypeSupport.imagePlaceholder(filename, size());
-    }
 }

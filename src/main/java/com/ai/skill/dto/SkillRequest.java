@@ -13,10 +13,7 @@ public record SkillRequest(
         String apiMethod,
         String apiHeaders,
         String promptTemplate,
-        String responseTemplate,
-        String keywords,
         String steps,
-        String autoAttach,
         String source,
         Boolean enabled,
         String remark) {

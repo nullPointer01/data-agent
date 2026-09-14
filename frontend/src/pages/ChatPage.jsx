@@ -127,6 +127,7 @@ function approvalNoticeFor(message) {
   };
 }
 
+/** 个人 Agent 主工作区：配置默认 Agent、管理会话并展示 SSE 运行/审批证据。 */
 export function ChatPage({ api, token, toast, onOpenExperts }) {
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState(localStorage.getItem('chatSessionId') || '');

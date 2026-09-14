@@ -16,6 +16,7 @@ function structureTags(item) {
   ].filter(Boolean);
 }
 
+/** 个人知识页：管理文本/文档知识、同步配置和实时检索验证。 */
 export function KnowledgePage({ api, toast }) {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState({});
