@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 在回答完成后异步提取隐式语义记忆，避免阻塞用户接收最终结果。
+ * 在回答完成后异步提取语义记忆，与同步保存共用准入，避免阻塞本轮回答。
  *
  * @author data-agent
  */
@@ -40,15 +40,14 @@ public class SemanticMemoryExtractionJob {
     public void extract(String tenantId, String userId, String sessionId,
             String userMessage, String assistantReply, String modelId) {
         try {
-            List<SemanticMemoryCandidate> candidates = extractor.extractImplicit(
+            List<SemanticMemoryCandidate> candidates = extractor.extract(
                     userMessage, assistantReply, modelId);
             int affected = semanticMemoryService.upsertAll(tenantId, userId, sessionId, candidates);
-            if (affected > 0) {
-                LOGGER.info("已沉淀隐式语义记忆: userId={}, sessionId={}, count={}",
-                        userId, sessionId, affected);
-            }
+            // 记录空结果，便于区分“已判定不保存”和“后台尚未执行”，不记录记忆正文。
+            LOGGER.info("已完成后台语义记忆提取: userId={}, sessionId={}, count={}",
+                    userId, sessionId, affected);
         } catch (Exception exception) {
-            LOGGER.warn("隐式语义记忆提取失败: userId={}, sessionId={}", userId, sessionId, exception);
+            LOGGER.warn("后台语义记忆提取失败: userId={}, sessionId={}", userId, sessionId, exception);
         }
     }
 }

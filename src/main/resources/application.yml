@@ -82,6 +82,16 @@ app:
     max-pool-size: 8
     queue-capacity: 100
   agent:
+    planning:
+      # 精确能力介绍使用本地响应；其他请求基于会话和已授权能力描述做语义规划。
+      semantic-router-enabled: true
+      # 留空时沿用当前 Agent 模型，也可配置独立轻量模型 ID。
+      model-id: ""
+      # 优先厂商原生结构化输出；端点明确不支持时手动改 JSON_OBJECT，不自动重复调用。
+      response-format: JSON_SCHEMA
+      minimum-confidence: 0.75
+      max-history-chars: 1500
+      max-query-chars: 500
     runtime:
       # 保护性默认值，后续应依据执行轨迹的 P95/P99 分布调优。
       timeout: 5m

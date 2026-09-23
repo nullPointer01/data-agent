@@ -1,19 +1,17 @@
 package com.ai.memory.dto;
 
-import java.util.List;
-
 /**
  * Agent Prompt 使用的聚合记忆上下文。
  *
+ * @param conversationHistory 当前会话最近的原始消息，仅用于理解追问和指代
  * @param workingMemory 当前会话工作记忆
- * @param shortTermMemories 近期摘要记忆
  * @param longTermContext 相关长期向量记忆
  * @param userProfile 当前用户画像快照
  * @author data-agent
  */
 public record MemoryContext(
+        String conversationHistory,
         String workingMemory,
-        List<MemoryEntrySummary> shortTermMemories,
         String longTermContext,
         UserMemoryProfileSnapshotResponse userProfile) {
 
@@ -23,6 +21,6 @@ public record MemoryContext(
      * @return 空上下文
      */
     public static MemoryContext empty() {
-        return new MemoryContext("", List.of(), "", UserMemoryProfileSnapshotResponse.empty());
+        return new MemoryContext("", "", "", UserMemoryProfileSnapshotResponse.empty());
     }
 }

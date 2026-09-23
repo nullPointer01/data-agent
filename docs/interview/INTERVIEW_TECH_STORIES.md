@@ -162,7 +162,7 @@
 - 旧配置曾同时在 `app.embedding.dimension` 和 `milvus.dimension` 维护维度，而且 API 默认模型常见输出 1024 维，旧默认仍是 384，存在双事实源和延迟失败风险。
 - 现在用 `EmbeddingProfile` 统一固定 provider `api`、modelId、indexVersion、dimension、normalize 和 metric；启动真实探测维度，每次 embed 后重复校验。
 - Milvus 物理 Collection 名携带 provider、模型、维度、Metric 和索引版本；新向量元数据也保存这五项身份信息。
-- `MilvusEmbeddingStore` 首次 add/search 才创建，已有 Collection 的 load 请求使用异步模式，不阻塞等待完整加载。
+- `MilvusEmbeddingStore` 首次 add/search 才创建并复用网关客户端；启动只异步预热已有 Collection，真正读写前由 SDK 同步、有界等待加载完成，避免“异步 load 后立即 search”竞态。
 
 **讲出取舍（加分）**
 > "我最后把 Embedding 收敛成 **API-only**，不是不要向量，而是把推理和 Java 业务进程解耦。好处是模型服务能独立使用 GPU、扩缩容和升级，业务 JVM 不再背模型权重；代价是增加网络依赖，所以 Base URL、模型名和维度必须显式配置，启动先做真实探测。服务失败直接暴露，不静默回退，因为临时换模型会让查询向量和库内向量不在同一空间，表面可用但召回结果已经不可信。

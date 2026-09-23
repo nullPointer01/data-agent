@@ -244,7 +244,7 @@ public class AgentResumeWorker {
             if (capabilitySnapshot == null) {
                 return continueRestored(restored, reauthorization, restored.invocationContext());
             }
-            if (!capabilitySnapshot.allowsTool(restored.checkpoint().pendingTool().toolName())) {
+            if (!capabilitySnapshot.callableToolNames().contains(restored.checkpoint().pendingTool().toolName())) {
                 throw new SecurityException("待审批工具已不在原执行 Agent 的当前能力范围内");
             }
             AgentToolInvocationContext narrowedInvocation = narrowInvocationContext(
@@ -302,8 +302,9 @@ public class AgentResumeWorker {
     private AgentToolInvocationContext narrowInvocationContext(
             AgentToolInvocationContext checkpointContext,
             AgentCapabilityBindingSnapshot capabilitySnapshot) {
+        Set<String> currentlyCallable = capabilitySnapshot.callableToolNames();
         Set<String> allowedTools = checkpointContext.allowedToolNames().stream()
-                .filter(capabilitySnapshot.toolNames()::contains)
+                .filter(currentlyCallable::contains)
                 .collect(Collectors.toUnmodifiableSet());
         return new AgentToolInvocationContext(checkpointContext.executorId(), allowedTools);
     }

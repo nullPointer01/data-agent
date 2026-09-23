@@ -59,7 +59,7 @@ public class LangChain4jConfig {
     @Bean
     public ChatModel chatModel(ModelEndpointResolver endpointResolver, ModelClientFactory clientFactory) {
         ResolvedModelEndpoint endpoint = endpointResolver.resolve("custom", baseUrl, modelName, apiKey);
-        return clientFactory.createChatModel(endpoint, temperature, null, Duration.ofMillis(timeout), false);
+        return clientFactory.createChatModel(endpoint, temperature, null, Duration.ofMillis(timeout));
     }
 
     /**

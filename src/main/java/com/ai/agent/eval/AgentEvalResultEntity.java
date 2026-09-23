@@ -48,6 +48,16 @@ public class AgentEvalResultEntity {
     @Column(name = "trace_id", length = 64)
     private String traceId;
 
+    @Column(name = "observed_intent", length = 64)
+    private String observedIntent;
+
+    @Column(name = "observed_mode", length = 32)
+    private String observedMode;
+
+    @Lob
+    @Column(name = "observed_context_plan_json", columnDefinition = "TEXT")
+    private String observedContextPlanJson;
+
     @Column(name = "outcome_status", nullable = false, length = 32)
     private String outcomeStatus;
 
@@ -103,6 +113,12 @@ public class AgentEvalResultEntity {
     public void setAgentRunId(String agentRunId) { this.agentRunId = agentRunId; }
     public String getTraceId() { return traceId; }
     public void setTraceId(String traceId) { this.traceId = traceId; }
+    public String getObservedIntent() { return observedIntent; }
+    public void setObservedIntent(String observedIntent) { this.observedIntent = observedIntent; }
+    public String getObservedMode() { return observedMode; }
+    public void setObservedMode(String observedMode) { this.observedMode = observedMode; }
+    public String getObservedContextPlanJson() { return observedContextPlanJson; }
+    public void setObservedContextPlanJson(String observedContextPlanJson) { this.observedContextPlanJson = observedContextPlanJson; }
     public String getOutcomeStatus() { return outcomeStatus; }
     public void setOutcomeStatus(String outcomeStatus) { this.outcomeStatus = outcomeStatus; }
     public String getReasonCode() { return reasonCode; }

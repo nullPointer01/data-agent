@@ -149,13 +149,13 @@ HTTP 认证只把 JWT subject 当作用户查询键。每个受保护请求都�
 
 ## 模型接入
 
-模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 保证同一租户只有一个默认模型，变更后通过事件清理同步、JSON 和 Streaming 客户端缓存。
+模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 保证同一租户只有一个默认模型，变更后通过事件清理同步和 Streaming 客户端缓存；JSON 输出格式属于单次请求，不单独缓存客户端。
 
 模型接入统一经过 `ModelProviderCatalog -> ModelEndpointResolver -> ModelClientFactory`：
 
 - Catalog 是前后端唯一厂商目录，包含 OpenAI/GPT、13 个国内/聚合入口和 Custom，共 15 个入口。
 - Resolver 负责厂商别名、默认值、URL 规范化、鉴权规则和 `OutboundUrlGuard`；运行时、`/models` 发现和连接探测不得自行拼端点。
-- Factory 使用 LangChain4j 1.19 构建 OpenAI-compatible 同步、JSON 和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。
+- Factory 使用 LangChain4j 1.19 构建 OpenAI-compatible 同步和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。同步客户端启用 strictJsonSchema，只对实际携带 Schema 的请求生效。
 - `ModelHttpClient` 只负责可选的 `GET /models`。发现失败不阻止手动填写模型 ID，也不作为保存门禁。
 - `POST /api/v1/models/probe` 会真实执行一次最多 32 输出 token 的 Chat 请求，临时客户端不缓存、不重试、不保存提示词或回复；每次探测可能产生少量厂商费用。
 
@@ -214,6 +214,10 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 
 旧的 `ReActAgent`、关键词复杂度分类、Fast Path、预规划和并行预检已经移除。请求级资源和模式选择统一由
 `PersonalAgentRequestPlanner` 完成，实际 ReAct 循环统一由 `ConfigurableAgentExecutor -> ReActLoopRunner` 驱动。
+当前规划版本为 `request-planner-v7`：除完整能力介绍快捷问句外，基于近期会话、文件状态和已授权能力描述调用结构化 Router，严格绑定为 Decision 类型。默认 `planning.response-format=JSON_SCHEMA`，通过 `McpModelService.callModelStructured` 发送厂商原生合同；端点不支持时可显式改为 `JSON_OBJECT`，不在失败后自动追加另一种格式调用。工具授权及置信度等业务校验不交给模型。local 的 `planning.model-id` 已显式绑定现有 `gpt-5.6-terra` 记录，复用数据库配置；公共默认仍为空。这是规划角色复用 GPT，未新增独立小模型；原生兼容性和运行质量尚未实测。
+禁止重新引入业务意图词表、动词计数编排或逐工具中文触发词；Tool 描述以 Registry 为唯一来源。
+预加载知识与 searchKnowledge 必须共用 RagRetrievalService 的 tenantId + userId 混合检索；跨会话记忆只检索相关长期事实，不顺带注入全用户近期摘要。当前会话历史/工作状态和画像独立装配。
+自动模式由实际候选决定，候选失败不回退到全部绑定能力；OFF 检索不暴露工具。详见 `docs/核心逻辑详解/Agent运行时与Harness.md`。
 `app.agent.reasoning.*` 只保留当前循环真实读取的反思和工作记忆开关。
 
 执行轨迹写入 `agent_execution_trace`；质量观测来自运行轨迹，确定性成功标准和回归指标由 Agent Eval 数据集维护。
@@ -253,7 +257,7 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 - `memory_entry`
 - `user_profile`
 
-记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。短期摘要不参与画像；长期 `PREFERENCE / ENTITY / CONCLUSION` 使用稳定 `semanticKey` 幂等写入。显式“记住”同步提取，普通对话通过独立线程池异步调用 JSON 模型提取，并校验证据原文、置信度和敏感信息。`user_profile` 只是 `PREFERENCE / ENTITY` 的可重建投影，用户修正或删除语义记忆后必须完整重建。详细链路见 `docs/核心逻辑详解/用户语义记忆.md`。
+记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。短期摘要不参与画像；长期 `PREFERENCE / ENTITY / CONCLUSION` 使用稳定 `semanticKey` 幂等写入。C004 将显式/隐式提取统一为一次 JSON 模型理解及严格准入：只有 CROSS_SESSION 的用户陈述/真实保存请求且有原文证据才能写入，不能凭“记住/偏好”等词直接入库。明确“请记住：”格式同步等待，其他对话异步提取，二者共用开关和校验；元数据版本 semantic-v2。`user_profile` 只是 `PREFERENCE / ENTITY` 的可重建投影，用户修正或删除语义记忆后必须完整重建。详细链路见 `docs/核心逻辑详解/用户语义记忆.md`。
 
 模型压缩默认关闭，语义提取默认开启：`app.memory.model-compression-enabled=false`、`app.memory.semantic-extraction-enabled=true`。
 
@@ -293,6 +297,8 @@ Embedding 服务负责生成向量，Milvus 负责向量存储和语义召回，
 `app.encryption.key` 用于数据库敏感字段加密。改这个值会影响已加密字段解密，不能随意轮换。
 
 ## 测试和验证
+
+2026-09-23 用户授权的 v7 首轮运行验收已完成：编译/前端构建通过；关键执行链路有真实证据，但记忆写入出现回忆问句、临时任务要求误持久化，首轮整体未通过。随后 C004 统一准入修复通过 10 条真实对话和 19 项合同/准入检查，编译通过；仅此修复范围 PASS_WITH_NOTES，其他遗留与未验项保持未结。最新状态见 `openspec/changes/modernize-agent-context-routing/memory-admission-verification.md`，首轮历史见 `runtime-verification-v7.md`。此轮授权不改变以下日常约束。
 
 按当前项目决策，自动化开发 Agent 不主动运行单测、编译、打包、`verify` 或 Docker 构建；只有用户后续明确要求时才执行。供人工需要时使用的命令：
 

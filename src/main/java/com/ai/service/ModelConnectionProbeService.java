@@ -58,7 +58,7 @@ public class ModelConnectionProbeService {
             ModelConfig probeConfig = resolveProbeConfig(request);
             endpoint = endpointResolver.resolve(probeConfig);
             var model = clientFactory.createChatModel(endpoint, probeConfig.getTemperature(),
-                    PROBE_MAX_TOKENS, timeout, false);
+                    PROBE_MAX_TOKENS, timeout);
             ChatResponse response = model.chat(List.of(UserMessage.from(PROBE_PROMPT)));
             String finishReason = response.finishReason() == null ? null : response.finishReason().name();
             return ModelProbeResponse.success(elapsedMillis(startedAt), endpoint.providerKey(),

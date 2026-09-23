@@ -4,6 +4,7 @@ import com.ai.agent.outcome.AgentOutcomeEvaluation;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 一次版本化 Agent Eval 的聚合报告与样本级安全证据。
@@ -41,7 +42,7 @@ public record AgentEvalReportResponse(
     public record RunCounts(int total, int completed, int achieved, int notAchieved, int notEvaluated) {
     }
 
-    /** 六类 Harness 指标与独立的 RAG 质量维度。 */
+    /** Harness、路由规划与独立 RAG 质量指标。 */
     public record Metrics(
             MetricValue taskCompletionRate,
             MetricValue correctToolSelectionRate,
@@ -49,6 +50,9 @@ public record AgentEvalReportResponse(
             MetricValue approvalPolicyAccuracy,
             MetricValue p95DurationMs,
             MetricValue averageTokenUsage,
+            MetricValue intentAccuracy,
+            MetricValue modeAccuracy,
+            MetricValue contextPlanAccuracy,
             MetricValue ragReferenceHitRate) {
     }
 
@@ -69,6 +73,12 @@ public record AgentEvalReportResponse(
             String outcomeStatus,
             String reasonCode,
             AgentOutcomeEvaluation outcomeEvaluation,
+            String expectedIntent,
+            String observedIntent,
+            String expectedMode,
+            String observedMode,
+            Map<String, String> expectedContextPlan,
+            Map<String, String> observedContextPlan,
             List<String> expectedTools,
             List<String> observedTools,
             Boolean expectedApprovalRequired,
@@ -85,6 +95,8 @@ public record AgentEvalReportResponse(
         public SampleResult {
             expectedTools = expectedTools == null ? null : List.copyOf(expectedTools);
             observedTools = observedTools == null ? null : List.copyOf(observedTools);
+            expectedContextPlan = expectedContextPlan == null ? null : Map.copyOf(expectedContextPlan);
+            observedContextPlan = observedContextPlan == null ? null : Map.copyOf(observedContextPlan);
         }
     }
 

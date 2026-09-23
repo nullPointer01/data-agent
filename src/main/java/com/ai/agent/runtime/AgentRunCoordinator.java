@@ -278,10 +278,10 @@ public class AgentRunCoordinator {
         payload.put("matchedRule", route.requestPlan().matchedRule());
         payload.put("confidence", route.requestPlan().confidence());
         payload.put("modelRequired", route.requestPlan().modelRequired());
-        payload.put("ragRequired", route.requestPlan().ragRequired());
-        payload.put("memoryRequired", route.requestPlan().memoryRequired());
+        payload.put("contextPlan", route.requestPlan().contextPlan().toEvidence());
+        payload.put("planning", route.requestPlan().planningEvidence().toEvidence());
         payload.put("candidateToolCount", route.requestPlan().candidateTools().size());
-        payload.put("toolSelectionFallback", route.requestPlan().toolSelectionFallback());
+        payload.put("candidateTools", route.requestPlan().candidateTools());
         context.eventSink().emit(AgentEvent.of(context, AgentEventType.EXECUTION_PLAN, payload));
     }
 

@@ -58,9 +58,11 @@ public class ConversationMemoryCaptureService {
         captureShortTermSummary(sessionId, userMessage, assistantReply);
         String tenantId = securityContextHelper.getCurrentTenantId();
         String userId = securityContextHelper.getCurrentUserId();
-        List<SemanticMemoryCandidate> explicitCandidates = semanticMemoryExtractor.extractExplicit(userMessage);
-        if (!explicitCandidates.isEmpty()) {
-            semanticMemoryService.upsertAll(tenantId, userId, sessionId, explicitCandidates);
+        if (memoryWorthinessEvaluator.requiresSynchronousExtraction(userMessage)) {
+            List<SemanticMemoryCandidate> candidates = semanticMemoryExtractor.extract(
+                    userMessage, assistantReply, modelId);
+            semanticMemoryService.upsertAll(tenantId, userId, sessionId, candidates);
+            // 空结果表示未通过同一准入，不再回退异步提取而重复调用模型。
             return;
         }
         semanticMemoryExtractionJob.extract(

@@ -44,6 +44,16 @@ public class AgentEvalSampleEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String question;
 
+    @Column(name = "expected_intent", length = 64)
+    private String expectedIntent;
+
+    @Column(name = "expected_mode", length = 32)
+    private String expectedMode;
+
+    @Lob
+    @Column(name = "expected_context_plan_json", columnDefinition = "TEXT")
+    private String expectedContextPlanJson;
+
     @Lob
     @Column(name = "task_contract_json", nullable = false, columnDefinition = "LONGTEXT")
     private String taskContractJson;
@@ -89,6 +99,12 @@ public class AgentEvalSampleEntity {
     public void setSampleKey(String sampleKey) { this.sampleKey = sampleKey; }
     public String getQuestion() { return question; }
     public void setQuestion(String question) { this.question = question; }
+    public String getExpectedIntent() { return expectedIntent; }
+    public void setExpectedIntent(String expectedIntent) { this.expectedIntent = expectedIntent; }
+    public String getExpectedMode() { return expectedMode; }
+    public void setExpectedMode(String expectedMode) { this.expectedMode = expectedMode; }
+    public String getExpectedContextPlanJson() { return expectedContextPlanJson; }
+    public void setExpectedContextPlanJson(String expectedContextPlanJson) { this.expectedContextPlanJson = expectedContextPlanJson; }
     public String getTaskContractJson() { return taskContractJson; }
     public void setTaskContractJson(String taskContractJson) { this.taskContractJson = taskContractJson; }
     public String getExpectedToolsJson() { return expectedToolsJson; }

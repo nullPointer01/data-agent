@@ -22,6 +22,9 @@ const REASON_TEXT = {
   APPROVAL_LABEL_OR_EVIDENCE_MISSING: '缺少审批标签或审批证据',
   RUN_DURATION_EVIDENCE_MISSING: '缺少 Run 耗时证据',
   TOKEN_USAGE_EVIDENCE_MISSING: '缺少 Token 用量证据',
+  INTENT_LABEL_OR_TRACE_EVIDENCE_MISSING: '缺少意图标签或 Trace 证据',
+  MODE_LABEL_OR_TRACE_EVIDENCE_MISSING: '缺少模式标签或 Trace 证据',
+  CONTEXT_PLAN_LABEL_OR_TRACE_EVIDENCE_MISSING: '缺少上下文计划标签或 Trace 证据',
   RAG_SAMPLE_EVIDENCE_NOT_PERSISTED: '当前 Trace 尚未持久化样本级 RAG 引用',
   EVAL_RUN_PENDING: '评测正在排队',
   EVAL_RUN_RUNNING: '评测正在执行',
@@ -190,14 +193,17 @@ export function AgentEvalPage({ api, toast }) {
     ['无效循环率', metrics?.invalidLoopRate, Activity],
     ['审批策略准确率', metrics?.approvalPolicyAccuracy, ShieldCheck],
     ['P95 耗时', metrics?.p95DurationMs, Clock3],
-    ['平均 Token', metrics?.averageTokenUsage, FlaskConical]
+    ['平均 Token', metrics?.averageTokenUsage, FlaskConical],
+    ['意图准确率', metrics?.intentAccuracy, GitBranch],
+    ['模式准确率', metrics?.modeAccuracy, Activity],
+    ['上下文计划准确率', metrics?.contextPlanAccuracy, CheckCircle2]
   ];
 
   return (
     <>
       <PageHeader
         title="Agent Eval"
-        desc="用固定版本数据集验证任务完成、工具治理、循环健康、审批策略、延迟与成本"
+        desc="用固定版本数据集验证请求规划、任务完成、工具治理、审批策略、延迟与成本"
         actions={<button className="btn" onClick={load} disabled={loading}><RefreshCw size={16} />刷新</button>}
       />
 
@@ -300,12 +306,15 @@ function SampleEvidenceModal({ sample, traceLoading, onTrace, onClose }) {
         <span>原因码</span><span className="mono">{sample.reasonCode || '-'}</span>
         <span>Run ID</span><span className="mono">{sample.agentRunId || '-'}</span>
         <span>Trace ID</span><span className="mono">{sample.traceId || '-'}</span>
+        <span>意图</span><span>期望 {sample.expectedIntent || '未标注'} · 实际 {sample.observedIntent || '无证据'}</span>
+        <span>执行模式</span><span>期望 {sample.expectedMode || '未标注'} · 实际 {sample.observedMode || '无证据'}</span>
         <span>期望工具</span><span>{sample.expectedTools == null ? '未标注' : (sample.expectedTools.join(', ') || '不应调用')}</span>
         <span>实际工具</span><span>{sample.observedTools == null ? '证据不完整' : (sample.observedTools.join(', ') || '未调用')}</span>
         <span>审批</span><span>期望 {booleanText(sample.expectedApprovalRequired)} · 实际 {booleanText(sample.approvalObserved)}</span>
         <span>无效循环</span><span>期望 {booleanText(sample.invalidLoopExpected)} · 实际 {booleanText(sample.invalidLoopObserved)}</span>
       </div>
       <Field label="固定问题"><pre className="code-panel">{sample.question}</pre></Field>
+      <Field label="上下文计划对照"><pre className="code-panel">{JSON.stringify({ expected: sample.expectedContextPlan, observed: sample.observedContextPlan }, null, 2)}</pre></Field>
       {sample.errorSummary && <div className="alert danger" role="alert">{sample.errorSummary}</div>}
       <section className="eval-criteria-list">
         <div className="section-title">成功标准</div>

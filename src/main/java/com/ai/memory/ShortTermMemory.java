@@ -1,7 +1,6 @@
 package com.ai.memory;
 
 import com.ai.memory.dto.MemoryCaptureRequest;
-import com.ai.memory.dto.MemoryEntrySummary;
 import com.ai.repository.MemoryEntryRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -19,8 +18,6 @@ import java.util.List;
  */
 @Service
 public class ShortTermMemory {
-
-    private static final int DEFAULT_LIMIT = 5;
 
     private final MemoryEntryRepository memoryEntryRepository;
     private final MemoryEntryFactory memoryEntryFactory;
@@ -50,27 +47,6 @@ public class ShortTermMemory {
         MemoryEntry entry = memoryEntryFactory.create(tenantId, userId, request);
         entry.setTier(MemoryTier.SHORT_TERM);
         return memoryEntryRepository.save(entry);
-    }
-
-    /**
-     * 检索近期可用短期记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param limit 最大返回数量
-     * @return 记忆摘要
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public List<MemoryEntrySummary> recall(String tenantId, String userId, int limit) {
-        if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(userId)) {
-            return List.of();
-        }
-        int normalizedLimit = limit > 0 ? limit : DEFAULT_LIMIT;
-        List<MemoryEntry> entries = memoryEntryRepository.findActiveByTenantUserAndTier(
-                        tenantId, userId, MemoryTier.SHORT_TERM, LocalDateTime.now(),
-                        PageRequest.of(0, normalizedLimit));
-        markAccessed(entries);
-        return entries.stream().map(MemoryEntrySummary::from).toList();
     }
 
     /**
@@ -114,15 +90,6 @@ public class ShortTermMemory {
                 memoryProperties.getPromotionAccessCountThreshold(),
                 now,
                 PageRequest.of(0, normalizeLimit(limit)));
-    }
-
-    private void markAccessed(List<MemoryEntry> entries) {
-        LocalDateTime now = LocalDateTime.now();
-        entries.forEach(entry -> {
-            entry.setAccessCount(entry.getAccessCount() + 1);
-            entry.setLastAccessedAt(now);
-        });
-        memoryEntryRepository.saveAll(entries);
     }
 
     private double calculateShortTermWeight(MemoryEntry entry, LocalDateTime now) {

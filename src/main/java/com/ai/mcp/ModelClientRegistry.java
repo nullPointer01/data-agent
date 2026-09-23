@@ -37,7 +37,6 @@ public class ModelClientRegistry {
     private final ModelEndpointResolver endpointResolver;
     private final ModelClientFactory clientFactory;
     private final Map<String, ChatModel> modelCache = new ConcurrentHashMap<>();
-    private final Map<String, ChatModel> jsonModelCache = new ConcurrentHashMap<>();
     private final Map<String, StreamingChatModel> streamingModelCache = new ConcurrentHashMap<>();
 
     public ModelClientRegistry(ChatModel defaultModel,
@@ -87,25 +86,7 @@ public class ModelClientRegistry {
         }
         // 缓存键带租户，防止其他租户凭 modelId 直接命中缓存、复用他人 API Key 构建的客户端
         return modelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
-                key -> buildChatModel(config, false));
-    }
-
-    /**
-     * 获取 JSON 强制输出模式的聊天模型客户端（response_format=json_object）。
-     *
-     * <p>用于任务规划、意图分析等结构化输出场景，由厂商端约束输出合法 JSON。
-     * 注意：调用方的提示词中必须包含 "JSON" 字样（OpenAI 协议要求）。</p>
-     *
-     * @param modelId 模型编号，空值表示默认模型
-     * @return JSON 模式聊天模型；数据库无可用配置时回退普通默认客户端
-     */
-    public ChatModel getJsonChatModel(String modelId) {
-        ModelConfig config = resolveEffectiveConfig(modelId);
-        if (config == null) {
-            return defaultModel;
-        }
-        return jsonModelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
-                key -> buildChatModel(config, true));
+                key -> buildChatModel(config));
     }
 
     /**
@@ -131,7 +112,6 @@ public class ModelClientRegistry {
     public void refreshModelCache(String modelId) {
         // 缓存键为 tenantId:modelId，按后缀清理该模型在所有租户下的条目
         modelCache.keySet().removeIf(key -> key.endsWith(":" + modelId));
-        jsonModelCache.keySet().removeIf(key -> key.endsWith(":" + modelId));
         streamingModelCache.keySet().removeIf(key -> key.endsWith(":" + modelId));
     }
 
@@ -152,13 +132,13 @@ public class ModelClientRegistry {
         return config;
     }
 
-    private ChatModel buildChatModel(ModelConfig config, boolean jsonMode) {
+    private ChatModel buildChatModel(ModelConfig config) {
         try {
             ResolvedModelEndpoint endpoint = endpointResolver.resolve(config);
-            LOGGER.info("Building chat model: {} | provider={} | baseUrl={} | modelName={} | jsonMode={}",
-                    config.getModelId(), endpoint.providerKey(), endpoint.baseUrl(), endpoint.modelName(), jsonMode);
+            LOGGER.info("Building chat model: {} | provider={} | baseUrl={} | modelName={}",
+                    config.getModelId(), endpoint.providerKey(), endpoint.baseUrl(), endpoint.modelName());
             return clientFactory.createChatModel(endpoint, config.getTemperature(), config.getMaxTokens(),
-                    Duration.ofSeconds(DEFAULT_MODEL_TIMEOUT_SECONDS), jsonMode);
+                    Duration.ofSeconds(DEFAULT_MODEL_TIMEOUT_SECONDS));
         } catch (Exception e) {
             throw new IllegalStateException("模型客户端构建失败: modelId=" + config.getModelId(), e);
         }

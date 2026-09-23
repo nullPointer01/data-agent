@@ -173,15 +173,25 @@ public class AgentRunEvidenceService {
         String intent = text(plan, "intent", "UNKNOWN");
         String mode = text(plan, "mode", "CHAT");
         boolean modelRequired = bool(plan, "modelRequired", true);
-        boolean ragRequired = bool(plan, "ragRequired", false);
-        boolean memoryRequired = bool(plan, "memoryRequired", false);
+        JsonNode contextPlan = plan.path("contextPlan");
+        String knowledgeBase = contextRequirement(
+                contextPlan, "knowledgeBase", plan, "ragRequired");
+        String semanticMemory = contextRequirement(
+                contextPlan, "semanticMemory", plan, "memoryRequired");
+        String userProfile = contextPlan.isObject()
+                ? text(contextPlan, "userProfile", "OFF")
+                : semanticMemory;
+        String conversationHistory = contextRequirement(
+                contextPlan, "conversationHistory", plan, "historyRequired");
         int candidateToolCount = integer(plan, "candidateToolCount", 0);
         boolean fallback = bool(plan, "toolSelectionFallback", false);
         String reason = text(plan, "reason", "已完成请求规划");
         String summary = intent + " -> " + mode
                 + "；模型=" + yesNo(modelRequired)
-                + "，知识库=" + yesNo(ragRequired)
-                + "，记忆=" + yesNo(memoryRequired)
+                + "，知识库=" + knowledgeBase
+                + "，语义记忆=" + semanticMemory
+                + "，用户画像=" + userProfile
+                + "，会话历史=" + conversationHistory
                 + "，候选工具=" + (fallback ? "绑定能力兜底" : candidateToolCount + " 个")
                 + "；原因：" + reason;
         Map<String, Object> details = new LinkedHashMap<>();
@@ -191,12 +201,31 @@ public class AgentRunEvidenceService {
         details.put("matchedRule", text(plan, "matchedRule", "unknown"));
         details.put("confidence", plan.path("confidence").asDouble(0.0D));
         details.put("modelRequired", modelRequired);
-        details.put("ragRequired", ragRequired);
-        details.put("memoryRequired", memoryRequired);
+        Map<String, Object> contextDetails = new LinkedHashMap<>();
+        contextDetails.put("knowledgeBase", knowledgeBase);
+        contextDetails.put("semanticMemory", semanticMemory);
+        contextDetails.put("userProfile", userProfile);
+        contextDetails.put("conversationHistory", conversationHistory);
+        contextDetails.put("decisionSource", text(contextPlan, "decisionSource", "LEGACY"));
+        contextDetails.put("retrievalQuery", text(contextPlan, "retrievalQuery", ""));
+        details.put("contextPlan", contextDetails);
         details.put("candidateToolCount", candidateToolCount);
         details.put("toolSelectionFallback", fallback);
         events.add(new RunEvent("execution_plan", startedAt, mode,
                 "请求规划", summary, null, details));
+    }
+
+    /**
+     * 新 Trace 读取三态上下文计划，旧 Trace 按历史布尔值投影为 REQUIRED/OFF。
+     */
+    private String contextRequirement(JsonNode contextPlan,
+            String contextField,
+            JsonNode legacyPlan,
+            String legacyField) {
+        if (contextPlan != null && contextPlan.isObject() && contextPlan.has(contextField)) {
+            return text(contextPlan, contextField, "OFF");
+        }
+        return bool(legacyPlan, legacyField, false) ? "REQUIRED" : "OFF";
     }
 
     private void appendContextEvents(List<RunEvent> events, JsonNode contextEvents) {

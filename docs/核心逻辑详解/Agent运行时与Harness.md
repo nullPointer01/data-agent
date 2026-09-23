@@ -40,7 +40,7 @@ Coordinator 解析完成后，只有包内的 `ConfiguredAgentExecutionService` 
 普通请求不会让用户选择模型、Agent 或执行模式。系统首次使用时创建一个 `default_agent=true` 的个人
 `AgentProfile`，后续始终加载该配置中的模型、System Prompt、统一能力绑定和执行模式。`AgentRunRouteResolver`
 只处理显式 Agent 和默认个人 Agent，然后交给 `PersonalAgentRequestPlanner` 生成一次不可变
-`RequestExecutionPlan`。计划同时固化意图、Chat/ReAct/Orchestrated 模式、模型/RAG/记忆开关、候选工具、置信度和
+`RequestExecutionPlan`。计划同时固化意图、Chat/ReAct/Orchestrated 模式、四类上下文三态计划、候选工具、置信度和
 可展示原因，同步与 SSE 共用同一个结果。
 
 `AgentProfile` 不再使用 `DATA/KNOWLEDGE/REPORT` 等固定类型决定行为。Agent 是什么由 System Prompt、模型、
@@ -54,46 +54,94 @@ Capability 绑定和执行模式共同决定；数据分析、知识检索、报
 
 ## 请求规划与资源准入
 
-规划器不是靠一串 `if/else` 直接生成业务答案，而是一个低成本的分层路由器。第一层使用可解释的高精度规则处理
-能力介绍、文件、外部动作、结构化数据、个人知识和多步骤任务；无法可靠判断时保守进入普通 Chat。第二层只在当前
-Agent 已绑定且用户仍有权限的 Capability 中缩小工具范围。规划推荐不能扩大权限，最终可调用集合始终是：
+当前规划器版本为 `request-planner-v7`（2026-09-23）。完整问句“你是谁/你能做什么/你能干什么/你有哪些能力”
+可由本地能力目录回答；带文件或附加任务的请求不走此快捷入口。其他请求由一次结构化 Router 根据原始问题、
+近期会话、文件状态、Agent 职责及已授权能力描述生成计划。文件存在不代表必须使用工具，多个步骤也不代表必须委派。
 
 ```text
-规划候选
-  ∩ Profile 能力绑定
-  ∩ 当前用户 RBAC
-  ∩ 运行时启用与风险策略
-  ∩ 当前模式允许的能力类型
-  -> Tool Pipeline 参数校验、预算、timeout、审批与执行
+AgentProfile + 当前用户权限 + 固定模式约束
+  -> 已绑定可用能力摘要（Tool 描述、Skill 目录、子 Agent 职责）
+  -> 语义 Router：意图、上下文三态、独立检索问题、候选工具名
+  -> 严格 JSON 合同和候选交集校验
+  -> 根据实际候选决定自动模式
+  -> Run 内重新授权、预算与 Tool Pipeline
 ```
 
-低置信度的工具任务不会猜一个工具后静默丢失能力，而是显式标记 `toolSelectionFallback=true`，回到本 Agent 已授权
-能力集合；这仍然不是“全平台工具”。Skill 会在多步骤任务、显式提到技能或请求命中已绑定 Skill 名称/描述时加入
-`listAvailableSkills/useSkill` adapter；子 Agent 只在多步骤且实际存在有效绑定时加入 `delegateToAgent`。候选总量限制
-为 5 个，Skill 和委派 adapter 优先保留，避免每次把 16 个 Tool Schema 全部发送给模型。
+`AgentToolCandidateSelector` 不再维护逐工具触发词；新增 Tool 的描述来自现有 `@Tool` 和 Capability Registry，
+绑定成功后就能进入 Router 目录，无需在规划器里补业务分支。Skill 经 `listAvailableSkills/useSkill` 使用；
+子 Agent 经 `delegateToAgent` 使用，Router 和主 Agent 都能看到已绑定专家的名称与用途。
 
-请求计划还会固化首轮工具选择策略。明确的副作用 `ACTION` 且已经得到非 fallback 的唯一候选工具时，首轮模型请求
-使用原生 `ToolChoice.REQUIRED`，避免模型只回复“请确认”而没有产生 Function Calling；工具观察后的后续轮次以及审批恢复轮
-恢复为 `AUTO`。该策略只约束模型必须提出工具请求，不能扩大工具集合，也不能绕过参数 Schema、RBAC、Agent allowlist、
-风险策略或管理员审批。
+Router 只选输入目录中的精确工具名，最多 5 个。Skill 执行候选会补齐目录工具；OPTIONAL 检索会补齐对应已授权工具。
+补齐后超过上限则保守降级，不截断依赖链。无效 JSON、重复字段、未知字段、非数字/越界置信度、超长字段、
+未知或重复工具名均拒绝。模型自报置信度仅作为准入阈值，不能解释成测量得到的准确率。
 
-| 用户请求 | AUTO 计划 | 主要目的 |
-|---|---|---|
-| `你能干什么` | Harness 本地响应，0 次模型、0 RAG、0 Tool | 能力介绍不再消耗数千 Token |
-| `BM25 是什么` | Chat，无 RAG、无 Tool | 通用知识不污染个人检索 |
-| `手机号输错两次会触发限制吗` | Chat + 个人 RAG | 返回私有知识证据与引用 |
-| `列出已上传的文件并分析其中表格` | ReAct + 文件工具候选 | 只暴露完成任务需要的真实工具 |
-| `查询数据源并生成图表` | ReAct，或有有效子 Agent 时 Orchestrated | 多步骤任务允许受控协作 |
-| `把酒店价格改成 699` | ReAct + `updateHotelPrice` 候选，首轮 Tool Choice 为 Required | 直接提出工具请求，再经过风险策略和人工审批 |
+模型负责理解用户意图；JSON 是服务之间的传输格式。Router 使用独立、严格的 ObjectReader 直接绑定
+`SemanticRequestRouter.Decision`，不再逐字段读取 JsonNode。关闭隐式类型转换，缺失/null 字段、未知字段、
+枚举序号、重复字段或候选均拒绝；业务层只校验有界长度、置信度和能力集合。
+v7 默认调用 `McpModelService.callModelStructured`，通过 LangChain4j 的 ChatRequest.responseFormat 传递七字段
+JSON Schema，客户端启用 strictJsonSchema。全部字段 required，禁止额外字段，枚举从 Java 定义生成。
+Schema 保持稳定，工具目录仍在输入中，动态权限和长度/置信度/重复候选仍由 Java 校验；结构合法不表示理解正确。
+统一模型门面按请求选择 TEXT / JSON_OBJECT / JSON_SCHEMA，普通 JSON 调用及后台记忆提取保留 JSON_OBJECT，
+不再为 JSON 另建客户端缓存，YAML 默认模型也能收到格式要求。所有调用继续复用现有配额、重试和预算。
 
-每次计划通过 `execution_plan` 事件和 Trace 安全投影留证，记录规则、置信度、资源开关和候选数量，不保存本地响应正文、
-完整 Prompt 或隐藏 Chain-of-Thought。后续可以用 Agent Eval 统计误路由、无效 RAG、工具选择和 Token 成本，再决定是否在
-规则层与执行层之间增加轻量分类模型；当前不会为了“智能”先额外调用一次昂贵大模型。
+`app.agent.planning.response-format` 默认 JSON_SCHEMA；实际端点明确不支持时手动改为 JSON_OBJECT。
+不根据厂商名称猜测支持，也不在超时、认证失败或格式拒绝后另发一种格式的请求。
+原有瞬时故障重试仍保留；失败或非法合同沿用原有保守规划。后台“连接测试”只验证普通聊天，不证明 Schema 能力。
 
-只有 `ragRequired=true` 才执行 Milvus 向量检索、Elasticsearch BM25 和父级上下文回查；这些步骤均使用
-`tenantId + userId` 双重过滤，知识库和文件的列表、详情、修改与删除也遵守同一边界。触发检索时流式响应会发送
-`rag_context`：普通界面只显示“参考了你的知识库”或“未使用个人知识库”，引用正文、来源名称和位置按需展开；
-检索通道、融合分数、执行模式、工具轨迹和 Trace ID 收进“运行详情”。未触发 RAG 的请求不伪造“未命中”事件。
+自动模式根据实际候选确定：含委派工具为 Orchestrated，含其他工具为 ReAct，没有候选为 Chat。
+显式固定模式保留，目录从一开始就按模式过滤：固定 Chat 看不到工具，固定 ReAct 看不到子 Agent。
+多步骤意图只是 Trace/Eval 标签，不再直接决定委派。首轮使用 Tool Choice AUTO，允许模型在参数不足时澄清；
+工具参数齐全时框架提示要求实际发起调用，风险等级与是否审批仍由工具政策决定。
+
+上下文计划保留四类来源：
+- 会话历史：需要模型的请求只要 Session 有历史就 REQUIRED，空会话 OFF。
+- 用户画像：需要模型时从 MySQL 独立读取，没数据则为空。
+- 语义记忆、个人知识库：由 Router 分别规划 REQUIRED/OPTIONAL/OFF。
+- REQUIRED 表示首次业务模型调用前尝试加载，不保证有命中；知识证据为空时提示模型说明证据不足。
+- OPTIONAL 只有实际候选包含对应检索工具时才成立，否则降为 OFF。
+- OFF 不预加载，且检索工具不会出现在实际模型规格中。
+
+v6 将记忆读取按来源拆开：有会话历史时同时尝试读取当前 `sessionId` 的 Redis 工作状态，
+画像独立从 MySQL 读取；`semanticMemory=REQUIRED` 仅调用 `MemoryManager.recallSemanticMemory` 检索相关长期记忆。
+`searchMemory` 也共用此入口，使用同一用户过滤、topK 和分数阈值。预加载故障可以降级为空，工具故障则交给治理管道报错。
+各来源独立读取，不会因为向量检索失败而清空会话和画像；Redis 不可用时工作状态为空，仍可能产生连接等待。
+
+聚合 `MemoryContext` 不再包含全用户近期摘要，避免把另一个会话的近期话题混进当前回答。
+短期摘要仍会写入并可在记忆中心查看，存量数据未删除。工作状态提示明确属于先前步骤，不能作为本次已执行的证明。
+
+Router 根据近期会话生成 standalone `retrievalQuery`。REQUIRED 用它直接检索，OPTIONAL 将它作为数据放入
+主 Agent 上下文供工具查询参考；最终回答始终保留原始用户问题。回答模型仍可根据工具结果调整后续查询。
+
+规划失败后只保留会话、画像与已加载文件，不自动扩大工具集，也不执行额外检索。回答提示明确本次能力限制；
+固定 ReAct/Orchestrated 虽保留模式，候选仍为空。新计划不再写入 `toolSelectionFallback`，
+旧 Trace 的读取兼容保留。审批恢复和常规执行共用快照的 `callableToolNames()`，
+再与暂停前候选取交集，不会因恢复而开放新绑定。
+
+Router 输入最多 12000 字问题、64 个工具摘要及累计 64 个 adapter 目标，序列化输入上限 36000 字符。
+超过上限整体保守降级，不能截断用户尾部条件后继续猜意图。近期历史保留最新一段，长度由配置控制。
+这套有界目录适合当前规模；没有实现大规模工具语义索引或运行途中重新发现工具。
+
+成本口径：顶层 Router 在根 Run 创建前执行，受用户模型配额和模型服务治理，不计入根 Run 业务预算；
+子 Agent Router 已在根 Run 作用域中，同时消耗共享预算，取消/预算终止不能吞成普通降级。
+配置 `app.agent.planning.model-id` 为空时沿用 Agent 模型，支持指定独立轻量模型。
+配置方法：在模型管理中新增并启用规划模型（地址、凭据、模型名），把该记录的 modelId 写入 planning.model-id；
+不要填供应商模型名或 API Key。该 ID 仍受当前租户访问控制；公共配置适合当前单租户部署，不能给不同租户共用
+一个其他租户的私有模型 ID。多租户场景先保留为空，租户级规划模型角色配置属于后续工作。
+2026-09-23 按用户要求将 local 规划角色显式绑定现有 `gpt-5.6-terra`（共享 default 租户、已启用），
+modelId 为 `6fac3eb2-aea9-4bc7-a61a-ee65e3290e3c`；地址/凭据/参数复用模型记录，未新建小模型。
+切换回答模型不会改变这一规划绑定；公共配置仍为空，其他环境不复用未经确认的本地数据库 ID。
+配置变更需重启后端生效，原生 Schema 能力尚未在线验收。调研和验收方法见
+[结构化路由验证记录](../../openspec/changes/modernize-agent-context-routing/structured-routing-verification.md)。
+因此除本地快捷回答外，多了一次规划调用；耗时、成本和路由准确率必须用真实 Eval 衡量，不能直接声称更快或更准确。
+
+Trace 记录决策来源、意图、上下文要求、候选工具和 Router 预算范围。计划中的“预期使用”
+与工具 Journal 中的“实际调用”要分开查看。Trace 不保存完整 Prompt、记忆正文或隐藏推理。
+
+知识库 REQUIRED 预加载和 OPTIONAL 的 `searchKnowledge` 共用 `RagRetrievalService`，
+统一经过 Milvus、Elasticsearch BM25、RRF、Reranker 和引用生成，并使用 `tenantId + userId` 双重过滤。
+检索入口只校验空查询和身份，不再按包含问候词跳过。预加载通过原有 SSE `rag_context` 展示引用；
+按需工具将含 [R1] 编号及来源的证据返回给模型，实际调用记录在工具 Journal。此次未扩展按需工具的独立引用卡片事件。
+未检索时不伪造未命中事件；工具检索异常与正常无命中分开处理。
 
 前端分为两个产品面：普通用户只看到“我的 Agent、专家助手、知识、上下文”；文件作为知识来源进入“知识”页面；管理员通过独立入口切换到控制面，
 处理模型、技能、数据源、用户 Agent 治理、审批和可观测性。管理员角色只由现有管理员主动分配，系统不提供自助提权流程。
@@ -153,7 +201,7 @@ RESUMING -> WAITING_APPROVAL | COMPLETED | FAILED | CANCELLED | TIMED_OUT | BUDG
 
 内部统一使用类型化 `AgentEvent`，每个事件都带 `runId`、mode、事件时间和安全载荷。只有 `AgentRunCoordinator` 可以发布 `RUN_STARTED` 和 `RUN_TERMINATED`。`GuardedAgentEventSink` 接受第一个终态事件后拒绝后续事件。
 
-`AgentSseEventWriter` 负责兼容旧前端协议：模型输出仍是 `token/content`，工具仍是 `tool_call/toolName/result`，编排仍是 `orchestration`，终态仍是 `done`；同时新增 `runId`、mode、status、terminationReason 和 usage。流式请求的第一个 Agent 事件是 `run_started`。
+`AgentSseEventWriter` 负责兼容旧前端协议：模型输出仍是 `token/content`，工具仍是 `tool_call/toolName/result`，编排仍是 `orchestration`，终态仍是 `done`；同时新增 `runId`、mode、status、terminationReason 和 usage。流式请求的第一个 Agent 事件是 `run_started`。Chat 与 ReAct 都复用受治理的 `StreamingChatModel`，模型返回片段会立即转成 token 事件；完整回答只用于最终响应、会话持久化和 Trace，不再等模型全部生成后一次性伪装成流式输出。
 
 ## 取消与 deadline
 
@@ -182,6 +230,10 @@ Checkpoint 与原工具请求使用 `APP_ENCRYPTION_KEY` 做 AES-GCM 加密。�
 `runId` 直接复用为现有 `agent_execution_trace.trace_id`，不新增表或字段。Chat、ReAct 和 Orchestrated 都走 `recordRun`。运行模式、终态、耗时、迭代/模型/工具调用次数、Token 和 deadline 写入现有 JSON 元数据列；请求计划、Tool Journal、上下文治理和安全的可见步骤继续保留。
 
 Trace 与事件不保存 API Key、完整 System Prompt 或隐藏 Chain-of-Thought。Trace 落库失败只影响可观测性，不反转已经确定的业务终态。
+
+Agent Eval 的版本化样本可标注期望 intent、mode 和部分 Context Plan；运行结果从真实 Trace 读取观察值。指标同时计算意图准确率、
+模式准确率和上下文计划准确率。Context Plan 只比较样本显式标注字段，忽略动态 `retrievalQuery`；标签或 Trace 证据缺失时指标为
+`unavailable`，不会用 0% 或 100% 掩盖数据缺口。
 
 每个 Run 还持有固定容量的 Tool Journal。Journal 只保存 `runId + toolCallId`、工具名、准入结果、尝试次数、耗时、风险和脱敏/截断标记；达到容量后丢弃最旧记录并增加 overflow 计数。它汇总进现有 `shared_context_json`，不新增数据库表。
 

@@ -146,6 +146,8 @@ function TraceRequestPlan({ plan }) {
     return <EmptyState title="暂无请求计划" desc="该轨迹没有记录请求级规划证据。" />;
   }
   const tools = Array.isArray(plan.candidateTools) ? plan.candidateTools : [];
+  const contextPlan = normalizeRequestContextPlan(plan);
+  const planning = plan.planning && typeof plan.planning === 'object' ? plan.planning : {};
   return (
     <div className="trace-plan-list">
       <div className="trace-plan-item">
@@ -157,17 +159,45 @@ function TraceRequestPlan({ plan }) {
         <p>{plan.reason || '-'}</p>
         <div className="trace-mini-list">
           <span>模型 {plan.modelRequired ? '开启' : '关闭'}</span>
-          <span>知识库 {plan.ragRequired ? '开启' : '关闭'}</span>
-          <span>记忆 {plan.memoryRequired ? '开启' : '关闭'}</span>
-          <span>历史 {plan.historyRequired ? '开启' : '关闭'}</span>
+          <span>知识库 {contextPlan.knowledgeBase}</span>
+          <span>语义记忆 {contextPlan.semanticMemory}</span>
+          <span>用户画像 {contextPlan.userProfile}</span>
+          <span>会话历史 {contextPlan.conversationHistory}</span>
         </div>
         <div className="trace-mini-list">
           <span>规则: {plan.matchedRule || '-'}</span>
+          <span>决策来源: {contextPlan.decisionSource}</span>
           <span>候选工具: {tools.length ? tools.join(', ') : '无'}</span>
         </div>
+        {Object.keys(planning).length > 0 && (
+          <div className="trace-mini-list">
+            <span>语义 Router: {planning.modelRequestAttempted ? '已调用' : '未调用'}</span>
+            <span>规划耗时: {Number(planning.durationMs || 0)} ms</span>
+            <span>预算范围: {planning.includedInRunBudget ? '根 Run' : '用户模型配额'}</span>
+          </div>
+        )}
+        {contextPlan.retrievalQuery && (
+          <Field label="检索查询"><span>{contextPlan.retrievalQuery}</span></Field>
+        )}
       </div>
     </div>
   );
+}
+
+/** 将新版三态计划和旧版布尔证据归一为同一展示模型。 */
+function normalizeRequestContextPlan(plan) {
+  const contextPlan = plan?.contextPlan && typeof plan.contextPlan === 'object'
+    ? plan.contextPlan
+    : {};
+  const legacy = (field) => (plan?.[field] ? 'REQUIRED' : 'OFF');
+  return {
+    knowledgeBase: contextPlan.knowledgeBase || legacy('ragRequired'),
+    semanticMemory: contextPlan.semanticMemory || legacy('memoryRequired'),
+    userProfile: contextPlan.userProfile || legacy('memoryRequired'),
+    conversationHistory: contextPlan.conversationHistory || legacy('historyRequired'),
+    decisionSource: contextPlan.decisionSource || 'LEGACY',
+    retrievalQuery: contextPlan.retrievalQuery || ''
+  };
 }
 
 function TraceRunSummary({ run }) {

@@ -9,12 +9,15 @@ import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.common.clientenum.ConsistencyLevelEnum;
+import io.milvus.grpc.GetLoadStateResponse;
+import io.milvus.grpc.LoadState;
 import io.milvus.grpc.MutationResult;
 import io.milvus.param.RpcStatus;
 import io.milvus.param.ConnectParam;
 import io.milvus.param.IndexType;
 import io.milvus.param.MetricType;
 import io.milvus.param.R;
+import io.milvus.param.collection.GetLoadStateParam;
 import io.milvus.param.collection.LoadCollectionParam;
 import io.milvus.param.dml.DeleteParam;
 import jakarta.annotation.PostConstruct;
@@ -25,6 +28,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Milvus 向量存储网关。
@@ -36,6 +41,8 @@ public class MilvusVectorStoreGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MilvusVectorStoreGateway.class);
     private static final int MILVUS_CLOSE_TIMEOUT_SECONDS = 5;
+    private static final long COLLECTION_LOAD_WAIT_INTERVAL_MS = 500L;
+    private static final long COLLECTION_LOAD_TIMEOUT_MS = 60_000L;
     private static final String MESSAGE_COLLECTION_NOT_LOADED = "collection not loaded";
     private static final String MESSAGE_CHANNEL_NOT_FOUND = "channel not found";
 
@@ -212,7 +219,7 @@ public class MilvusVectorStoreGateway {
             boolean collectionExists = indexManager.ensureCollectionAndIndex(milvusClient, collectionName,
                     indexType, metricType);
             if (collectionExists) {
-                requestCollectionLoad();
+                requestCollectionLoad(false);
             }
 
             LOGGER.info("Milvus 客户端已初始化 [{}:{}] collection={} dim={} index={} metric={}",
@@ -265,9 +272,8 @@ public class MilvusVectorStoreGateway {
         if (milvusClient == null) {
             throw new IllegalStateException("Milvus 客户端未初始化，无法创建向量存储");
         }
-        this.embeddingStore = MilvusEmbeddingStore.builder()
-                .host(milvusHost)
-                .port(milvusPort)
+        EmbeddingStore<TextSegment> initializedStore = MilvusEmbeddingStore.builder()
+                .milvusClient(milvusClient)
                 .collectionName(collectionName)
                 .dimension(embeddingProfile.dimension())
                 .indexType(indexType)
@@ -275,32 +281,110 @@ public class MilvusVectorStoreGateway {
                 .consistencyLevel(ConsistencyLevelEnum.EVENTUALLY)
                 .retrieveEmbeddingsOnSearch(true)
                 .build();
-        requestCollectionLoad();
+        requestCollectionLoad(true);
+        this.embeddingStore = initializedStore;
         LOGGER.info("Milvus embedding store 已延迟初始化 collection={}", collectionName);
-        return embeddingStore;
+        return initializedStore;
     }
 
-    private void requestCollectionLoad() {
+    /**
+     * 请求 Milvus 加载 Collection。启动阶段只预热，真正执行向量操作前必须有界等待加载完成。
+     *
+     * @param awaitLoaded 是否等待 Collection 进入 Loaded 状态
+     */
+    private void requestCollectionLoad(boolean awaitLoaded) {
         R<RpcStatus> resp = milvusClient.loadCollection(
-                LoadCollectionParam.newBuilder()
-                        .withCollectionName(collectionName)
-                        .withSyncLoad(false)
-                        .build());
+                buildLoadCollectionParam(collectionName));
         if (resp.getStatus() != R.Status.Success.getCode()) {
             throw new IllegalStateException("Milvus collection 加载请求失败: status=" + resp.getStatus()
                     + ", message=" + resp.getMessage());
         }
+        if (awaitLoaded) {
+            awaitCollectionLoaded(milvusClient, collectionName,
+                    COLLECTION_LOAD_WAIT_INTERVAL_MS, COLLECTION_LOAD_TIMEOUT_MS);
+        }
     }
 
-    private boolean isRecoverableMilvusState(Throwable throwable) {
-        return throwable != null && isRecoverableMilvusState(throwable.getMessage());
+    /**
+     * 构建非阻塞 Collection 加载参数。加载完成由本项目显式查询状态，避免 SDK 同步等待静默超时。
+     *
+     * @param targetCollection 物理 Collection 名称
+     * @return Milvus 加载参数
+     */
+    static LoadCollectionParam buildLoadCollectionParam(String targetCollection) {
+        return LoadCollectionParam.newBuilder()
+                .withCollectionName(targetCollection)
+                .withSyncLoad(false)
+                .build();
     }
 
-    private boolean isRecoverableMilvusState(String message) {
+    /**
+     * 有界等待 Collection 真正进入 Loaded 状态。
+     *
+     * @param client Milvus 客户端
+     * @param targetCollection 物理 Collection 名称
+     * @param pollIntervalMs 状态查询间隔，最小按 1 毫秒处理
+     * @param timeoutMs 最大等待时间
+     */
+    static void awaitCollectionLoaded(MilvusServiceClient client, String targetCollection,
+            long pollIntervalMs, long timeoutMs) {
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
+        LoadState lastState = LoadState.LoadStateNotExist;
+        while (true) {
+            R<GetLoadStateResponse> response = client.getLoadState(
+                    GetLoadStateParam.newBuilder()
+                            .withCollectionName(targetCollection)
+                            .build());
+            if (response.getStatus() != R.Status.Success.getCode() || response.getData() == null) {
+                throw new IllegalStateException("Milvus collection 加载状态查询失败: collection="
+                        + targetCollection + ", status=" + response.getStatus() + ", message=" + response.getMessage());
+            }
+            lastState = response.getData().getState();
+            if (LoadState.LoadStateLoaded.equals(lastState)) {
+                return;
+            }
+            if (System.nanoTime() >= deadlineNanos) {
+                throw new IllegalStateException("Milvus collection 加载超时: collection="
+                        + targetCollection + ", state=" + lastState + ", timeoutMs=" + timeoutMs);
+            }
+            sleepBeforeNextLoadStateCheck(targetCollection, Math.max(1L, pollIntervalMs));
+        }
+    }
+
+    private static void sleepBeforeNextLoadStateCheck(String targetCollection, long pollIntervalMs) {
+        try {
+            Thread.sleep(pollIntervalMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("等待 Milvus collection 加载时线程被中断: collection="
+                    + targetCollection, e);
+        }
+    }
+
+    /**
+     * 检查异常链中是否包含可通过重新加载 Collection 恢复的状态错误。
+     *
+     * @param throwable Milvus 调用异常
+     * @return 是否允许刷新状态后重试一次
+     */
+    static boolean isRecoverableMilvusState(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (isRecoverableMilvusState(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isRecoverableMilvusState(String message) {
         if (message == null) {
             return false;
         }
-        return message.contains(MESSAGE_COLLECTION_NOT_LOADED) || message.contains(MESSAGE_CHANNEL_NOT_FOUND);
+        String normalizedMessage = message.toLowerCase(Locale.ROOT);
+        return normalizedMessage.contains(MESSAGE_COLLECTION_NOT_LOADED)
+                || normalizedMessage.contains(MESSAGE_CHANNEL_NOT_FOUND);
     }
 
     private void requireMatchingCount(List<Embedding> embeddings, List<TextSegment> segments) {

@@ -1,17 +1,13 @@
 package com.ai.agent.tool;
 
-import com.ai.security.SecurityContextHelper;
+import com.ai.memory.MemoryManager;
+import com.ai.rag.RagRetrievalService;
+import com.ai.rag.dto.RagContextResponse;
 import com.ai.service.VectorMemoryService;
-import com.ai.vector.VectorDocumentTypes;
-import com.ai.vector.VectorMetadataKeys;
-import com.ai.vector.VectorSearchResultFormatter;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,61 +19,42 @@ import java.util.Map;
 public class AgentKnowledgeToolService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentKnowledgeToolService.class);
-    private static final int MEMORY_SEARCH_TOP_K = 5;
-    private static final double KNOWLEDGE_MIN_SCORE = 0.5D;
-    private static final int KNOWLEDGE_SEARCH_TOP_K = 5;
     private static final String EMPTY_MEMORY_MESSAGE = "没有找到相关的历史记忆";
     private static final String EMPTY_KNOWLEDGE_MESSAGE = "知识库中没有找到相关内容。建议用户上传相关文档或数据。";
 
     private final VectorMemoryService vectorMemoryService;
 
-    private final SecurityContextHelper securityContextHelper;
-
-    private final VectorSearchResultFormatter vectorSearchResultFormatter;
+    private final MemoryManager memoryManager;
+    private final RagRetrievalService ragRetrievalService;
 
     public AgentKnowledgeToolService(VectorMemoryService vectorMemoryService,
-            SecurityContextHelper securityContextHelper,
-            VectorSearchResultFormatter vectorSearchResultFormatter) {
+            MemoryManager memoryManager,
+            RagRetrievalService ragRetrievalService) {
         this.vectorMemoryService = vectorMemoryService;
-        this.securityContextHelper = securityContextHelper;
-        this.vectorSearchResultFormatter = vectorSearchResultFormatter;
+        this.memoryManager = memoryManager;
+        this.ragRetrievalService = ragRetrievalService;
     }
 
+    /** 复用预加载的长期记忆入口；检索异常继续交给工具管道处理，不能伪装成未命中。 */
     public String searchMemory(String query) {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        String userId = securityContextHelper.getCurrentUserId();
-        if (tenantId == null || tenantId.isBlank() || userId == null || userId.isBlank()) {
-            return EMPTY_MEMORY_MESSAGE;
-        }
-        String result = vectorMemoryService.searchRelevant(query, MEMORY_SEARCH_TOP_K, KNOWLEDGE_MIN_SCORE,
-                tenantId, userId, List.of(VectorDocumentTypes.MEMORY));
-        if (result == null || result.isEmpty()) {
+        String result = memoryManager.recallSemanticMemory(query);
+        if (result == null || result.isBlank()) {
             return EMPTY_MEMORY_MESSAGE;
         }
         return result;
     }
 
+    /** 按需工具和预加载共用混合 RAG，身份过滤、精排及引用均由统一检索入口负责。 */
     public String searchKnowledge(String query) {
         try {
-            String tenantId = securityContextHelper.getCurrentTenantId();
-            if (tenantId == null || tenantId.isBlank()) {
+            RagContextResponse result = ragRetrievalService.retrieve(query);
+            if (!result.isRetrievalAvailable()) {
+                throw new IllegalStateException("知识检索暂不可用");
+            }
+            if (!result.hasContext()) {
                 return EMPTY_KNOWLEDGE_MESSAGE;
             }
-            List<EmbeddingMatch<TextSegment>> knowledgeMatches = vectorMemoryService.searchMatches(
-                            query,
-                            KNOWLEDGE_SEARCH_TOP_K,
-                            KNOWLEDGE_MIN_SCORE,
-                            tenantId,
-                            List.of(VectorDocumentTypes.KNOWLEDGE, VectorDocumentTypes.FILE))
-                    .stream()
-                    .filter(this::isKnowledgeOrFile)
-                    .toList();
-
-            if (knowledgeMatches.isEmpty()) {
-                return EMPTY_KNOWLEDGE_MESSAGE;
-            }
-
-            return formatMatches(knowledgeMatches);
+            return "以下是本次检索到的知识库证据，请保留 [R1] 形式的引用编号：\n" + result.getContext();
         } catch (Exception e) {
             LOGGER.warn("知识库搜索失败: errorType={}", e.getClass().getSimpleName());
             throw new IllegalStateException("知识库搜索失败", e);
@@ -100,19 +77,4 @@ public class AgentKnowledgeToolService {
         return resultBuilder.toString();
     }
 
-    private boolean isKnowledgeOrFile(EmbeddingMatch<TextSegment> match) {
-        String type = match.embedded().metadata().getString(VectorMetadataKeys.TYPE);
-        return VectorDocumentTypes.KNOWLEDGE.equals(type) || VectorDocumentTypes.FILE.equals(type);
-    }
-
-    private String formatMatches(List<EmbeddingMatch<TextSegment>> matches) {
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < matches.size(); i++) {
-            if (i > 0) {
-                builder.append("\n\n");
-            }
-            builder.append(vectorSearchResultFormatter.format(matches.get(i), i + 1));
-        }
-        return builder.toString();
-    }
 }

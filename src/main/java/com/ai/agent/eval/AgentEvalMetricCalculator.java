@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -38,13 +39,16 @@ public class AgentEvalMetricCalculator {
                 approvalAccuracy(safeInputs),
                 p95Duration(safeInputs),
                 averageTokens(safeInputs),
+                intentAccuracy(safeInputs),
+                modeAccuracy(safeInputs),
+                contextPlanAccuracy(safeInputs),
                 unavailable(safeInputs.size(), "RAG_SAMPLE_EVIDENCE_NOT_PERSISTED"));
     }
 
     /** 返回尚未执行完成时不可误读为零的指标集合。 */
     public Metrics unavailableMetrics(int totalSamples, String reason) {
         MetricValue value = unavailable(Math.max(0, totalSamples), reason);
-        return new Metrics(value, value, value, value, value, value, value);
+        return new Metrics(value, value, value, value, value, value, value, value, value, value);
     }
 
     private MetricValue taskCompletion(List<MetricInput> inputs) {
@@ -108,6 +112,53 @@ public class AgentEvalMetricCalculator {
         return numeric(average, UNIT_TOKENS, values.size(), inputs.size());
     }
 
+    private MetricValue intentAccuracy(List<MetricInput> inputs) {
+        return exactTextAccuracy(inputs, MetricInput::expectedIntent, MetricInput::observedIntent,
+                "INTENT_LABEL_OR_TRACE_EVIDENCE_MISSING");
+    }
+
+    private MetricValue modeAccuracy(List<MetricInput> inputs) {
+        return exactTextAccuracy(inputs, MetricInput::expectedMode, MetricInput::observedMode,
+                "MODE_LABEL_OR_TRACE_EVIDENCE_MISSING");
+    }
+
+    private MetricValue exactTextAccuracy(List<MetricInput> inputs,
+            java.util.function.Function<MetricInput, String> expectedExtractor,
+            java.util.function.Function<MetricInput, String> observedExtractor,
+            String unavailableReason) {
+        List<MetricInput> eligible = inputs.stream()
+                .filter(item -> hasText(expectedExtractor.apply(item)) && hasText(observedExtractor.apply(item)))
+                .toList();
+        int matched = (int) eligible.stream()
+                .filter(item -> expectedExtractor.apply(item).trim()
+                        .equalsIgnoreCase(observedExtractor.apply(item).trim()))
+                .count();
+        return percentage(matched, eligible.size(), inputs.size(), unavailableReason);
+    }
+
+    private MetricValue contextPlanAccuracy(List<MetricInput> inputs) {
+        List<MetricInput> eligible = inputs.stream()
+                .filter(item -> item.expectedContextPlan() != null && !item.expectedContextPlan().isEmpty()
+                        && item.observedContextPlan() != null)
+                .toList();
+        int matched = (int) eligible.stream().filter(this::matchesExpectedContextPlan).count();
+        return percentage(matched, eligible.size(), inputs.size(),
+                "CONTEXT_PLAN_LABEL_OR_TRACE_EVIDENCE_MISSING");
+    }
+
+    /** 只比较黄金样本显式标注的字段，允许运行时附带 retrievalQuery 等动态证据。 */
+    private boolean matchesExpectedContextPlan(MetricInput input) {
+        return input.expectedContextPlan().entrySet().stream().allMatch(entry -> {
+            String observed = input.observedContextPlan().get(entry.getKey());
+            return hasText(entry.getValue()) && hasText(observed)
+                    && entry.getValue().trim().equalsIgnoreCase(observed.trim());
+        });
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
     private MetricValue percentage(int numerator, int denominator, int total, String reason) {
         if (denominator == 0) {
             return unavailable(total, reason);
@@ -136,11 +187,19 @@ public class AgentEvalMetricCalculator {
             Boolean invalidLoopExpected,
             Boolean invalidLoopObserved,
             Long durationMs,
-            Long tokenUsage) {
+            Long tokenUsage,
+            String expectedIntent,
+            String observedIntent,
+            String expectedMode,
+            String observedMode,
+            Map<String, String> expectedContextPlan,
+            Map<String, String> observedContextPlan) {
 
         public MetricInput {
             expectedTools = expectedTools == null ? null : List.copyOf(new ArrayList<>(expectedTools));
             observedTools = observedTools == null ? null : List.copyOf(new ArrayList<>(observedTools));
+            expectedContextPlan = expectedContextPlan == null ? null : Map.copyOf(expectedContextPlan);
+            observedContextPlan = observedContextPlan == null ? null : Map.copyOf(observedContextPlan);
         }
     }
 }

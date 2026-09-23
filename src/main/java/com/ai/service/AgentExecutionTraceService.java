@@ -107,7 +107,8 @@ public class AgentExecutionTraceService {
         trace.setIntent(route.requestPlan().intent().name());
         trace.setComplexity(null);
         trace.setSuccess(response != null && response.isSuccess());
-        trace.setFallbackUsed(route.requestPlan().toolSelectionFallback());
+        // 新计划已禁止扩大候选的工具兜底；保留数据库列供历史 Trace 读取。
+        trace.setFallbackUsed(false);
         trace.setTaskCount(snapshot.toolCalls());
         trace.setDurationMs(snapshot.durationMs());
         trace.setReason(truncate(snapshot.terminationReason().name() + ": " + snapshot.detail()));

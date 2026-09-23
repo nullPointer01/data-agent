@@ -18,7 +18,7 @@ import java.util.Set;
 public class SemanticMemoryService {
 
     private static final int SEMANTIC_IMPORTANCE = 5;
-    private static final String EXTRACTOR_VERSION = "semantic-v1";
+    private static final String EXTRACTOR_VERSION = "semantic-v2";
     private static final Set<MemoryType> ALLOWED_TYPES = Set.of(
             MemoryType.PREFERENCE, MemoryType.ENTITY, MemoryType.CONCLUSION);
 

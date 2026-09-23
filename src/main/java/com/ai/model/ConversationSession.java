@@ -102,10 +102,25 @@ public class ConversationSession {
     }
 
     public String buildContextPrompt(String currentQuestion) {
-        if (history.isEmpty()) {
+        String recentHistory = buildRecentHistory();
+        if (recentHistory.isEmpty()) {
             return currentQuestion;
         }
 
+        return recentHistory + USER_LABEL + ": " + currentQuestion;
+    }
+
+    /**
+     * 构建当前会话最近的原始消息，供模型解析追问和弱指代。
+     *
+     * <p>该方法不追加当前问题，避免执行器重复注入用户输入。</p>
+     *
+     * @return 最近六条经过长度治理的会话消息，无历史时返回空字符串
+     */
+    public String buildRecentHistory() {
+        if (history.isEmpty()) {
+            return "";
+        }
         int start = Math.max(0, history.size() - MAX_CONTEXT_MESSAGES);
         List<Message> recentHistory = history.subList(start, history.size());
 
@@ -115,7 +130,6 @@ public class ConversationSession {
             sb.append(ROLE_USER.equals(msg.getRole()) ? USER_LABEL : ASSISTANT_LABEL).append(": ");
             sb.append(truncated).append("\n");
         }
-        sb.append(USER_LABEL).append(": ").append(currentQuestion);
         return sb.toString();
     }
 

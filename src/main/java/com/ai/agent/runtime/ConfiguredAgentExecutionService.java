@@ -2,8 +2,10 @@ package com.ai.agent.runtime;
 
 import com.ai.agent.ConfigurableAgentExecutor;
 import com.ai.agent.runtime.event.AgentRunEventBridge;
+import com.ai.agent.runtime.planning.RequestContextPlan;
 import com.ai.memory.MemoryManager;
 import com.ai.memory.dto.MemoryContext;
+import com.ai.memory.dto.UserMemoryProfileSnapshotResponse;
 import com.ai.model.AgentProfile;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
@@ -38,7 +40,7 @@ final class ConfiguredAgentExecutionService {
         validateResolvedRoute(context, route);
         AgentProfile profile = route.profile();
         AnalysisRequest request = context.executionContext().getRequest();
-        MemoryContext memoryContext = buildMemoryContext(request, route);
+        MemoryContext memoryContext = buildMemoryContext(context, route);
 
         AnalysisResponse response;
         if (context.eventSink().isStreaming()) {
@@ -78,15 +80,33 @@ final class ConfiguredAgentExecutionService {
         }
     }
 
-    private MemoryContext buildMemoryContext(AnalysisRequest request, AgentRunRoute route) {
-        if (!route.requestPlan().memoryRequired()) {
-            return MemoryContext.empty();
+    private MemoryContext buildMemoryContext(AgentRunContext context, AgentRunRoute route) {
+        RequestContextPlan plan = route.requestPlan().contextPlan();
+        String history = "";
+        String working = "";
+        // 当前会话状态由 Session 决定，不再跟随“需要跨会话记忆”一起开关。
+        var session = context.executionContext().getSession();
+        if (plan.shouldPreloadConversationHistory() && session != null) {
+            history = session.buildRecentHistory();
+            working = memoryManager.loadWorkingMemory(context.sessionId());
+        }
+        UserMemoryProfileSnapshotResponse profile = plan.shouldPreloadUserProfile()
+                ? memoryManager.loadUserProfile() : UserMemoryProfileSnapshotResponse.empty();
+        return new MemoryContext(history, working, loadSemanticMemory(plan), profile);
+    }
+
+    /**
+     * 跨会话记忆与当前会话历史独立降级，外部记忆故障不能清空已经可用的对话上下文。
+     */
+    private String loadSemanticMemory(RequestContextPlan plan) {
+        if (!plan.shouldPreloadSemanticMemory()) {
+            return "";
         }
         try {
-            return memoryManager.buildContext(request.getSessionId(), request.getQuestion());
+            return memoryManager.recallSemanticMemory(plan.retrievalQuery());
         } catch (Exception e) {
             LOGGER.warn("构建 Agent 记忆上下文失败: {}", e.getMessage());
-            return MemoryContext.empty();
+            return "";
         }
     }
 }

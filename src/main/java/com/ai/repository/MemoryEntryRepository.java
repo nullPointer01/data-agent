@@ -20,30 +20,6 @@ import java.util.Optional;
 public interface MemoryEntryRepository extends JpaRepository<MemoryEntry, String> {
 
     /**
-     * 查询指定租户用户和层级下仍有效的记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param tier 记忆层级
-     * @param now 当前时间
-     * @param pageable 分页参数
-     * @return 按权重排序的有效记忆
-     */
-    @Query("""
-            SELECT m FROM MemoryEntry m
-            WHERE m.tenantId = :tenantId
-              AND m.userId = :userId
-              AND m.tier = :tier
-              AND (m.expiresAt IS NULL OR m.expiresAt > :now)
-            ORDER BY m.decayWeight DESC, m.lastAccessedAt DESC
-            """)
-    List<MemoryEntry> findActiveByTenantUserAndTier(@Param("tenantId") String tenantId,
-            @Param("userId") String userId,
-            @Param("tier") MemoryTier tier,
-            @Param("now") LocalDateTime now,
-            Pageable pageable);
-
-    /**
      * 查询指定会话下仍有效的短期记忆。
      *
      * @param tenantId 租户 ID

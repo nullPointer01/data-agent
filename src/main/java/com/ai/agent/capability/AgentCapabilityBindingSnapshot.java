@@ -1,6 +1,7 @@
 package com.ai.agent.capability;
 
 import com.ai.agent.runtime.AgentExecutionMode;
+import com.ai.agent.tool.AgentTools;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -50,6 +51,24 @@ public record AgentCapabilityBindingSnapshot(
      */
     public boolean allowsTool(String toolName) {
         return toolName != null && toolNames.contains(toolName);
+    }
+
+    /**
+     * 返回普通工具及有效能力适配器；执行和审批恢复使用同一口径，再与本次候选取交集。
+     */
+    public Set<String> callableToolNames() {
+        Set<String> names = new LinkedHashSet<>(toolNames);
+        if (mode == AgentExecutionMode.CHAT) {
+            return Set.of();
+        }
+        if (!skillIds.isEmpty()) {
+            names.add(AgentTools.LIST_AVAILABLE_SKILLS_TOOL);
+            names.add(AgentTools.USE_SKILL_TOOL);
+        }
+        if (mode == AgentExecutionMode.ORCHESTRATED && !subAgentIds.isEmpty()) {
+            names.add(AgentTools.DELEGATE_TO_AGENT_TOOL);
+        }
+        return Collections.unmodifiableSet(names);
     }
 
     /**

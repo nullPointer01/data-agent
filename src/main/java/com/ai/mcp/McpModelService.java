@@ -20,6 +20,9 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.request.ResponseFormatType;
+import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
@@ -31,6 +34,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -149,7 +153,7 @@ public class McpModelService {
     }
 
     public String callModel(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, false, true);
+        return callModelInternal(prompt, modelId, null, true);
     }
 
     /**
@@ -159,10 +163,26 @@ public class McpModelService {
      *
      * @param prompt 提示词
      * @param modelId 模型编号
-     * @return 模型响应（合法 JSON 文本）
+     * @return 模型响应或失败说明；调用方仍需验证 JSON 合同
      */
     public String callModelJson(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, true, true);
+        return callModelInternal(prompt, modelId, ResponseFormat.JSON, true);
+    }
+
+    /**
+     * 使用厂商原生 JSON Schema 约束输出，复用配额、上下文、重试和 Run 预算治理。
+     * 格式不受支持时按既有错误路径返回，不能无条件追加另一种格式的模型调用。
+     *
+     * @param prompt 包含业务决策规则的提示词
+     * @param modelId 模型编号，空值表示租户默认模型
+     * @param schema 输出结构合同，不能为空
+     * @return 模型响应或失败说明；结构正确仍不等于业务决策正确
+     */
+    public String callModelStructured(String prompt, String modelId, JsonSchema schema) {
+        Objects.requireNonNull(schema, "结构化输出必须提供 Schema");
+        ResponseFormat format = ResponseFormat.builder()
+                .type(ResponseFormatType.JSON).jsonSchema(schema).build();
+        return callModelInternal(prompt, modelId, format, true);
     }
 
     /**
@@ -175,10 +195,10 @@ public class McpModelService {
      * @return 模型返回的 JSON 文本
      */
     public String callBackgroundModelJson(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, true, false);
+        return callModelInternal(prompt, modelId, ResponseFormat.JSON, false);
     }
 
-    private String callModelInternal(String prompt, String modelId, boolean jsonMode, boolean governRun) {
+    private String callModelInternal(String prompt, String modelId, ResponseFormat format, boolean governRun) {
         TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
         if (!quotaResult.allowed()) {
             return quotaResult.message();
@@ -190,13 +210,14 @@ public class McpModelService {
         boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
         String modelKey = modelClientRegistry.modelKey(modelId);
         long startTime = System.currentTimeMillis();
-        LOGGER.info("Calling model | modelId={} | isDefault={} | jsonMode={} | promptLength={} | promptTokens={}",
-                isDefault ? DEFAULT_MODEL_KEY : modelId, isDefault, jsonMode, prompt.length(), inputTokens);
+        String formatName = format == null ? "TEXT" : format.jsonSchema() == null ? "JSON_OBJECT" : "JSON_SCHEMA";
+        LOGGER.info("Calling model | modelId={} | isDefault={} | responseFormat={} | promptLength={} | promptTokens={}",
+                isDefault ? DEFAULT_MODEL_KEY : modelId, isDefault, formatName, prompt.length(), inputTokens);
 
         AgentRunControl runControl = governRun ? beginAgentModelCall() : null;
         try {
             ChatResponse response = invokeModelMessages(
-                    governedContext.messages(), modelId, modelKey, isDefault, jsonMode);
+                    governedContext.messages(), modelId, modelKey, isDefault, format);
             String responseText = responseText(response);
             // token 记账优先使用厂商返回的真实用量
             long realInputTokens = realInputTokens(response, inputTokens);
@@ -252,7 +273,7 @@ public class McpModelService {
             LOGGER.error("Streaming model call failed, falling back to sync", e);
             structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, 0L,
                     System.currentTimeMillis() - startTime, false, e.getMessage());
-            String fallback = callModelInternal(prompt, modelId, false, false);
+            String fallback = callModelInternal(prompt, modelId, null, false);
             settleAgentModelCall(runControl, null,
                     inputTokens + tokenMonitor.estimateTokens(fallback));
             tokenConsumer.accept(fallback);
@@ -262,15 +283,19 @@ public class McpModelService {
 
     private ChatResponse invokeModelMessages(List<ChatMessage> messages, String modelId, String modelKey,
             boolean isDefault) throws Exception {
-        return invokeModelMessages(messages, modelId, modelKey, isDefault, false);
+        return invokeModelMessages(messages, modelId, modelKey, isDefault, null);
     }
 
     private ChatResponse invokeModelMessages(List<ChatMessage> messages, String modelId, String modelKey,
-            boolean isDefault, boolean jsonMode) throws Exception {
-        ChatModel model = jsonMode
-                ? modelClientRegistry.getJsonChatModel(isDefault ? null : modelId)
-                : modelClientRegistry.getChatModel(isDefault ? null : modelId);
-        return retryExecutor.execute(() -> model.chat(messages), modelKey);
+            boolean isDefault, ResponseFormat format) throws Exception {
+        ChatModel model = modelClientRegistry.getChatModel(isDefault ? null : modelId);
+        // 输出合同属于单次请求；共享客户端不携带业务格式，也不会在 YAML 默认模型上丢失合同。
+        ChatRequest.Builder request = ChatRequest.builder().messages(messages);
+        if (format != null) {
+            request.responseFormat(format);
+        }
+        ChatRequest chatRequest = request.build();
+        return retryExecutor.execute(() -> model.chat(chatRequest), modelKey);
     }
 
     /**

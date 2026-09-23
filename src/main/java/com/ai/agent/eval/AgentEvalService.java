@@ -216,6 +216,9 @@ public class AgentEvalService {
         AgentOutcomeStatus outcome = response == null ? AgentOutcomeStatus.NOT_EVALUATED : response.getOutcomeStatus();
         result.setAgentRunId(response == null ? null : response.getRunId());
         result.setTraceId(response == null ? null : response.getTraceId());
+        result.setObservedIntent(evidence.intent());
+        result.setObservedMode(evidence.mode());
+        result.setObservedContextPlanJson(evidence.contextPlanJson());
         result.setOutcomeStatus(outcome.name());
         result.setReasonCode(response != null && response.getOutcomeEvaluation() != null
                 ? response.getOutcomeEvaluation().reasonCode() : "OUTCOME_EVIDENCE_MISSING");
@@ -238,6 +241,7 @@ public class AgentEvalService {
         AgentExecutionTrace trace = traceRepository.findByTraceIdAndTenantId(response.getRunId(), tenantId)
                 .orElse(null);
         JsonNode governance = readJson(trace == null ? null : trace.getSharedContextJson()).path("toolGovernance");
+        JsonNode requestPlan = readJson(trace == null ? null : trace.getPlanJson()).path("requestPlan");
         JsonNode records = governance.path("records");
         Set<String> tools = new TreeSet<>();
         boolean approvalInJournal = false;
@@ -256,7 +260,13 @@ public class AgentEvalService {
                 ? AgentRunTerminationReason.ITERATION_LIMIT.name().equals(response.getTerminationReason()) : null;
         Long duration = response.getRunUsage() == null ? null : response.getRunUsage().durationMs();
         Long tokens = response.getRunUsage() == null ? null : response.getRunUsage().tokens();
-        return new TraceEvidence(List.copyOf(tools), completeTools, approval, invalidLoop, duration, tokens);
+        String intent = trace == null || !StringUtils.hasText(trace.getIntent()) ? null : trace.getIntent();
+        String mode = trace == null || !StringUtils.hasText(trace.getSelectedType())
+                ? null : trace.getSelectedType();
+        String contextPlanJson = requestPlan.path("contextPlan").isObject()
+                ? requestPlan.path("contextPlan").toString() : null;
+        return new TraceEvidence(List.copyOf(tools), completeTools, approval, invalidLoop,
+                duration, tokens, intent, mode, contextPlanJson);
     }
 
     private AgentEvalResultEntity failedResult(String evalRunId, AgentEvalSampleEntity sample, String error) {
@@ -328,12 +338,19 @@ public class AgentEvalService {
     private SampleResult sampleResult(AgentEvalSampleEntity sample, AgentEvalResultEntity result) {
         if (result == null) {
             return new SampleResult(sample.getSampleId(), sample.getSampleKey(), sample.getQuestion(),
-                    "PENDING", null, null, readStringList(sample.getExpectedToolsJson()), null,
+                    "PENDING", null, null,
+                    sample.getExpectedIntent(), null, sample.getExpectedMode(), null,
+                    readJsonMap(sample.getExpectedContextPlanJson()), null,
+                    readStringList(sample.getExpectedToolsJson()), null,
                     sample.getExpectedApprovalRequired(), null, sample.getInvalidLoopExpected(), null,
                     null, null, false, null, null, null);
         }
         return new SampleResult(sample.getSampleId(), sample.getSampleKey(), sample.getQuestion(),
                 result.getOutcomeStatus(), result.getReasonCode(), readOutcome(result.getOutcomeEvaluationJson()),
+                sample.getExpectedIntent(), result.getObservedIntent(),
+                sample.getExpectedMode(), result.getObservedMode(),
+                readJsonMap(sample.getExpectedContextPlanJson()),
+                readJsonMap(result.getObservedContextPlanJson()),
                 readStringList(sample.getExpectedToolsJson()), readStringList(result.getObservedToolsJson()),
                 sample.getExpectedApprovalRequired(), result.getApprovalObserved(), sample.getInvalidLoopExpected(),
                 result.getInvalidLoopObserved(), hasRun(result) ? result.getDurationMs() : null,
@@ -344,13 +361,19 @@ public class AgentEvalService {
     private MetricInput toMetricInput(AgentEvalSampleEntity sample, AgentEvalResultEntity result) {
         if (result == null) {
             return new MetricInput(null, readStringList(sample.getExpectedToolsJson()), null,
-                    sample.getExpectedApprovalRequired(), null, sample.getInvalidLoopExpected(), null, null, null);
+                    sample.getExpectedApprovalRequired(), null, sample.getInvalidLoopExpected(), null, null, null,
+                    sample.getExpectedIntent(), null, sample.getExpectedMode(), null,
+                    readJsonMap(sample.getExpectedContextPlanJson()), null);
         }
         return new MetricInput(readOutcomeStatus(result.getOutcomeStatus()),
                 readStringList(sample.getExpectedToolsJson()), readStringList(result.getObservedToolsJson()),
                 sample.getExpectedApprovalRequired(), result.getApprovalObserved(), sample.getInvalidLoopExpected(),
                 result.getInvalidLoopObserved(), hasRun(result) ? result.getDurationMs() : null,
-                hasRun(result) ? result.getTokenUsage() : null);
+                hasRun(result) ? result.getTokenUsage() : null,
+                sample.getExpectedIntent(), result.getObservedIntent(),
+                sample.getExpectedMode(), result.getObservedMode(),
+                readJsonMap(sample.getExpectedContextPlanJson()),
+                readJsonMap(result.getObservedContextPlanJson()));
     }
 
     private AgentEvalDatasetEntity requireReadyDataset(String datasetId, String tenantId) {
@@ -474,6 +497,20 @@ public class AgentEvalService {
         }
     }
 
+    private Map<String, String> readJsonMap(String json) {
+        JsonNode root = readJson(json);
+        if (!root.isObject()) {
+            return null;
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        root.fields().forEachRemaining(entry -> {
+            if (entry.getValue().isTextual()) {
+                values.put(entry.getKey(), entry.getValue().asText());
+            }
+        });
+        return values.isEmpty() ? null : Map.copyOf(values);
+    }
+
     private String writeJson(Object value) {
         if (value == null) {
             return null;
@@ -513,9 +550,11 @@ public class AgentEvalService {
     }
 
     private record TraceEvidence(List<String> tools, boolean completeTools, Boolean approvalObserved,
-            Boolean invalidLoopObserved, Long durationMs, Long tokenUsage) {
+            Boolean invalidLoopObserved, Long durationMs, Long tokenUsage,
+            String intent, String mode, String contextPlanJson) {
         private static TraceEvidence missing() {
-            return new TraceEvidence(List.of(), false, null, null, null, null);
+            return new TraceEvidence(List.of(), false, null, null, null, null,
+                    null, null, null);
         }
     }
 }

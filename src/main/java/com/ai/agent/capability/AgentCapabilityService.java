@@ -177,21 +177,6 @@ public class AgentCapabilityService {
                 exclusions);
     }
 
-    /**
-     * 判断 Profile 是否配置了 Skill，同时遵守统一字段优先和失败关闭合同。
-     *
-     * @param profile Agent Profile
-     * @return 存在 Skill 绑定时返回 true
-     */
-    public boolean hasConfiguredSkill(AgentProfile profile) {
-        if (profile == null) {
-            return false;
-        }
-        return configurationCodec.decodeCapabilityBindings(
-                        profile.getCapabilityBindings(), profile.getAgentId()).stream()
-                .anyMatch(AgentCapabilityType.SKILL::owns);
-    }
-
     private AgentCapabilityDescriptor requireBindable(
             Map<String, AgentCapabilityDescriptor> visible, String identity) {
         AgentCapabilityDescriptor descriptor = visible.get(identity);

@@ -1,9 +1,9 @@
 package com.ai.memory;
 
 import com.ai.memory.dto.MemoryContext;
-import com.ai.memory.dto.MemoryEntrySummary;
 import com.ai.memory.dto.UserMemoryProfileSnapshotResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
@@ -20,8 +20,8 @@ public class MemoryContextPromptFormatter {
 
     private static final String MEMORY_SECTION_TITLE = "[记忆上下文]";
     private static final String KEY_MEMORY_USED = "memoryUsed";
+    private static final String KEY_HAS_CONVERSATION_HISTORY = "hasConversationHistory";
     private static final String KEY_HAS_WORKING_MEMORY = "hasWorkingMemory";
-    private static final String KEY_SHORT_TERM_COUNT = "shortTermCount";
     private static final String KEY_HAS_LONG_TERM_CONTEXT = "hasLongTermContext";
     private static final String KEY_HAS_USER_PROFILE = "hasUserProfile";
 
@@ -35,9 +35,9 @@ public class MemoryContextPromptFormatter {
         if (memoryContext == null) {
             return false;
         }
-        return StringUtils.hasText(memoryContext.workingMemory())
+        return StringUtils.hasText(memoryContext.conversationHistory())
+                || StringUtils.hasText(memoryContext.workingMemory())
                 || StringUtils.hasText(memoryContext.longTermContext())
-                || !safeList(memoryContext.shortTermMemories()).isEmpty()
                 || hasProfile(memoryContext.userProfile());
     }
 
@@ -65,14 +65,14 @@ public class MemoryContextPromptFormatter {
             return "";
         }
         StringBuilder builder = new StringBuilder();
+        if (StringUtils.hasText(memoryContext.conversationHistory())) {
+            builder.append("- 当前会话历史（用于理解追问和指代）:\n")
+                    .append(memoryContext.conversationHistory());
+        }
         appendUserProfile(builder, memoryContext.userProfile());
         if (StringUtils.hasText(memoryContext.workingMemory())) {
-            builder.append("- 工作记忆: ").append(memoryContext.workingMemory()).append('\n');
-        }
-        for (MemoryEntrySummary memory : safeList(memoryContext.shortTermMemories())) {
-            if (StringUtils.hasText(memory.content())) {
-                builder.append("- 短期记忆: ").append(memory.content()).append('\n');
-            }
+            builder.append("- 当前会话工作状态（先前步骤记录，不代表本次已执行）: ")
+                    .append(memoryContext.workingMemory()).append('\n');
         }
         if (StringUtils.hasText(memoryContext.longTermContext())) {
             builder.append("- 长期记忆:\n").append(memoryContext.longTermContext()).append('\n');
@@ -89,9 +89,10 @@ public class MemoryContextPromptFormatter {
     public Map<String, Object> toMetadata(MemoryContext memoryContext) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(KEY_MEMORY_USED, hasMemory(memoryContext));
+        metadata.put(KEY_HAS_CONVERSATION_HISTORY, memoryContext != null
+                && StringUtils.hasText(memoryContext.conversationHistory()));
         metadata.put(KEY_HAS_WORKING_MEMORY, memoryContext != null
                 && StringUtils.hasText(memoryContext.workingMemory()));
-        metadata.put(KEY_SHORT_TERM_COUNT, memoryContext == null ? 0 : safeList(memoryContext.shortTermMemories()).size());
         metadata.put(KEY_HAS_LONG_TERM_CONTEXT, memoryContext != null
                 && StringUtils.hasText(memoryContext.longTermContext()));
         metadata.put(KEY_HAS_USER_PROFILE, memoryContext != null && hasProfile(memoryContext.userProfile()));
@@ -122,7 +123,7 @@ public class MemoryContextPromptFormatter {
     }
 
     private void appendProfileList(StringBuilder builder, String label, List<String> values) {
-        if (values != null && !values.isEmpty()) {
+        if (!CollectionUtils.isEmpty(values)) {
             builder.append(' ').append(label).append('=').append(String.join(",", values)).append(';');
         }
     }
@@ -134,12 +135,9 @@ public class MemoryContextPromptFormatter {
                 || StringUtils.hasText(profile.industry())
                 || StringUtils.hasText(profile.communicationStyle())
                 || StringUtils.hasText(profile.preferredFormat())
-                || !safeList(profile.expertiseAreas()).isEmpty()
-                || !safeList(profile.frequentlyAskedTopics()).isEmpty()
-                || !safeList(profile.dataSources()).isEmpty());
+                || !CollectionUtils.isEmpty(profile.expertiseAreas())
+                || !CollectionUtils.isEmpty(profile.frequentlyAskedTopics())
+                || !CollectionUtils.isEmpty(profile.dataSources()));
     }
 
-    private <T> List<T> safeList(List<T> values) {
-        return values == null ? List.of() : values;
-    }
 }
