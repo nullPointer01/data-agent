@@ -36,6 +36,17 @@ import java.util.List;
 @RequestMapping("/api/v1/knowledge")
 public class KnowledgeController {
 
+    /** 包含删除后的残留清理任务，按当前租户和用户过滤。 */
+    @GetMapping("/index-tasks")
+    public java.util.Map<String, com.ai.indexing.IndexTask.Status> indexTasks() {
+        return knowledgeService.indexTaskStatuses();
+    }
+
+    @PostMapping("/{knowledgeId}/index-retry")
+    public KnowledgeMutationResponse retryIndex(@PathVariable String knowledgeId) {
+        return knowledgeService.retryIndex(knowledgeId);
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(KnowledgeController.class);
     private static final int DEFAULT_SEARCH_TOP_K = 5;
 

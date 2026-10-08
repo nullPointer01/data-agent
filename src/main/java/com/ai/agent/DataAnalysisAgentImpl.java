@@ -9,6 +9,7 @@ import com.ai.service.SessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import java.util.concurrent.CompletableFuture;
 
 
 /**
@@ -57,19 +58,19 @@ public class DataAnalysisAgentImpl implements DataAnalysisAgent {
     }
 
     @Override
-    public AnalysisResponse analyzeStreaming(AnalysisRequest request, AgentEventSink eventSink) {
+    public CompletableFuture<AnalysisResponse> analyzeStreaming(AnalysisRequest request, AgentEventSink eventSink) {
         if (request == null || request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
-            return AnalysisResponse.fail(EMPTY_QUESTION_MESSAGE);
+            return CompletableFuture.completedFuture(AnalysisResponse.fail(EMPTY_QUESTION_MESSAGE));
         }
 
         ConversationSession session = resolveSession(request);
         if (request.hasSession() && session == null) {
-            return AnalysisResponse.fail(SESSION_EXPIRED_MESSAGE);
+            return CompletableFuture.completedFuture(AnalysisResponse.fail(SESSION_EXPIRED_MESSAGE));
         }
 
         String fileContent = loadFileContent(request);
         if (request.hasFile() && fileContent == null) {
-            return AnalysisResponse.fail(EMPTY_FILE_MESSAGE);
+            return CompletableFuture.completedFuture(AnalysisResponse.fail(EMPTY_FILE_MESSAGE));
         }
 
         return agentRuntimeService.executeStreaming(new AgentExecutionContext(

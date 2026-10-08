@@ -1,0 +1,123 @@
+10cdefabaa802ed80c2b6051ac044e06f2dfb169
+ M CLAUDE.md
+ M README.md
+ M docs/interview/INTERVIEW_TECH_STORIES.md
+ M docs/interview/PROJECT_INTERVIEW_GUIDE.md
+ M docs/interview/当前进度与验收交接.md
+ M docs/核心逻辑详解/Agent工具治理.md
+ M docs/核心逻辑详解/Agent运行时与Harness.md
+ M docs/核心逻辑详解/RAG检索链路.md
+ M docs/核心逻辑详解/目录索引.md
+ M frontend/src/agent/runEvidence.js
+ M frontend/src/pages/KnowledgePage.jsx
+ M pom.xml
+ M sql/init.sql
+ D src/main/java/com/ai/agent/AgentPromptComposer.java
+ M src/main/java/com/ai/agent/AgentReasoningProperties.java
+ M src/main/java/com/ai/agent/AgentRuntimeService.java
+ M src/main/java/com/ai/agent/AgentSystemPrompts.java
+ M src/main/java/com/ai/agent/ConfigurableAgentExecutor.java
+ M src/main/java/com/ai/agent/DataAnalysisAgent.java
+ M src/main/java/com/ai/agent/DataAnalysisAgentImpl.java
+ M src/main/java/com/ai/agent/approval/AgentApprovalSuspensionService.java
+ M src/main/java/com/ai/agent/capability/AgentCapabilityScope.java
+ M src/main/java/com/ai/agent/capability/AgentCapabilityService.java
+ M src/main/java/com/ai/agent/context/AgentContextGovernor.java
+ M src/main/java/com/ai/agent/context/AgentContextProperties.java
+ M src/main/java/com/ai/agent/context/ConservativeContextReducer.java
+ M src/main/java/com/ai/agent/durable/AgentDurableRunStore.java
+ M src/main/java/com/ai/agent/durable/AgentResumeWorker.java
+ M src/main/java/com/ai/agent/durable/AgentRunStateEntity.java
+ M src/main/java/com/ai/agent/durable/AgentRunStateRepository.java
+ M src/main/java/com/ai/agent/react/ReActExecutionResult.java
+ D src/main/java/com/ai/agent/react/ReActLoopRunner.java
+ D src/main/java/com/ai/agent/react/ReActLoopStepResult.java
+ D src/main/java/com/ai/agent/react/ReActModelCaller.java
+ D src/main/java/com/ai/agent/react/ReActRecoveryDecision.java
+ D src/main/java/com/ai/agent/react/ReActRecoveryTracker.java
+ D src/main/java/com/ai/agent/react/ReActResponseParser.java
+ D src/main/java/com/ai/agent/react/ReActStepHandler.java
+ D src/main/java/com/ai/agent/react/ReActStepOutcome.java
+ D src/main/java/com/ai/agent/react/ReActStreamingStepProcessor.java
+ D src/main/java/com/ai/agent/react/ReActSynchronousStepProcessor.java
+ M src/main/java/com/ai/agent/react/ReActWorkingMemoryService.java
+ D src/main/java/com/ai/agent/react/SelfReflector.java
+ M src/main/java/com/ai/agent/runtime/AgentExecutionMode.java
+ M src/main/java/com/ai/agent/runtime/AgentExecutionStrategy.java
+ M src/main/java/com/ai/agent/runtime/AgentRunContext.java
+ M src/main/java/com/ai/agent/runtime/AgentRunCoordinator.java
+ M src/main/java/com/ai/agent/runtime/AgentRunRegistry.java
+ M src/main/java/com/ai/agent/runtime/AgentRunRouteResolver.java
+ M src/main/java/com/ai/agent/runtime/AgentRunScope.java
+ M src/main/java/com/ai/agent/runtime/ChatExecutionStrategy.java
+ M src/main/java/com/ai/agent/runtime/ConfiguredAgentExecutionService.java
+ M src/main/java/com/ai/agent/runtime/planning/ModelSemanticRequestRouter.java
+ M src/main/java/com/ai/agent/runtime/planning/SemanticRequestRouter.java
+ M src/main/java/com/ai/agent/tool/AgentConversationRecorder.java
+ M src/main/java/com/ai/agent/tool/AgentDelegationToolService.java
+ M src/main/java/com/ai/agent/tool/governance/AgentToolRegistry.java
+ M src/main/java/com/ai/config/AsyncConfig.java
+ M src/main/java/com/ai/config/ContextPropagatingTaskDecorator.java
+ D src/main/java/com/ai/config/SharedTokenizer.java
+ M src/main/java/com/ai/controller/AnalysisController.java
+ M src/main/java/com/ai/controller/KnowledgeController.java
+ M src/main/java/com/ai/knowledge/dto/KnowledgeItemResponse.java
+ M src/main/java/com/ai/mcp/McpContext.java
+ M src/main/java/com/ai/mcp/McpContextManager.java
+ M src/main/java/com/ai/mcp/McpModelService.java
+ M src/main/java/com/ai/mcp/ModelRetryExecutor.java
+ M src/main/java/com/ai/mcp/TokenMonitor.java
+ M src/main/java/com/ai/memory/MemoryContextPromptFormatter.java
+ M src/main/java/com/ai/memory/SemanticMemoryExtractor.java
+ M src/main/java/com/ai/memory/dto/MemoryContext.java
+ M src/main/java/com/ai/model/ConversationSession.java
+ M src/main/java/com/ai/rag/EnhancedRagPipeline.java
+ M src/main/java/com/ai/rag/rerank/HttpCrossEncoderRerankProvider.java
+ M src/main/java/com/ai/rag/retrieval/RrfFusionRanker.java
+ M src/main/java/com/ai/repository/ConversationSessionRepository.java
+ M src/main/java/com/ai/service/AgentExecutionTraceService.java
+ M src/main/java/com/ai/service/AgentProfileService.java
+ M src/main/java/com/ai/service/AnalysisStreamService.java
+ M src/main/java/com/ai/service/SessionManager.java
+ M src/main/java/com/ai/service/VectorMemoryService.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeService.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeSyncResultWriter.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEvent.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventListener.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventPublisher.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventType.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeVectorIndexService.java
+ M src/main/java/com/ai/vector/EmbeddingCallExecutor.java
+ M src/main/java/com/ai/vector/EmbeddingCallRejectedException.java
+ M src/main/resources/application-local.yml
+ M src/main/resources/application-prod.yml
+ M src/main/resources/application.yml
+ D src/main/resources/static/assets/index-CQB4o72U.js
+ M src/main/resources/static/index.html
+?? docs/术语/
+?? docs/核心逻辑详解/Supervisor与原编排对照.md
+?? docs/核心逻辑详解/框架集成与消息生命周期.md
+?? openspec/changes/agentic-delegation-workflow/
+?? openspec/changes/agentic-supervisor/
+?? openspec/changes/aiservices-governed-tools/
+?? openspec/changes/declarative-prompt-flux/
+?? openspec/changes/harden-agent-lifecycle/
+?? openspec/changes/modernize-langchain4j-assistant/
+?? sql/upgrade-index-tasks.sql
+?? src/main/java/com/ai/agent/AgentChatAssistant.java
+?? src/main/java/com/ai/agent/AgentChatService.java
+?? src/main/java/com/ai/agent/AgentChatToolService.java
+?? src/main/java/com/ai/agent/agentic/
+?? src/main/java/com/ai/agent/durable/DurableToolContinuation.java
+?? src/main/java/com/ai/agent/tool/ai/
+?? src/main/java/com/ai/config/MvcStreamingConfig.java
+?? src/main/java/com/ai/config/TaskContextSnapshot.java
+?? src/main/java/com/ai/indexing/
+?? src/main/java/com/ai/mcp/ModelCallExecutor.java
+?? src/main/java/com/ai/mcp/ModelInvocationException.java
+?? src/main/java/com/ai/mcp/ModelResponseStream.java
+?? src/main/java/com/ai/mcp/ModelStreamRuntime.java
+?? src/main/java/com/ai/mcp/StructuredAssistantFactory.java
+?? src/main/java/com/ai/resilience/
+?? src/main/java/com/ai/service/knowledge/KnowledgeIndexScheduler.java
+?? src/main/resources/static/assets/index-CEJF2R4g.js

@@ -75,7 +75,8 @@ public class SecurityConfig {
             "/api/v1/rag/settings",
             "/api/v1/rag/health",
             "/api/v1/rag/evaluate",
-            "/api/v1/rag/benchmark/**"
+            "/api/v1/rag/benchmark/**",
+            "/api/v1/rag/indexes/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

@@ -37,6 +37,10 @@ milvus:
   index-type: IVF_FLAT
 
 app:
+  vector:
+    # 框架递归切分按字符计数；重叠以完整句子为单位，不保证固定重叠 100 个字符。
+    chunk-size: 500
+    chunk-overlap: 100
   embedding:
     dimension: 1024
     index-version: bge-m3-v1
@@ -68,14 +72,9 @@ app:
     registration:
       enabled: false
       tenant-id: default
-  file-processing:
-    core-pool-size: 2
-    max-pool-size: 4
-    queue-capacity: 100
-  knowledge-vector:
-    core-pool-size: 1
-    max-pool-size: 2
-    queue-capacity: 100
+  index-tasks:
+    # 只扫描 MySQL 任务；外部索引由独立有界线程池处理。
+    scan-delay-ms: 2000
   sse:
     timeout-ms: 600000
     core-pool-size: 2
@@ -106,9 +105,11 @@ app:
       safety-margin-tokens: 1024
       protected-recent-messages: 4
       model-window-overrides: {}
+      # 按项目模型 ID 配置已确认的 tokenizer 名称；未知模型保守估算，不从厂商 URL 推断。
+      model-tokenizers: {}
       compaction:
-        # 默认只检查并明确拒绝超限请求；未评测前不静默裁剪或调用摘要模型。
-        enabled: false
+        # 超限时按预算保留完整历史轮次；系统指令和当前任务放不下时明确拒绝。
+        enabled: true
         model-summary-enabled: false
     durable:
       # 是否启用持久化审批及沙箱工具由各环境 Profile 显式决定。
@@ -137,14 +138,30 @@ app:
       max-pool-size: 8
       queue-capacity: 100
     reasoning:
-      reflection-enabled: true
       working-memory-enabled: true
+    orchestration:
+      # TOOL_CALLING：主助手选工具/专家；SUPERVISOR：框架管理者动态选择执行节点。
+      engine: TOOL_CALLING
+  mcp:
+    # 标准 MCP 客户端。服务、租户、只读工具和凭据由部署者显式配置，未配置不发起连接。
+    # 完整示例见 docs/核心逻辑详解/标准MCP工具接入.md；与历史 com.ai.mcp 模型包不同。
+    servers: {}
   rag:
+    # 历史索引重建前开启并重启/排空全部实例；维护期间仅认证、索引管理和健康可用。
+    index-maintenance: false
     enabled: true
     top-k: 6
     candidate-top-k: 20
     min-score: 0.25
     max-context-chars: 5000
+    query:
+      # Router 已补全的独立问题不传历史，直接使用官方 DefaultQueryTransformer。
+      compression-enabled: true
+      # 扩展会增加模型/向量调用，显式开启后最多包含主查询在内的 3 个问题。
+      expansion-enabled: false
+      model-id: ""
+      max-queries: 3
+      max-query-chars: 6000
     reranker:
       enabled: true
       base-url: https://api.siliconflow.cn/v1/rerank
@@ -168,7 +185,10 @@ app:
       maximum-cases: 200
     elasticsearch:
       base-url: http://localhost:9200
-      index-name: data-agent-rag-v2
+      # 新索引使用官方 ICU；旧 v2 不覆盖，需要维护窗口按来源重建。
+      index-name: data-agent-rag-v3
+      analyzer: rag_icu
+      contract-check-interval: 30s
       username: ""
       password: ""
       connect-timeout: 2s
@@ -205,6 +225,8 @@ management:
 logging:
   level:
     com.ai: INFO
+    # 框架 INFO 会打印专家任务原文；只保留本项目的脱敏执行证据。
+    dev.langchain4j.agentic.supervisor.SupervisorPlanner: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
 

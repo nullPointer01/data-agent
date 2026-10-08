@@ -11,10 +11,11 @@ import com.ai.vector.VectorIdentityNormalizer;
 import com.ai.vector.VectorIndexRegistry;
 import com.ai.vector.VectorMetadataFilters;
 import com.ai.vector.VectorMetadataKeys;
-import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.rag.content.ContentMetadata;
+import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.query.Query;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.filter.Filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -70,54 +71,30 @@ public class VectorMemoryService {
         return vectorStoreGateway.isAvailable();
     }
 
-    public void indexConversation(String sessionId, String userMessage, String assistantReply) {
-        indexConversation(sessionId, userMessage, assistantReply, null, null);
+
+    /** 按 Run 身份重放一轮对话索引；异常必须向持久任务传播，不能记为成功。 */
+    public void indexConversationTurn(String runId, String question, String answer, String tenantId, String userId) {
+        VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
+        requireVectorStoreAvailable(VectorDocumentTypes.CONVERSATION, runId);
+        removeFromStore(VectorDocumentTypes.CONVERSATION, runId, identity.tenantId());
+        vectorDocumentIndexer.index(USER_LABEL + question + ASSISTANT_LABEL + answer,
+                VectorDocumentTypes.CONVERSATION, runId, runId, identity.tenantId(),identity.userId());
     }
 
-    public void indexConversation(String sessionId, String userMessage, String assistantReply,
+    /** 接收同一次分块结果；空列表也删除原记录，不能让向量侧再计算另一套边界。 */
+    public void replaceDocumentChunks(String type, String source, String title, List<VectorChunk> chunks,
             String tenantId, String userId) {
-        VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
-        String summary = USER_LABEL + userMessage + ASSISTANT_LABEL + assistantReply;
-        String entryId = VectorDocumentTypes.CONVERSATION + ":" + sessionId + ":" + System.currentTimeMillis();
-        index(summary, VectorDocumentTypes.CONVERSATION, entryId, sessionId, identity);
-        LOGGER.debug("已索引会话向量: {}", sessionId);
-    }
-
-    public void indexFile(String fileId, String filename, String content) {
-        indexFile(fileId, filename, content, null, null);
-    }
-
-    public void indexFile(String fileId, String filename, String content, String tenantId, String userId) {
-        if (!hasText(content)) {
-            return;
+        if ((!VectorDocumentTypes.FILE.equals(type) && !VectorDocumentTypes.KNOWLEDGE.equals(type))
+                || isBlank(source) || isBlank(tenantId) || isBlank(userId)
+                || chunks == null || chunks.stream().anyMatch(chunk -> !source.equals(chunk.sourceId()))) {
+            throw new IllegalArgumentException("向量文档分块与来源身份不一致");
         }
         VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
-        requireVectorStoreAvailable(VectorDocumentTypes.FILE, fileId);
-        removeFromStore(VectorDocumentTypes.FILE, fileId, identity.tenantId());
-
-        List<VectorChunk> chunks = textChunker.split(fileId, content);
-        vectorDocumentIndexer.indexAll(chunks, VectorDocumentTypes.FILE,
-                FILE_LABEL_PREFIX + filename + FILE_LABEL_SUFFIX,
+        requireVectorStoreAvailable(type, source);
+        removeFromStore(type, source, identity.tenantId());
+        String prefix = VectorDocumentTypes.FILE.equals(type) ? FILE_LABEL_PREFIX + title + FILE_LABEL_SUFFIX : "";
+        vectorDocumentIndexer.indexAll(chunks, type, prefix,
                 identity.tenantId(), identity.userId());
-        LOGGER.debug("已索引文件: {} ({} 个分块)", filename, chunks.size());
-    }
-
-    public void indexKnowledge(String content, String source) {
-        indexKnowledge(content, source, null, null);
-    }
-
-    public void indexKnowledge(String content, String source, String tenantId, String userId) {
-        if (!hasText(content)) {
-            return;
-        }
-        VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
-        requireVectorStoreAvailable(VectorDocumentTypes.KNOWLEDGE, source);
-        removeFromStore(VectorDocumentTypes.KNOWLEDGE, source, identity.tenantId());
-
-        List<VectorChunk> chunks = textChunker.split(source, content);
-        vectorDocumentIndexer.indexAll(chunks, VectorDocumentTypes.KNOWLEDGE, "",
-                identity.tenantId(), identity.userId());
-        LOGGER.debug("已索引知识: {} ({} 个分块)", source, chunks.size());
     }
 
     /**
@@ -129,16 +106,17 @@ public class VectorMemoryService {
      * @param userId 用户编号
      */
     public void indexMemory(String memoryId, String content, String tenantId, String userId) {
-        if (!hasText(content)) {
+        if (isBlank(content)) {
             return;
         }
         VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
+        requireVectorStoreAvailable(VectorDocumentTypes.MEMORY, memoryId);
         removeFromStore(VectorDocumentTypes.MEMORY, memoryId, identity.tenantId());
 
         List<VectorChunk> chunks = textChunker.split(memoryId, content);
-        for (VectorChunk chunk : chunks) {
-            index(MEMORY_LABEL_PREFIX + chunk.text(), VectorDocumentTypes.MEMORY, chunk, identity);
-        }
+        // 重建和正常入库共用批量入口，失败必须交给调用方降级或持久任务重试。
+        vectorDocumentIndexer.indexAll(chunks, VectorDocumentTypes.MEMORY, MEMORY_LABEL_PREFIX,
+                identity.tenantId(), identity.userId());
         LOGGER.debug("已索引长期记忆: {} ({} 个分块)", memoryId, chunks.size());
     }
 
@@ -220,12 +198,19 @@ public class VectorMemoryService {
 
     public List<EmbeddingMatch<TextSegment>> searchMatches(String query, int topK, double minScore, String tenantId,
             String userId, List<String> sourceTypes) {
-        if (!hasText(query)) {
+        if (isBlank(query)) {
             return List.of();
         }
-        Embedding queryEmbedding = embeddingGateway.embedQuery(query);
-        Filter filter = VectorMetadataFilters.searchFilter(tenantId, userId, sourceTypes);
-        return vectorStoreGateway.search(queryEmbedding, topK, minScore, filter);
+        // 官方 Retriever 负责查询向量化、构建检索请求和返回 Content；项目只绑定身份和转换旧响应合同。
+        var retriever = EmbeddingStoreContentRetriever.builder()
+                .embeddingModel(embeddingGateway)
+                .embeddingStore(vectorStoreGateway)
+                .maxResults(topK).minScore(minScore)
+                .filter(VectorMetadataFilters.searchFilter(tenantId, userId, sourceTypes))
+                .build();
+        return retriever.retrieve(Query.from(query)).stream().map(content -> new EmbeddingMatch<TextSegment>(
+                ((Number) content.metadata().get(ContentMetadata.SCORE)).doubleValue(),
+                (String) content.metadata().get(ContentMetadata.EMBEDDING_ID), null, content.textSegment())).toList();
     }
 
     public synchronized void removeFromStore(String type, String id) {
@@ -233,7 +218,9 @@ public class VectorMemoryService {
     }
 
     public synchronized void removeFromStore(String type, String id, String tenantId) {
-        vectorStoreGateway.deleteBySource(type, id, tenantId);
+        if (!vectorStoreGateway.deleteBySource(type, id, tenantId)) {
+            throw new IllegalStateException("向量删除未成功，保留任务以供重试");
+        }
         int removedCount = vectorIndexRegistry.removeBySource(type, id, tenantId);
         LOGGER.info("Removed {} entries from Milvus - type: {}, id prefix: {}, tenant: {}",
                 removedCount, type, id, tenantId);
@@ -245,30 +232,6 @@ public class VectorMemoryService {
 
     public Map<String, Long> getIndexedCountByType() {
         return vectorIndexRegistry.getIndexedCountByType();
-    }
-
-    private void index(String text, String type, String id, String sourceId, VectorIdentity identity) {
-        try {
-            if (!vectorStoreGateway.isAvailable()) {
-                LOGGER.debug("向量存储不可用，跳过索引写入: type={}, id={}", type, id);
-                return;
-            }
-            vectorDocumentIndexer.index(text, type, id, sourceId, identity.tenantId(), identity.userId());
-        } catch (Exception e) {
-            LOGGER.warn("向量索引写入失败: type={}, exception={}", type, e.getClass().getName());
-        }
-    }
-
-    private void index(String text, String type, VectorChunk chunk, VectorIdentity identity) {
-        try {
-            if (!vectorStoreGateway.isAvailable()) {
-                LOGGER.debug("向量存储不可用，跳过索引写入: type={}, id={}", type, chunk.id());
-                return;
-            }
-            vectorDocumentIndexer.index(text, type, chunk, identity.tenantId(), identity.userId());
-        } catch (Exception e) {
-            LOGGER.warn("向量索引写入失败: type={}, exception={}", type, e.getClass().getName());
-        }
     }
 
     private void requireVectorStoreAvailable(String type, String sourceId) {
@@ -285,8 +248,8 @@ public class VectorMemoryService {
         return "[" + type + " | 相关度:" + String.format("%.2f", score) + "] " + segment.text();
     }
 
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
 }

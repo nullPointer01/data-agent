@@ -1,5 +1,7 @@
 package com.ai.service;
 
+import com.ai.agent.AgentSystemPrompts;
+
 import com.ai.agent.capability.AgentCapabilityConfigurationCodec;
 import com.ai.agent.capability.AgentCapabilityService;
 import com.ai.agent.capability.AgentCapabilityType;
@@ -27,8 +29,6 @@ public class AgentProfileService {
 
     private static final String DEFAULT_AGENT_NAME = "我的 Agent";
     private static final String DEFAULT_AGENT_DESCRIPTION = "会使用知识、记忆和工具完成任务，并在结果中给出依据。";
-    private static final String DEFAULT_AGENT_PROMPT = "你是用户的长期个人 Agent。先判断是否需要知识或工具，"
-            + "需要时调用获准的能力；回答要准确、简洁、可核验。涉及有副作用的动作时必须等待用户确认。";
 
     private final AgentProfileRepository agentProfileRepository;
     private final SecurityContextHelper securityContextHelper;
@@ -378,7 +378,7 @@ public class AgentProfileService {
         AgentProfile profile = new AgentProfile();
         profile.setName(DEFAULT_AGENT_NAME);
         profile.setDescription(DEFAULT_AGENT_DESCRIPTION);
-        profile.setSystemPrompt(DEFAULT_AGENT_PROMPT);
+        profile.setSystemPrompt(AgentSystemPrompts.DEFAULT_AGENT_ROLE);
         profile.setExecutionMode("auto");
         profile.setCapabilityBindings(capabilityConfigurationCodec.encodeCapabilityBindings(
                 capabilityService.snapshotDefaultToolBindings()));

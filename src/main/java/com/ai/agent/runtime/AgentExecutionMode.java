@@ -9,6 +9,8 @@ import java.util.Locale;
  */
 public enum AgentExecutionMode {
 
+    /** 仅运行时使用；规划完成前禁止执行工具，不是用户可配置模式。 */
+    PLANNING,
     CHAT,
     REACT,
     ORCHESTRATED;

@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 
 /**
  * 分析与对话会话接口。
@@ -54,10 +55,10 @@ public class AnalysisController {
      * 通过 SSE 返回分析结果。
      *
      * @param request 分析请求
-     * @return SSE 发射器
+     * @return Spring MVC 自动订阅并编码为 SSE 的事件 Flux
      */
-    @PostMapping(value = "/analyze/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter analyzeStream(@RequestBody AnalysisRequest request) {
+    @PostMapping(value = "/analyze/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
+    public Flux<ServerSentEvent<String>> analyzeStream(@RequestBody AnalysisRequest request) {
         return analysisStreamService.stream(request);
     }
 

@@ -47,6 +47,11 @@ public class AgentToolAdmissionService {
         AgentRunContext runContext = AgentRunScope.current().orElse(null);
         String toolCallId = toolCallId(runContext, request);
         String requestedName = request == null ? "" : request.name();
+        // 先挡住越租户的远端工具探测，避免猜中名称的未授权请求触发 MCP 网络发现。
+        if (registry.isExternal(requestedName)
+                && (runContext == null || !registry.isVisibleToTenant(requestedName, runContext.tenantId()))) {
+            return new AgentToolAdmission(AgentToolExecutionStatus.UNAUTHORIZED, null, "工具服务未向当前租户授权");
+        }
         AgentToolRegistry.RegisteredTool registered = registry.find(requestedName).orElse(null);
         if (registered == null) {
             return new AgentToolAdmission(AgentToolExecutionStatus.UNKNOWN_TOOL, null, "未知工具");

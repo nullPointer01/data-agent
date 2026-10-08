@@ -3,6 +3,9 @@ package com.ai.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -131,6 +134,27 @@ public class ConversationSession {
             sb.append(truncated).append("\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * 返回执行模型使用的角色化历史快照。规划器仍可使用紧凑文本，正式回答不逐条截断原文。
+     * 仅接受持久会话的 user/assistant 角色，避免数据库内容被提升为系统指令。
+     *
+     * @return 当前已加载历史的有效消息快照；由统一 Token 预算选择完整轮次，不在此按条数截断
+     */
+    public List<ChatMessage> buildRecentMessages() {
+        List<ChatMessage> messages = new ArrayList<>();
+        for (Message message : history) {
+            if (message.getContent() == null || message.getContent().isBlank()) {
+                continue;
+            }
+            if (ROLE_USER.equals(message.getRole())) {
+                messages.add(UserMessage.from(message.getContent()));
+            } else if ("assistant".equals(message.getRole())) {
+                messages.add(AiMessage.from(message.getContent()));
+            }
+        }
+        return List.copyOf(messages);
     }
 
     public String buildSkillContext(String currentQuestion) {

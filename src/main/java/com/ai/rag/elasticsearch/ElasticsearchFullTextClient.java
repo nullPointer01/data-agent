@@ -11,7 +11,7 @@ import co.elastic.clients.elasticsearch._types.query_dsl.TermQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.TermsQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.TermsQueryField;
 import co.elastic.clients.elasticsearch._types.FieldValue;
-import co.elastic.clients.elasticsearch._types.mapping.DynamicMapping;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
@@ -66,7 +66,7 @@ public class ElasticsearchFullTextClient {
     private final ElasticsearchProperties properties;
     private final Object indexInitializationMonitor = new Object();
 
-    private volatile boolean indexReady;
+    private volatile long contractValidUntil;
 
     public ElasticsearchFullTextClient(ElasticsearchClient esClient, ObjectMapper objectMapper,
             ElasticsearchProperties properties) {
@@ -249,26 +249,34 @@ public class ElasticsearchFullTextClient {
      * 首次使用时幂等创建具有固定字段类型的索引，避免动态 Mapping 让精确过滤字段变成 text。
      */
     private void ensureIndex() {
-        if (indexReady) {
+        if (System.nanoTime() < contractValidUntil) {
             return;
         }
         synchronized (indexInitializationMonitor) {
-            if (indexReady) {
+            if (System.nanoTime() < contractValidUntil) {
                 return;
             }
             try {
+                requireIcuPlugin();
                 if (!indexExists()) {
-                    createIndex();
+                    try {
+                        createIndex();
+                    } catch (ElasticsearchException concurrentCreation) {
+                        if (!"resource_already_exists_exception".equals(concurrentCreation.error().type())) {
+                            throw concurrentCreation;
+                        }
+                        // 只有同名并发创建可以接续，接下来仍必须检查实际索引契约。
+                    }
                 }
-                indexReady = true;
+                var state = esClient.indices().get(g -> g.index(properties.getIndexName())).result();
+                if (state.size() != 1 || !state.containsKey(properties.getIndexName())) {
+                    throw new IllegalStateException("RAG 必须配置单一物理索引，不能使用通配符或跨索引别名");
+                }
+                new ElasticsearchIndexContract(properties.getAnalyzer()).validate(state.get(properties.getIndexName()));
+                contractValidUntil = System.nanoTime() + properties.getContractCheckInterval().toNanos();
             } catch (Exception e) {
-                // 多实例并发建索引时，其他实例可能已经成功创建；二次确认后即可继续。
-                if (indexExistsAfterFailure()) {
-                    indexReady = true;
-                    return;
-                }
                 throw new IllegalStateException(
-                        "Elasticsearch RAG index initialization failed: " + properties.getIndexName(), e);
+                        "Elasticsearch RAG index contract check failed: " + properties.getIndexName(), e);
             }
         }
     }
@@ -277,37 +285,19 @@ public class ElasticsearchFullTextClient {
         return esClient.indices().exists(request -> request.index(properties.getIndexName())).value();
     }
 
-    private boolean indexExistsAfterFailure() {
-        try {
-            return indexExists();
-        } catch (Exception ignored) {
-            return false;
+    private void requireIcuPlugin() throws IOException {
+        var nodes = esClient.nodes().info(n -> n.metric("plugins")).nodes();
+        if (nodes.isEmpty() || nodes.values().stream().anyMatch(node -> node.plugins().stream()
+                .noneMatch(plugin -> ElasticsearchIndexContract.ICU_PLUGIN.equals(plugin.name())))) {
+            throw new IllegalStateException("Elasticsearch 节点缺少 analysis-icu；请重建 8.12.0-icu 镜像");
         }
     }
 
     private void createIndex() throws IOException {
+        var contract = new ElasticsearchIndexContract(properties.getAnalyzer());
         esClient.indices().create(request -> request
                 .index(properties.getIndexName())
-                .mappings(mapping -> mapping
-                        .dynamic(DynamicMapping.Strict)
-                        .properties(FIELD_SOURCE_TYPE, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_SOURCE_ID, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_CHUNK_ID, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_TENANT_ID, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_USER_ID, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_TITLE, property -> property.text(text -> text.analyzer("standard")))
-                        .properties(FIELD_CONTENT, property -> property.text(text -> text.analyzer("standard")))
-                        .properties(FIELD_SECTION_PATH, property -> property.text(text -> text.analyzer("standard")))
-                        .properties(FIELD_CHAR_START, property -> property.integer(integer -> integer))
-                        .properties(FIELD_CHAR_END, property -> property.integer(integer -> integer))
-                        .properties(FIELD_CONTAINS_TABLE, property -> property.boolean_(bool -> bool))
-                        .properties(FIELD_CONTAINS_CODE, property -> property.boolean_(bool -> bool))
-                        .properties(FIELD_CONTAINS_LIST, property -> property.boolean_(bool -> bool))
-                        .properties(FIELD_PARENT_CHUNK_ID, property -> property.keyword(keyword -> keyword))
-                        .properties(FIELD_PARENT_CHAR_START, property -> property.integer(integer -> integer))
-                        .properties(FIELD_PARENT_CHAR_END, property -> property.integer(integer -> integer))
-                        .properties(FIELD_PARENT_CONTEXT,
-                                property -> property.text(text -> text.analyzer("standard")))));
+                .settings(contract.settings()).mappings(contract.mapping()));
     }
 
     private Map<String, Object> toDocumentMap(FullTextDocument document) {
@@ -333,6 +323,14 @@ public class ElasticsearchFullTextClient {
     }
 
     private String documentId(FullTextDocument document) {
-        return document.sourceType() + "::" + document.sourceId() + "::" + document.chunkId();
+        // v3 物理 ID 包含身份，避免相同来源/块编号跨用户覆盖；字段仍保留原业务 ID。
+        try {
+            String identity = String.join("\0", document.tenantId(), document.userId(), document.sourceType(),
+                    document.sourceId(), document.chunkId());
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(identity.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 }

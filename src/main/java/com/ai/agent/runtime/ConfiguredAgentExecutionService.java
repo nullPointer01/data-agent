@@ -12,6 +12,9 @@ import com.ai.model.AnalysisResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import dev.langchain4j.data.message.ChatMessage;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 仅消费 Coordinator 已解析路线的配置化 Agent 执行内核。
@@ -37,12 +40,16 @@ final class ConfiguredAgentExecutionService {
     }
 
     AnalysisResponse execute(AgentRunContext context, AgentRunRoute route) {
+        return executeAsync(context, route).join();
+    }
+
+    CompletableFuture<AnalysisResponse> executeAsync(AgentRunContext context, AgentRunRoute route) {
         validateResolvedRoute(context, route);
         AgentProfile profile = route.profile();
         AnalysisRequest request = context.executionContext().getRequest();
         MemoryContext memoryContext = buildMemoryContext(context, route);
 
-        AnalysisResponse response;
+        CompletableFuture<AnalysisResponse> response;
         if (context.eventSink().isStreaming()) {
             response = configurableAgentExecutor.executeStreaming(
                     profile,
@@ -53,19 +60,21 @@ final class ConfiguredAgentExecutionService {
                     route.mode(),
                     route.requestPlan());
         } else {
-            response = configurableAgentExecutor.execute(
+            response = CompletableFuture.completedFuture(configurableAgentExecutor.execute(
                     profile,
                     request,
                     context.executionContext().getFileContent(),
                     memoryContext,
                     route.mode(),
-                    route.requestPlan());
+                    route.requestPlan()));
         }
-        if (response == null) {
-            throw new IllegalStateException("配置化 Agent 未返回执行结果");
-        }
-        response.setSkillUsed(AGENT_SKILL_PREFIX + profile.getName());
-        return response;
+        return response.thenApply(value -> {
+            if (value == null) {
+                throw new IllegalStateException("配置化 Agent 未返回执行结果");
+            }
+            value.setSkillUsed(AGENT_SKILL_PREFIX + profile.getName());
+            return value;
+        });
     }
 
     private void validateResolvedRoute(AgentRunContext context, AgentRunRoute route) {
@@ -82,12 +91,12 @@ final class ConfiguredAgentExecutionService {
 
     private MemoryContext buildMemoryContext(AgentRunContext context, AgentRunRoute route) {
         RequestContextPlan plan = route.requestPlan().contextPlan();
-        String history = "";
+        List<ChatMessage> history = List.of();
         String working = "";
         // 当前会话状态由 Session 决定，不再跟随“需要跨会话记忆”一起开关。
         var session = context.executionContext().getSession();
         if (plan.shouldPreloadConversationHistory() && session != null) {
-            history = session.buildRecentHistory();
+            history = session.buildRecentMessages();
             working = memoryManager.loadWorkingMemory(context.sessionId());
         }
         UserMemoryProfileSnapshotResponse profile = plan.shouldPreloadUserProfile()

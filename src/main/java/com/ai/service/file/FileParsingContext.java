@@ -4,7 +4,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -65,19 +64,6 @@ public record FileParsingContext(
             return Files.newInputStream(path);
         }
         return multipartFile.getInputStream();
-    }
-
-    /**
-     * 按 UTF-8 读取文本文件。
-     *
-     * @return UTF-8 文本内容
-     * @throws IOException 文件无法读取时抛出
-     */
-    public String readText() throws IOException {
-        if (path != null) {
-            return Files.readString(path);
-        }
-        return new String(multipartFile.getBytes(), StandardCharsets.UTF_8);
     }
 
 }

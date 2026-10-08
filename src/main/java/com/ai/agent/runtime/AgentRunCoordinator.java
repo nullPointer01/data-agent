@@ -1,6 +1,7 @@
 package com.ai.agent.runtime;
 
 import com.ai.agent.AgentExecutionContext;
+import com.ai.config.TaskContextSnapshot;
 import com.ai.agent.durable.AgentDurableRunStore;
 import com.ai.agent.outcome.AgentOutcomeEvaluation;
 import com.ai.agent.outcome.AgentOutcomeEvaluator;
@@ -33,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
@@ -102,46 +105,100 @@ public class AgentRunCoordinator {
      * @return 带 Run 元数据的完整响应
      */
     public AnalysisResponse execute(AgentExecutionContext executionContext, AgentEventSink eventSink) {
+        return executeAsync(executionContext, eventSink).join();
+    }
+
+    /** 普通聊天的网络等待通过完成阶段传递；所有模式共用一次终态提交，不提前移除 Run。 */
+    public CompletableFuture<AnalysisResponse> executeAsync(AgentExecutionContext executionContext, AgentEventSink eventSink) {
         if (executionContext == null || executionContext.getRequest() == null) {
             throw new IllegalArgumentException("Agent 执行上下文不能为空");
         }
-        AgentRunRoute route = routeResolver.resolve(executionContext);
-        AgentRunContext runContext = createRunContext(executionContext, route, eventSink);
-        AgentExecutionStrategy.Result strategyResult = null;
-        AnalysisResponse response = null;
+        var profile = routeResolver.resolveProfile(executionContext);
+        AgentRunContext planning = createRunContext(executionContext, profile, eventSink);
         if (durableRunStore.isEnabled()) {
-            durableRunStore.create(runContext);
+            durableRunStore.create(planning);
         }
-        runRegistry.register(runContext);
-        LOGGER.info("Agent Run 已创建: runId={}, mode={}, target={}",
-                runContext.runId(), runContext.mode(), route.target());
+        runRegistry.register(planning);
+        AgentRunContext active = planning;
+        AgentRunRoute route = null;
+        CompletableFuture<AgentExecutionStrategy.Result> execution;
         try {
-            if (!runContext.control().start()) {
+            if (!planning.control().start()) {
                 throw new IllegalStateException("Agent Run 无法启动");
             }
-            if (durableRunStore.isEnabled() && !durableRunStore.transition(
-                    runContext.runId(),
-                    new com.ai.agent.durable.AgentRunTransition(
-                            AgentRunStatus.CREATED,
-                            AgentRunStatus.RUNNING,
-                            AgentRunTerminationReason.NONE,
-                            "运行已启动"))) {
+            if (durableRunStore.isEnabled() && !durableRunStore.transition(planning.runId(),
+                    new com.ai.agent.durable.AgentRunTransition(AgentRunStatus.CREATED, AgentRunStatus.RUNNING,
+                            AgentRunTerminationReason.NONE, "正在规划请求"))) {
                 throw new IllegalStateException("持久化 Agent Run 无法启动");
             }
-            strategyResult = AgentRunScope.call(runContext, () -> {
-                emitStarted(runContext);
-                emitRequestPlan(runContext, route);
-                runContext.control().ensureActive();
-                return executeStrategy(runContext, route);
+            route = AgentRunScope.call(planning, () -> {
+                emitStarted(planning);
+                planning.control().ensureActive();
+                return routeResolver.plan(profile, executionContext);
             });
+            planning.control().ensureActive();
+            AgentRunContext resolved = planning.withMode(route.mode());
+            if (durableRunStore.isEnabled() && !durableRunStore.bindMode(planning.runId(), route.mode())) {
+                throw new IllegalStateException("持久化运行路线绑定失败");
+            }
+            runRegistry.bindRoute(planning, resolved);
+            active = resolved;
+            AgentRunRoute resolvedRoute = route;
+            execution = AgentRunScope.call(resolved, () -> {
+                emitRequestPlan(resolved, resolvedRoute);
+                resolved.control().ensureActive();
+                AgentExecutionStrategy strategy = strategies.get(resolvedRoute.mode());
+                if (strategy == null) {
+                    throw new IllegalStateException("没有可用的 Agent 执行策略: " + resolvedRoute.mode());
+                }
+                return strategy.executeAsync(resolved, resolvedRoute);
+            });
+        } catch (Exception exception) {
+            execution = CompletableFuture.failedFuture(exception);
+        }
+        AgentRunContext runContext = active;
+        AgentRunRoute finalRoute = route;
+        TaskContextSnapshot snapshot = AgentRunScope.call(runContext, TaskContextSnapshot::capture);
+        CompletableFuture<AnalysisResponse> completion = new CompletableFuture<>();
+        // 返回句柄被取消也不能跳过终态提交；清理始终挂在实际执行上。
+        completion.whenComplete((result, error) -> {
+            if (completion.isCancelled()) {
+                runContext.control().cancel("调用方取消运行");
+            }
+        });
+        execution.whenComplete((result, error) -> {
+            try {
+                completion.complete(snapshot.call(() -> finishExecution(runContext, finalRoute, result, error)));
+            } catch (Throwable failure) {
+                completion.completeExceptionally(failure);
+            }
+        });
+        return completion;
+    }
+
+    private AnalysisResponse finishExecution(AgentRunContext runContext, AgentRunRoute route,
+            AgentExecutionStrategy.Result strategyResult, Throwable error) {
+        AnalysisResponse response = null;
+        try {
+            if (error != null) {
+                while (error instanceof CompletionException && error.getCause() != null) {
+                    error = error.getCause();
+                }
+                if (error instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new IllegalStateException("Agent 异步执行失败", error);
+            }
             response = strategyResult == null ? null : strategyResult.response();
             if (runContext.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
                 response = response == null ? AnalysisResponse.ok(null) : response;
+                recordConversation(runContext, response, runContext.snapshot());
             } else if (response == null) {
                 runContext.control().fail("Agent 执行结果为空");
                 response = AnalysisResponse.fail("Agent 执行结果为空");
             } else if (response.isSuccess()) {
                 runContext.control().ensureActive();
+                recordConversation(runContext, response, runContext.snapshot());
                 runContext.control().complete();
             } else {
                 runContext.control().fail(sanitize(response.getError()));
@@ -152,7 +209,11 @@ public class AgentRunCoordinator {
             String safeError = safeMessage(e);
             LOGGER.error("Agent Run 执行失败: runId={}, errorType={}, message={}",
                     runContext.runId(), e.getClass().getSimpleName(), safeError);
-            runContext.control().fail(safeError);
+            if (runContext.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
+                runContext.control().failSuspension(safeError);
+            } else {
+                runContext.control().fail(safeError);
+            }
             response = AnalysisResponse.fail(safeError);
         } finally {
             try {
@@ -177,14 +238,6 @@ public class AgentRunCoordinator {
         }
     }
 
-    private AgentExecutionStrategy.Result executeStrategy(AgentRunContext context, AgentRunRoute route) {
-        AgentExecutionStrategy strategy = strategies.get(route.mode());
-        if (strategy == null) {
-            throw new IllegalStateException("没有可用的 Agent 执行策略: " + route.mode());
-        }
-        return strategy.execute(context, route);
-    }
-
     private AnalysisResponse finalizeRun(AgentRunContext context, AgentRunRoute route,
             AgentExecutionStrategy.Result strategyResult, AnalysisResponse response) {
         AgentRunSnapshot snapshot = context.snapshot();
@@ -207,7 +260,6 @@ public class AgentRunCoordinator {
         }
         finalResponse.setOutcomeEvaluation(evaluateOutcome(context, finalResponse, snapshot));
         applyRunMetadata(context, snapshot, finalResponse);
-        recordConversation(context, finalResponse, snapshot);
         recordTrace(context, route, finalResponse);
         try {
             if (snapshot.status() != AgentRunStatus.WAITING_APPROVAL) {
@@ -232,7 +284,7 @@ public class AgentRunCoordinator {
         return finalResponse;
     }
 
-    private AgentRunContext createRunContext(AgentExecutionContext executionContext, AgentRunRoute route,
+    private AgentRunContext createRunContext(AgentExecutionContext executionContext, com.ai.model.AgentProfile profile,
             AgentEventSink eventSink) {
         AnalysisRequest request = executionContext.getRequest();
         ConversationSession session = executionContext.getSession();
@@ -249,8 +301,8 @@ public class AgentRunCoordinator {
                 tenantId,
                 userId,
                 session != null ? session.getSessionId() : request.getSessionId(),
-                route.profile() != null ? route.profile().getAgentId() : request.getAgentId(),
-                route.mode(),
+                profile.getAgentId(),
+                AgentExecutionMode.PLANNING,
                 executionContext,
                 control,
                 guardedSink,
@@ -402,7 +454,7 @@ public class AgentRunCoordinator {
                     session, request, response.getSkillUsed(), modelId, context.runId());
             return;
         }
-        if (snapshot.status() != AgentRunStatus.COMPLETED || !response.isSuccess()) {
+        if (snapshot.status() != AgentRunStatus.RUNNING || !response.isSuccess()) {
             return;
         }
         conversationRecorder.recordAnalysisConversation(session, request, response.getResult(),

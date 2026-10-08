@@ -9,14 +9,16 @@
 
 ## 统一链路
 
+2026-09-30：普通工具交互已改为 `ConfigurableAgentExecutor -> AgentChatToolService -> AgentChatService -> AiServices`。Harness 的 `GovernedToolSession` 负责整批准入与审批拦截；只有审批恢复由 `DurableToolContinuation` 续跑原生消息。旧 ReActLoopRunner 已删除，具体分工见 [框架集成与消息生命周期](./框架集成与消息生命周期.md)。
+
 ```text
 AnalysisController
   -> DataAnalysisAgent（参数、会话、文件准备）
   -> AgentRuntimeService（薄门面）
   -> AgentRunCoordinator
-       1. AgentRunRouteResolver 只解析一次路线
-       2. 创建 runId、RunControl、RBAC 工具权限快照、RunContext
-       3. 注册并绑定 AgentRunScope
+       1. AgentRunRouteResolver 解析并鉴权目标 Profile，不调用模型
+       2. 创建 PLANNING Run、RunControl、RBAC 工具权限快照并注册
+       3. 在 AgentRunScope 内规划，绑定最终模式并保留相同控制器和预算
        4. Chat / ReAct / Orchestrated Strategy
        5. 选择唯一终态
        6. 统一记录会话和 Trace
@@ -121,8 +123,7 @@ Router 输入最多 12000 字问题、64 个工具摘要及累计 64 个 adapter
 超过上限整体保守降级，不能截断用户尾部条件后继续猜意图。近期历史保留最新一段，长度由配置控制。
 这套有界目录适合当前规模；没有实现大规模工具语义索引或运行途中重新发现工具。
 
-成本口径：顶层 Router 在根 Run 创建前执行，受用户模型配额和模型服务治理，不计入根 Run 业务预算；
-子 Agent Router 已在根 Run 作用域中，同时消耗共享预算，取消/预算终止不能吞成普通降级。
+成本口径（2026-09-29）：顶层 Router 在已启动的 PLANNING Run 内执行，与子 Agent Router 一样消耗共享模型调用和 Token 预算，取消/预算终止不能吞成普通降级。PLANNING 只是内部模式，不允许用户配置，也不能执行工具。详见[框架集成与消息生命周期](./框架集成与消息生命周期.md)。
 配置 `app.agent.planning.model-id` 为空时沿用 Agent 模型，支持指定独立轻量模型。
 配置方法：在模型管理中新增并启用规划模型（地址、凭据、模型名），把该记录的 modelId 写入 planning.model-id；
 不要填供应商模型名或 API Key。该 ID 仍受当前租户访问控制；公共配置适合当前单租户部署，不能给不同租户共用
@@ -191,7 +192,7 @@ RESUMING -> WAITING_APPROVAL | COMPLETED | FAILED | CANCELLED | TIMED_OUT | BUDG
 
 `AgentRunControl` 用原子操作竞争唯一终态，并管理五类服务端预算：总超时、最大 ReAct 迭代数、最大模型调用数、最大工具调用数和最大 Token 数。客户端不能覆盖这些上限。
 
-模型和工具网关通过 `AgentRunScope` 获取当前 Run。模型调用在业务调用边界消耗一次名额，SDK 内部重试不会重复扣业务额度；返回后优先结算厂商 TokenUsage，缺失时使用 `TokenMonitor` 估算。Token 在响应返回后才能准确结算，因此单次在途请求可能产生 overshoot，但越界后不会再准入新模型或工具调用。
+模型和工具网关通过 `AgentRunScope` 获取当前 Run。模型请求的每次服务端重试尝试都消耗一次调用名额，SDK 内置重试关闭；返回后优先结算厂商 TokenUsage，缺失时使用 `TokenMonitor` 估算。Token 在响应返回后才能准确结算，因此单次在途请求可能产生 overshoot，但越界后不会再准入新模型或工具调用。
 
 子 Agent 委派线程通过 `ContextPropagatingTaskDecorator` 继承同一个 Run Context，各任务竞争共享原子预算；线程任务结束后恢复原上下文，避免线程池复用造成串 Run。
 

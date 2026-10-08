@@ -2,10 +2,13 @@ package com.ai.rag.eval;
 
 import com.ai.rag.RagProperties;
 import com.ai.rag.RagQueryAnalysis;
-import com.ai.rag.RagQueryRewriter;
+import com.ai.rag.RagQueryTransformer;
 import com.ai.rag.RagReranker;
 import com.ai.rag.RagReranker.RerankOutcome;
 import com.ai.rag.RagHealthService;
+import com.ai.rag.elasticsearch.ElasticsearchProperties;
+import com.ai.rag.elasticsearch.ElasticsearchIndexContract;
+import org.springframework.beans.factory.annotation.Value;
 import com.ai.rag.dto.RagHealthResponse;
 import com.ai.rag.eval.RagBenchmarkDatasetLoader.LoadedDataset;
 import com.ai.rag.eval.RagBenchmarkReport.CaseResult;
@@ -65,33 +68,42 @@ public class RagBenchmarkService {
 
     private final RagBenchmarkDatasetLoader datasetLoader;
     private final RagRankingMetrics rankingMetrics;
-    private final RagQueryRewriter queryRewriter;
+    private final RagQueryTransformer queryTransformer;
     private final HybridRetriever hybridRetriever;
     private final RagReranker ragReranker;
     private final RagProperties ragProperties;
     private final EmbeddingGateway embeddingGateway;
     private final SecurityContextHelper securityContextHelper;
     private final RagHealthService ragHealthService;
+    private final ElasticsearchProperties elasticsearchProperties;
+    private final int chunkSize;
+    private final int chunkOverlap;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public RagBenchmarkService(RagBenchmarkDatasetLoader datasetLoader,
             RagRankingMetrics rankingMetrics,
-            RagQueryRewriter queryRewriter,
+            RagQueryTransformer queryTransformer,
             HybridRetriever hybridRetriever,
             RagReranker ragReranker,
             RagProperties ragProperties,
             EmbeddingGateway embeddingGateway,
             SecurityContextHelper securityContextHelper,
-            RagHealthService ragHealthService) {
+            RagHealthService ragHealthService,
+            ElasticsearchProperties elasticsearchProperties,
+            @Value("${app.vector.chunk-size:500}") int chunkSize,
+            @Value("${app.vector.chunk-overlap:100}") int chunkOverlap) {
         this.datasetLoader = datasetLoader;
         this.rankingMetrics = rankingMetrics;
-        this.queryRewriter = queryRewriter;
+        this.queryTransformer = queryTransformer;
         this.hybridRetriever = hybridRetriever;
         this.ragReranker = ragReranker;
         this.ragProperties = ragProperties;
         this.embeddingGateway = embeddingGateway;
         this.securityContextHelper = securityContextHelper;
         this.ragHealthService = ragHealthService;
+        this.elasticsearchProperties = elasticsearchProperties;
+        this.chunkSize = chunkSize;
+        this.chunkOverlap = chunkOverlap;
     }
 
     /**
@@ -148,7 +160,7 @@ public class RagBenchmarkService {
 
     private CaseResult evaluateCase(RagBenchmarkCase benchmarkCase, String tenantId, String userId) {
         try {
-            RagQueryAnalysis analysis = queryRewriter.analyze(benchmarkCase.query());
+            RagQueryAnalysis analysis = queryTransformer.analyze(benchmarkCase.query());
             HybridRetrievalResult hybrid = hybridRetriever.retrieveWithTrace(
                     analysis,
                     tenantId,
@@ -183,7 +195,8 @@ public class RagBenchmarkService {
                     rerankOutcome.evidence().fallbackProvider(),
                     rerankOutcome.evidence().fallback(),
                     rerankOutcome.evidence().errorCategory(),
-                    stages);
+                    stages,
+                    analysis.variants());
         } catch (RuntimeException e) {
             LOGGER.warn("RAG benchmark case执行失败: caseId={}, errorType={}", benchmarkCase.caseId(),
                     e.getClass().getSimpleName(), e);
@@ -196,7 +209,7 @@ public class RagBenchmarkService {
                 .map(stage -> stage(stage, benchmarkCase, List.of(), -1L))
                 .toList();
         return new CaseResult(benchmarkCase.caseId(), benchmarkCase.query(), safeList(benchmarkCase.tags()),
-                "EXECUTION_ERROR", errorType, "", "", "", false, "", stages);
+                "EXECUTION_ERROR", errorType, "", "", "", false, "", stages, List.of());
     }
 
     private StageResult stage(String stage, RagBenchmarkCase benchmarkCase, List<RankedHit> hits, long latencyMs) {
@@ -355,7 +368,12 @@ public class RagBenchmarkService {
                 ragProperties.getCandidateTopK(),
                 ragProperties.getTopK(),
                 ragProperties.getMinScore(),
-                ragProperties.getMaxContextChars());
+                ragProperties.getMaxContextChars(),
+                elasticsearchProperties.getIndexName(), elasticsearchProperties.getAnalyzer(),
+                ElasticsearchIndexContract.CHUNKING_VERSION, chunkSize, chunkOverlap,
+                ragProperties.getQuery().isCompressionEnabled(), ragProperties.getQuery().isExpansionEnabled(),
+                ragProperties.getQuery().getModelId(), ragProperties.getQuery().getMaxQueries(),
+                ragProperties.getQuery().getMaxQueryChars());
     }
 
     private QualityGate qualityGate(List<StageSummary> summaries) {

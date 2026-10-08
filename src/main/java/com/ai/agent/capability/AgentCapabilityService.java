@@ -97,6 +97,8 @@ public class AgentCapabilityService {
         CallerContext caller = requireCaller();
         return visibleCapabilities(caller, null).stream()
                 .filter(descriptor -> descriptor.type() == AgentCapabilityType.TOOL)
+                // 外部 MCP 工具必须逐个显式绑定，不能随首次创建默认 Agent 自动扩权。
+                .filter(descriptor -> !"LOCAL_MCP_POLICY".equals(descriptor.risk().assessmentSource()))
                 .filter(descriptor -> descriptor.availability().available())
                 .map(AgentCapabilityDescriptor::identity)
                 .toList();
@@ -239,7 +241,7 @@ public class AgentCapabilityService {
 
     private boolean modeAllows(AgentExecutionMode mode, AgentCapabilityType type) {
         return switch (mode) {
-            case CHAT -> false;
+            case PLANNING, CHAT -> false;
             case REACT -> type != AgentCapabilityType.SUB_AGENT;
             case ORCHESTRATED -> true;
         };
@@ -247,7 +249,7 @@ public class AgentCapabilityService {
 
     private String modeExclusionSummary(AgentExecutionMode mode) {
         return switch (mode) {
-            case CHAT -> "Chat 模式不开放可调用能力";
+            case PLANNING, CHAT -> "当前阶段不开放可调用能力";
             case REACT -> "ReAct 模式不开放子 Agent 委派";
             case ORCHESTRATED -> "能力被当前执行模式排除";
         };

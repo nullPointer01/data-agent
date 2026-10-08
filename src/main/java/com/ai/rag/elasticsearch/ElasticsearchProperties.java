@@ -14,7 +14,26 @@ public class ElasticsearchProperties {
 
     private String baseUrl = "http://localhost:9200";
 
-    private String indexName = "data-agent-rag-v2";
+    private String indexName = "data-agent-rag-v3";
+
+    private String analyzer = "rag_icu";
+
+    private Duration contractCheckInterval = Duration.ofSeconds(30);
+
+    public String getAnalyzer() { return analyzer; }
+    public void setAnalyzer(String value) {
+        if (value == null || !value.matches("[a-z][a-z0-9_]{0,63}") || value.equals("standard")) {
+            throw new IllegalArgumentException("analyzer 必须是自定义 ICU 分析器名称");
+        }
+        analyzer = value;
+    }
+    public Duration getContractCheckInterval() { return contractCheckInterval; }
+    public void setContractCheckInterval(Duration value) {
+        if (value == null || value.isNegative() || value.compareTo(Duration.ofHours(1)) > 0) {
+            throw new IllegalArgumentException("索引契约检查间隔必须在 0 到 1 小时之间");
+        }
+        contractCheckInterval = value;
+    }
 
     private String username = "";
 

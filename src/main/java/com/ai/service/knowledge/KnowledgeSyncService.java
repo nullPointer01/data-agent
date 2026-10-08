@@ -1,5 +1,7 @@
 package com.ai.service.knowledge;
 
+import com.ai.indexing.RagIndexMaintenance;
+
 import com.ai.exception.KnowledgeSyncException;
 import com.ai.knowledge.dto.KnowledgeMutationResponse;
 import com.ai.knowledge.dto.KnowledgeSyncConfigEnvelope;
@@ -33,15 +35,17 @@ public class KnowledgeSyncService {
     private final KnowledgeSyncSecurityService securityService;
     private final KnowledgeSyncContentFetcher contentFetcher;
     private final KnowledgeSyncResultWriter resultWriter;
+    private final RagIndexMaintenance maintenance;
 
     public KnowledgeSyncService(KnowledgeSyncConfigRepository syncConfigRepository, KnowledgeSyncPolicy syncPolicy,
             KnowledgeSyncSecurityService securityService, KnowledgeSyncContentFetcher contentFetcher,
-            KnowledgeSyncResultWriter resultWriter) {
+            KnowledgeSyncResultWriter resultWriter, RagIndexMaintenance maintenance) {
         this.syncConfigRepository = syncConfigRepository;
         this.syncPolicy = syncPolicy;
         this.securityService = securityService;
         this.contentFetcher = contentFetcher;
         this.resultWriter = resultWriter;
+        this.maintenance = maintenance;
     }
 
     /**
@@ -49,6 +53,7 @@ public class KnowledgeSyncService {
      */
     @Scheduled(fixedDelay = SCHEDULE_FIXED_DELAY_MS)
     public void scheduledSync() {
+        if (maintenance.isEnabled()) return;
         List<KnowledgeSyncConfig> configs = syncConfigRepository.findByEnabledTrue();
         if (configs.isEmpty()) {
             return;

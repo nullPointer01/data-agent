@@ -37,7 +37,7 @@ public class RagParentContextResolver {
      * @return 补齐父级上下文后的检索结果
      */
     public RetrievalResult resolve(RetrievalResult result, String tenantId, String userId) {
-        if (result == null || !result.metadata().hasParent()) {
+        if (result == null || result.metadata().hasParent()) {
             return result;
         }
         if (StringUtils.hasText(result.parentContext())) {

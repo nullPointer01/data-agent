@@ -1,67 +1,59 @@
 package com.ai.mcp;
 
+import com.ai.agent.context.AgentContextProperties;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import org.springframework.stereotype.Service;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * 在供应商未返回精确用量时使用的轻量级令牌估算器。
- *
- * @author data-agent
+ * 统一 Token 估算入口：显式映射的模型复用框架 tokenizer；未知词表按 UTF-8 字节保守预留。
+ * 估算用于窗口与准入，实际计费仍优先使用厂商返回的 TokenUsage。
  */
 @Service
-public class TokenMonitor {
+public class TokenMonitor implements TokenCountEstimator {
+    private final Map<String, TokenCountEstimator> estimators;
 
-    private static final Pattern LATIN_WORD_PATTERN = Pattern.compile("[a-zA-Z]+");
-    private static final double CJK_TOKEN_WEIGHT = 1.0D;
-    private static final double WORD_TOKEN_WEIGHT = 1.3D;
-    private static final double OTHER_TOKEN_WEIGHT = 0.25D;
-
-    /**
-     * 按中日韩字符、拉丁单词和其他字符估算 Token 数量。
-     *
-     * @param text 待估算文本
-     * @return 近似 Token 数量
-     */
-    public long estimateTokens(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-
-        int cjkCount = 0;
-        int otherCount = 0;
-        int wordCount = 0;
-
-        Matcher wordMatcher = LATIN_WORD_PATTERN.matcher(text);
-        while (wordMatcher.find()) {
-            wordCount++;
-        }
-
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (isCjkChar(c)) {
-                cjkCount++;
-            } else if (!Character.isLetter(c)) {
-                otherCount++;
-            }
-        }
-
-        return Math.round(cjkCount * CJK_TOKEN_WEIGHT + wordCount * WORD_TOKEN_WEIGHT
-                + otherCount * OTHER_TOKEN_WEIGHT);
+    public TokenMonitor(AgentContextProperties properties) {
+        Map<String, TokenCountEstimator> byName = new java.util.HashMap<>();
+        estimators = properties.getModelTokenizers().entrySet().stream().collect(Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> byName.computeIfAbsent(entry.getValue(), OpenAiTokenCountEstimator::new)));
     }
 
-    private boolean isCjkChar(char c) {
-        Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
-        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
-                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
-                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-                || block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
-                || block == Character.UnicodeBlock.HIRAGANA
-                || block == Character.UnicodeBlock.KATAKANA
-                || block == Character.UnicodeBlock.HANGUL_SYLLABLES
-                || block == Character.UnicodeBlock.HANGUL_JAMO
-                || block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO;
+    public long estimateTokens(String text) { return estimateTokenCountInText(text); }
+
+    public long estimateTokens(String text, String modelId) {
+        return estimator(modelId).estimateTokenCountInText(text == null ? "" : text);
     }
 
+    public long estimateMessage(ChatMessage message, String modelId) {
+        return estimator(modelId).estimateTokenCountInMessage(message);
+    }
+
+    /** 用项目模型 ID 显式选词表，不能仅凭兼容 URL 猜测实际模型。 */
+    public TokenCountEstimator estimator(String modelId) {
+        return estimators.getOrDefault(modelId == null || modelId.isBlank() ? "default" : modelId, this);
+    }
+
+    @Override
+    public int estimateTokenCountInText(String text) {
+        return text == null ? 0 : text.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    @Override
+    public int estimateTokenCountInMessage(ChatMessage message) {
+        // 包括角色、工具名称/参数等协议开销，不能只统计 assistant 可见文本。
+        return message == null ? 0 : Math.addExact(8, estimateTokenCountInText(message.toString()));
+    }
+
+    @Override
+    public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) {
+        int total = 0;
+        for (ChatMessage message : messages) total = Math.addExact(total, estimateTokenCountInMessage(message));
+        return total;
+    }
 }

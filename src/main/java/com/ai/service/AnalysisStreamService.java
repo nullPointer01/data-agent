@@ -7,168 +7,176 @@ import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventSink;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.agent.runtime.event.AgentSseEventWriter;
+import com.ai.config.TaskContextSnapshot;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
+import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 协调 Agent Run 与 SSE 连接生命周期。
- *
- * @author data-agent
+ * 用 Flux 表达一次 HTTP SSE 生命周期。订阅才启动 Run，取消订阅会取消执行。
+ * MVC 负责订阅、SSE 编码和网络写入，本类只桥接业务事件，不手动创建 SseEmitter。
  */
 @Service
 public class AnalysisStreamService {
+    private static final int MAX_BUFFERED_EVENTS = 256;
+    private final DataAnalysisAgent agent;
+    private final AgentSseEventWriter eventWriter;
+    private final ReActStreamEventWriter legacyWriter;
+    private final AgentRunRegistry registry;
+    private final AsyncTaskExecutor executor;
+    private final Duration timeout;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AnalysisStreamService.class);
-    private static final String EVENT_STREAM = "stream";
-
-    private final DataAnalysisAgent dataAnalysisAgent;
-    private final AgentSseEventWriter agentSseEventWriter;
-    private final ReActStreamEventWriter legacyEventWriter;
-    private final AgentRunRegistry runRegistry;
-    private final AsyncTaskExecutor sseExecutor;
-    private final long sseTimeoutMs;
-
-    public AnalysisStreamService(DataAnalysisAgent dataAnalysisAgent,
-            AgentSseEventWriter agentSseEventWriter,
-            ReActStreamEventWriter legacyEventWriter,
-            AgentRunRegistry runRegistry,
-            @Qualifier("sseExecutor") AsyncTaskExecutor sseExecutor,
-            @Value("${app.sse.timeout-ms:600000}") long sseTimeoutMs) {
-        this.dataAnalysisAgent = dataAnalysisAgent;
-        this.agentSseEventWriter = agentSseEventWriter;
-        this.legacyEventWriter = legacyEventWriter;
-        this.runRegistry = runRegistry;
-        this.sseExecutor = sseExecutor;
-        this.sseTimeoutMs = sseTimeoutMs;
-    }
-
-    /**
-     * 在 SSE 执行器中启动分析任务。
-     *
-     * @param request 分析请求
-     * @return SSE 发射器
-     */
-    public SseEmitter stream(AnalysisRequest request) {
-        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        AtomicReference<Future<?>> taskRef = new AtomicReference<>();
-        AtomicReference<String> runIdRef = new AtomicReference<>();
-        AtomicBoolean terminalDelivered = new AtomicBoolean();
-
-        Runnable cancelTask = () -> cancelActiveRun(runIdRef.get(), taskRef.get());
-        emitter.onCompletion(() -> {
-            if (!terminalDelivered.get()) {
-                cancelTask.run();
-            }
-            LOGGER.debug("SSE 流已完成: runId={}", runIdRef.get());
-        });
-        emitter.onTimeout(() -> {
-            LOGGER.warn("SSE 流已超时: runId={}", runIdRef.get());
-            cancelTask.run();
-        });
-        emitter.onError(ex -> {
-            LOGGER.warn("SSE 流异常断开: runId={}, error={}", runIdRef.get(), ex.getMessage());
-            cancelTask.run();
-        });
-
-        Future<?> future = sseExecutor.submit(
-                () -> executeStreamingAnalysis(request, emitter, runIdRef, terminalDelivered));
-        taskRef.set(future);
-        return emitter;
-    }
-
-    private void executeStreamingAnalysis(AnalysisRequest request, SseEmitter emitter,
-            AtomicReference<String> runIdRef, AtomicBoolean terminalDelivered) {
-        AgentEventSink transportSink = agentSseEventWriter.createSink(
-                eventJson -> sendRawEvent(emitter, eventJson));
-        AgentEventSink trackingSink = trackingSink(transportSink, runIdRef, terminalDelivered);
-        try {
-            AnalysisResponse response = dataAnalysisAgent.analyzeStreaming(request, trackingSink);
-            if (response == null || !StringUtils.hasText(response.getRunId())) {
-                emitRejectedRequest(response, request, emitter);
-            }
-            emitter.complete();
-        } catch (Exception e) {
-            String runId = runIdRef.get();
-            if (StringUtils.hasText(runId)) {
-                runRegistry.cancelSystem(runId, "SSE 连接不可用");
-            } else {
-                emitRejectedRequest(AnalysisResponse.fail(safeMessage(e)), request, emitter);
-            }
-            completeQuietly(emitter);
+    public AnalysisStreamService(DataAnalysisAgent agent, AgentSseEventWriter eventWriter,
+            ReActStreamEventWriter legacyWriter, AgentRunRegistry registry,
+            @Qualifier("sseExecutor") AsyncTaskExecutor executor,
+            @Value("${app.sse.timeout-ms:600000}") long timeoutMs) {
+        this.agent = agent;
+        this.eventWriter = eventWriter;
+        this.legacyWriter = legacyWriter;
+        this.registry = registry;
+        this.executor = executor;
+        if (timeoutMs <= 0) {
+            throw new IllegalArgumentException("SSE 超时必须为正数");
         }
+        this.timeout = Duration.ofMillis(timeoutMs);
     }
 
-    private AgentEventSink trackingSink(AgentEventSink delegate, AtomicReference<String> runIdRef,
-            AtomicBoolean terminalDelivered) {
-        return new AgentEventSink() {
-            @Override
-            public void emit(AgentEvent event) {
-                if (event.type() == AgentEventType.RUN_STARTED) {
-                    runIdRef.compareAndSet(null, event.runId());
+    /** 返回冷流：控制器调用本方法不执行模型；由 Spring 订阅后开始产生事件。 */
+    public Flux<ServerSentEvent<String>> stream(AnalysisRequest request) {
+        // 身份必须在 HTTP 请求线程捕获，不能等到 Reactor/线程池执行时再读取。
+        TaskContextSnapshot owner = TaskContextSnapshot.capture();
+        return Flux.defer(() -> {
+            var subscription = new RunSubscription(request, owner);
+            return Flux.<ServerSentEvent<String>>create(subscription::start, FluxSink.OverflowStrategy.ERROR)
+                    // 模型不会因浏览器变慢而停止生成；缓冲到上限就取消，不能无限堆积。
+                    .onBackpressureBuffer(MAX_BUFFERED_EVENTS)
+                    // 绝对连接时限，不用“每个 token 重新计时”的 inactivity timeout。
+                    .takeUntilOther(Mono.delay(timeout)
+                            .flatMap(ignored -> Mono.error(new TimeoutException("SSE connection deadline exceeded"))))
+                    .doFinally(signal -> subscription.cancelUnlessTerminal())
+                    .onErrorResume(error -> Flux.just(
+                            event("{\"type\":\"error\",\"content\":\"流式响应中断或超时，请重试\"}"),
+                            event("{\"type\":\"done\"}")));
+        });
+    }
+
+    private static ServerSentEvent<String> event(String json) {
+        return ServerSentEvent.<String>builder(json).event("stream").build();
+    }
+
+    /** 每个订阅独立保存取消与终态状态，不把用户之间的运行放进单例字段。 */
+    private final class RunSubscription {
+        private final AnalysisRequest request;
+        private final TaskContextSnapshot owner;
+        private final AtomicReference<Future<?>> startup = new AtomicReference<>();
+        private final AtomicReference<String> runId = new AtomicReference<>();
+        private final AtomicBoolean terminal = new AtomicBoolean();
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+
+        private RunSubscription(AnalysisRequest request, TaskContextSnapshot owner) {
+            this.request = request;
+            this.owner = owner;
+        }
+
+        private void start(FluxSink<ServerSentEvent<String>> output) {
+            output.onCancel(this::cancelUnlessTerminal);
+            if (output.isCancelled()) {
+                return;
+            }
+            try {
+                Future<?> future = executor.submit(owner.wrap(() -> execute(output)));
+                startup.set(future);
+                // 订阅可能在任务提交与 Future 保存之间取消；再次检查，防止孤儿任务。
+                if (cancelled.get()) {
+                    future.cancel(true);
                 }
-                delegate.emit(event);
-                if (event.type().isTerminal()) {
-                    terminalDelivered.set(true);
+            } catch (Exception failure) {
+                output.error(failure);
+            }
+        }
+
+        private void execute(FluxSink<ServerSentEvent<String>> output) {
+            if (cancelled.get()) {
+                return;
+            }
+            AgentEventSink transport = eventWriter.createSink(json -> output.next(event(json)));
+            AgentEventSink tracking = new AgentEventSink() {
+                @Override
+                public void emit(AgentEvent event) {
+                    if (event.type() == AgentEventType.RUN_STARTED) {
+                        runId.set(event.runId());
+                        if (cancelled.get()) {
+                            registry.cancelSystem(event.runId(), "SSE 订阅已取消");
+                            return;
+                        }
+                    }
+                    // 暂停/完成已由 Coordinator 固化；消费到最后一个事件后断开不能反向取消审批。
+                    if (event.type().isTerminal()) {
+                        terminal.set(true);
+                    }
+                    if (!cancelled.get()) {
+                        transport.emit(event);
+                    }
                 }
+
+                @Override
+                public boolean isStreaming() {
+                    return true;
+                }
+            };
+            try {
+                // Future 负责完整回答保存与终态；事件在此期间直接写入 Flux，不能 join 后再发。
+                agent.analyzeStreaming(request, tracking).whenComplete((response, error) -> {
+                    if (error != null) {
+                        cancelUnlessTerminal();
+                        output.error(error);
+                    } else {
+                        if (response == null || !StringUtils.hasText(response.getRunId())) {
+                            rejected(response, output);
+                        }
+                        output.complete();
+                    }
+                });
+            } catch (Exception failure) {
+                cancelUnlessTerminal();
+                output.error(failure);
             }
+        }
 
-            @Override
-            public boolean isStreaming() {
-                return true;
+        private void rejected(AnalysisResponse response, FluxSink<ServerSentEvent<String>> output) {
+            String error = response != null && StringUtils.hasText(response.getError())
+                    ? response.getError() : "分析请求未被接受";
+            legacyWriter.emitError(json -> output.next(event(json)), error);
+            legacyWriter.emitDone(json -> output.next(event(json)), request == null ? null : request.getSessionId(), null);
+            terminal.set(true);
+        }
+
+        private void cancelUnlessTerminal() {
+            if (terminal.get() || !cancelled.compareAndSet(false, true)) {
+                return;
             }
-        };
-    }
-
-    private void emitRejectedRequest(AnalysisResponse response, AnalysisRequest request, SseEmitter emitter) {
-        String error = response != null && StringUtils.hasText(response.getError())
-                ? response.getError()
-                : "分析请求未被接受";
-        legacyEventWriter.emitError(event -> sendRawEvent(emitter, event), error);
-        legacyEventWriter.emitDone(event -> sendRawEvent(emitter, event),
-                request == null ? null : request.getSessionId(), null);
-    }
-
-    private void cancelActiveRun(String runId, Future<?> task) {
-        if (StringUtils.hasText(runId)) {
-            runRegistry.cancelSystem(runId, "SSE 客户端断开或超时");
+            String id = runId.get();
+            if (StringUtils.hasText(id)) {
+                registry.cancelSystem(id, "SSE 订阅取消、超时或传输缓冲耗尽");
+            }
+            Future<?> future = startup.get();
+            if (future != null && !future.isDone()) {
+                future.cancel(true);
+            }
         }
-        if (task != null && !task.isDone()) {
-            task.cancel(true);
-        }
-    }
-
-    private void sendRawEvent(SseEmitter emitter, String eventJson) {
-        if (Thread.currentThread().isInterrupted()) {
-            throw new IllegalStateException("SSE 任务已中断");
-        }
-        try {
-            emitter.send(SseEmitter.event().name(EVENT_STREAM).data(eventJson));
-        } catch (Exception e) {
-            throw new IllegalStateException("SSE 事件发送失败", e);
-        }
-    }
-
-    private void completeQuietly(SseEmitter emitter) {
-        try {
-            emitter.complete();
-        } catch (Exception e) {
-            LOGGER.debug("SSE 流关闭时已不可写: {}", e.getMessage());
-        }
-    }
-
-    private String safeMessage(Exception exception) {
-        return StringUtils.hasText(exception.getMessage()) ? exception.getMessage() : "流式分析失败";
     }
 }

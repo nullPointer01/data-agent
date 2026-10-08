@@ -21,19 +21,16 @@ import java.util.List;
 public class McpContext {
 
     private static final int MAX_HISTORY_TOKENS = 4000;
-    // 国产模型词表与 OpenAI 不同，此处计数是近似值；作为窗口控制（非计费）精度足够
-    // 复用全局单例，避免重复加载 tiktoken BPE 词表
-    private static final TokenCountEstimator TOKEN_ESTIMATOR = com.ai.config.SharedTokenizer.INSTANCE;
     private static final String ROLE_ASSISTANT = "assistant";
 
     private final String contextId;
     private Date lastAccessTime;
     private final ChatMemory chatMemory;
 
-    public McpContext(String contextId) {
+    public McpContext(String contextId, TokenCountEstimator estimator) {
         this.contextId = contextId;
         this.lastAccessTime = new Date();
-        this.chatMemory = TokenWindowChatMemory.withMaxTokens(MAX_HISTORY_TOKENS, TOKEN_ESTIMATOR);
+        this.chatMemory = TokenWindowChatMemory.withMaxTokens(MAX_HISTORY_TOKENS, estimator);
     }
 
     public String getContextId() {
@@ -68,6 +65,10 @@ public class McpContext {
      * @return 消息列表
      */
     public List<ChatMessage> historyMessages() {
-        return chatMemory.messages();
+        // 框架可能按单条淘汰旧消息；不把失去用户输入的开头回答交给下一次模型调用。
+        List<ChatMessage> messages = chatMemory.messages();
+        int start = 0;
+        while (start < messages.size() && !(messages.get(start) instanceof UserMessage)) start++;
+        return List.copyOf(messages.subList(start, messages.size()));
     }
 }

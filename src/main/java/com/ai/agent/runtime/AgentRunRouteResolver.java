@@ -24,21 +24,15 @@ public class AgentRunRouteResolver {
         this.personalModeResolver = personalModeResolver;
     }
 
-    /**
-     * 按现有优先级解析请求目标与执行模式。
-     *
-     * @param executionContext 已准备的请求上下文
-     * @return 确定的执行路线
-     */
-    public AgentRunRoute resolve(AgentExecutionContext executionContext) {
+    /** 只解析并鉴权配置，不调用模型；Run 创建后再进行语义规划。 */
+    public AgentProfile resolveProfile(AgentExecutionContext executionContext) {
         AnalysisRequest request = executionContext.getRequest();
-        if (request.hasAgent()) {
-            AgentProfile profile = agentProfileService.requireEnabledAgent(request.getAgentId());
-            RequestExecutionPlan plan = personalModeResolver.plan(profile, executionContext);
-            return AgentRunRoute.configured(profile, plan);
-        }
-        AgentProfile personalAgent = agentProfileService.requireMyDefaultAgent();
-        RequestExecutionPlan plan = personalModeResolver.plan(personalAgent, executionContext);
-        return AgentRunRoute.configured(personalAgent, plan);
+        return request.hasAgent() ? agentProfileService.requireEnabledAgent(request.getAgentId())
+                : agentProfileService.requireMyDefaultAgent();
+    }
+
+    public AgentRunRoute plan(AgentProfile profile, AgentExecutionContext executionContext) {
+        RequestExecutionPlan plan = personalModeResolver.plan(profile, executionContext);
+        return AgentRunRoute.configured(profile, plan);
     }
 }

@@ -4,6 +4,7 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,7 @@ import java.util.List;
  * @author data-agent
  */
 @Component
-public class EmbeddingGateway {
+public class EmbeddingGateway implements EmbeddingModel {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingGateway.class);
     private static final String API_PROVIDER = "api";
@@ -102,6 +103,24 @@ public class EmbeddingGateway {
         return callExecutor.execute(profile, EmbeddingCallExecutor.Operation.QUERY, 0,
                 () -> prepare(embeddingModel.embed(formatted).content(), "query"));
     }
+
+    /** 官方 ContentRetriever 的字符串入口是查询用途，复用前缀、维度校验和调用治理。 */
+    @Override
+    public Response<Embedding> embed(String query) {
+        return Response.from(embedQuery(query));
+    }
+
+    /** 框架文档批量入口继续使用 document 用途，不能把查询前缀应用到入库正文。 */
+    @Override
+    public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
+        return Response.from(embedDocuments(segments));
+    }
+
+    @Override
+    public int dimension() { return profile.dimension(); }
+
+    @Override
+    public String modelName() { return profile.modelId(); }
 
     /**
      * 使用 document 输入契约生成单条文档向量。

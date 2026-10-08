@@ -1,5 +1,8 @@
 package com.ai.memory.dto;
 
+import dev.langchain4j.data.message.ChatMessage;
+import java.util.List;
+
 /**
  * Agent Prompt 使用的聚合记忆上下文。
  *
@@ -10,10 +13,15 @@ package com.ai.memory.dto;
  * @author data-agent
  */
 public record MemoryContext(
-        String conversationHistory,
+        List<ChatMessage> conversationHistory,
         String workingMemory,
         String longTermContext,
         UserMemoryProfileSnapshotResponse userProfile) {
+
+    /** 固化本次 Run 的历史快照，防止其他执行路径修改共享会话。 */
+    public MemoryContext {
+        conversationHistory = conversationHistory == null ? List.of() : List.copyOf(conversationHistory);
+    }
 
     /**
      * 返回空记忆上下文。
@@ -21,6 +29,6 @@ public record MemoryContext(
      * @return 空上下文
      */
     public static MemoryContext empty() {
-        return new MemoryContext("", "", "", UserMemoryProfileSnapshotResponse.empty());
+        return new MemoryContext(List.of(), "", "", UserMemoryProfileSnapshotResponse.empty());
     }
 }

@@ -4,6 +4,7 @@ import com.ai.agent.runtime.AgentRunCoordinator;
 import com.ai.agent.runtime.event.AgentEventSink;
 import com.ai.model.AnalysisResponse;
 import org.springframework.stereotype.Service;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Agent Runtime 的应用入口，具体治理统一委托给 Run Coordinator。
@@ -36,7 +37,7 @@ public class AgentRuntimeService {
      * @param eventSink 事件接收端
      * @return 完整响应
      */
-    public AnalysisResponse executeStreaming(AgentExecutionContext context, AgentEventSink eventSink) {
-        return runCoordinator.execute(context, eventSink);
+    public CompletableFuture<AnalysisResponse> executeStreaming(AgentExecutionContext context, AgentEventSink eventSink) {
+        return runCoordinator.executeAsync(context, eventSink);
     }
 }

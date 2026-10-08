@@ -30,14 +30,17 @@ app:
   encryption:
     key: local-development-encryption-key-32chars
   agent:
+    orchestration:
+      # 学习对照：改成 TOOL_CALLING 并重启，可比较原路径；不影响 CHAT / REACT。
+      engine: SUPERVISOR
     planning:
       # 复用本地模型管理中已启用的 GPT；这是 model_config.model_id，不是厂商模型名。
       # 地址、密钥和参数仍由原模型记录管理；切换回答模型不会改变此规划绑定。
       model-id: "6fac3eb2-aea9-4bc7-a61a-ee65e3290e3c"
     context:
-      # 本地环境同样保持保守默认：先观察治理证据，再显式打开压缩。
+      # 按预算裁剪完整历史轮次，不额外调用模型生成摘要。
       compaction:
-        enabled: false
+        enabled: true
         model-summary-enabled: false
     durable:
       # 本地只开放隔离沙箱写工具，便于直接验收审批与恢复链路。

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## 项目定位
 
-Data Agent 是一个数据分析智能体系统，后端基于 Spring Boot 3.2、Spring Security、JPA、LangChain4j、Milvus，前端基于 React + Vite。当前代码已经不是单一 ReAct Demo，而是包含：
+Data Agent 是一个通用个人 Agent 与受控专家协作的 Java Agent Harness，后端基于 Spring Boot 3.2、Spring Security、JPA、LangChain4j、Milvus，前端基于 React + Vite。数据分析是可选能力，系统包含：
 
 - 智能对话与 SSE 输出
 - ReAct 工具调用
@@ -149,13 +149,19 @@ HTTP 认证只把 JWT subject 当作用户查询键。每个受保护请求都�
 
 ## 模型接入
 
+标准 MCP 工具实现在 `com.ai.integration.mcp`，使用官方 `langchain4j-mcp:1.20.2-beta30` Streamable HTTP；原 `com.ai.mcp` 仍是模型网关历史包名。`app.mcp.servers` 默认为空，服务/租户/只读工具必须明确配置，个人/专家界面逐项绑定，新建默认 Agent 不自动授权外部工具。只能经 AgentToolRegistry/Pipeline 接入 AiServices，禁止直接接不受治理的 McpToolProvider。首次规格固定、执行前重新发现；SDK 的业务错误与超时必须保留失败语义，不得当作成功文本。networknt 校验的是框架转换后的 Schema，不代表完整远端合同；写操作、Stdio、资源/提示词和 OAuth 未实现。详见 [标准 MCP 工具接入](docs/核心逻辑详解/标准MCP工具接入.md)。
+
 模型配置在 `model_config` 表，后台模型管理页面可维护。`ModelConfigService` 保证同一租户只有一个默认模型，变更后通过事件清理同步和 Streaming 客户端缓存；JSON 输出格式属于单次请求，不单独缓存客户端。
 
 模型接入统一经过 `ModelProviderCatalog -> ModelEndpointResolver -> ModelClientFactory`：
 
 - Catalog 是前后端唯一厂商目录，包含 OpenAI/GPT、13 个国内/聚合入口和 Custom，共 15 个入口。
 - Resolver 负责厂商别名、默认值、URL 规范化、鉴权规则和 `OutboundUrlGuard`；运行时、`/models` 发现和连接探测不得自行拼端点。
-- Factory 使用 LangChain4j 1.19 构建 OpenAI-compatible 同步和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。同步客户端启用 strictJsonSchema，只对实际携带 Schema 的请求生效。
+- Factory 使用 LangChain4j 1.20.2 构建 OpenAI-compatible 同步和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。同步客户端启用 strictJsonSchema，只对实际携带 Schema 的请求生效。
+- 聊天和正常工具对话通过 `AgentChatService` 的 AiServices、`@SystemMessage`、事件 Flux 与独立 ChatMemory 执行；窗口只预填历史并启用系统消息置顶。工具以受治理的 ToolExecutor Map 注册，禁止直接 `.tools(agentTools)`。`GovernedToolSession` 对完整响应整批准入，过滤提前执行工具的流事件，有审批则同组零工具执行并暂停。HTTP 用 MVC 的 `Flux<ServerSentEvent<String>>`，有界缓冲、取消和绝对时限；不等于全系统 WebFlux。模型调用仍经过 `McpModelService`，窗口不另行持久化。见 [框架集成与消息生命周期](docs/核心逻辑详解/框架集成与消息生命周期.md)。
+- Router/语义记忆提取使用 `StructuredAssistantFactory` 的类型化 AiServices 与严格 OutputGuardrail，必填字段由注解生成 Schema，业务授权与原文证据校验不可删除。
+- 专家委派经 `AgentDelegationToolService -> AgenticDelegationWorkflow` 使用官方 agentic 顺序工作流（规划→执行）；节点复用原治理服务，AgenticScope 为单次临时状态。绑定/租户/启用校验和防环路/深度检查在进入工作流前执行，预算/取消类型不能被框架异常包装吞掉。`app.agent.orchestration.engine` 可切换 TOOL_CALLING / SUPERVISOR（local 默认后者）；Supervisor 仅用于本次已授权委派的 ORCHESTRATED，嵌套专家仍走原路径。框架负责选节点，所有专家经原 Tool Pipeline；每次决策计入根 Run 迭代，不使用框架次数耗尽后返回最后结果的隐式成功。`SupervisorExecutionScope` 随 `TaskContextSnapshot` 传播；整图恢复未实现时在审批暂停前明确拒绝，不能持久化只有叶节点的现场。同步协作后以 AiServices Flux 进行一次流式汇总。默认通用角色与公共规则统一在 `AgentSystemPrompts`，保留自定义专家角色。
+- 模型、Embedding、Reranker 的重试/熔断由 Resilience4j `ExternalCallPolicy` 管理。CHAT 和工具流的 Future 贯通至 SSE，完成回调通过独立有界池和 `TaskContextSnapshot` 恢复身份、Run 与能力。审批后的原生消息仅由 `DurableToolContinuation` 续跑，与助手共用治理 Session，不伪造用户消息恢复。
 - `ModelHttpClient` 只负责可选的 `GET /models`。发现失败不阻止手动填写模型 ID，也不作为保存门禁。
 - `POST /api/v1/models/probe` 会真实执行一次最多 32 输出 token 的 Chat 请求，临时客户端不缓存、不重试、不保存提示词或回复；每次探测可能产生少量厂商费用。
 
@@ -213,12 +219,12 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 个人 Agent 的 Orchestrated 模式通过统一 Capability 和 `delegateToAgent` 完成受控委派，不扫描系统专家，也不维护第二套顶层执行器。父 Agent 只能看到 Profile 显式绑定的子 Agent；子 Agent 使用自己的模型、Prompt 和能力快照，同时共享根 Run 的预算、取消、工具治理和 Trace。
 
 旧的 `ReActAgent`、关键词复杂度分类、Fast Path、预规划和并行预检已经移除。请求级资源和模式选择统一由
-`PersonalAgentRequestPlanner` 完成，实际 ReAct 循环统一由 `ConfigurableAgentExecutor -> ReActLoopRunner` 驱动。
+`PersonalAgentRequestPlanner` 完成，正常 ReAct 交互由 `ConfigurableAgentExecutor -> AgentChatToolService -> AgentChatService -> AiServices` 驱动。
 当前规划版本为 `request-planner-v7`：除完整能力介绍快捷问句外，基于近期会话、文件状态和已授权能力描述调用结构化 Router，严格绑定为 Decision 类型。默认 `planning.response-format=JSON_SCHEMA`，通过 `McpModelService.callModelStructured` 发送厂商原生合同；端点不支持时可显式改为 `JSON_OBJECT`，不在失败后自动追加另一种格式调用。工具授权及置信度等业务校验不交给模型。local 的 `planning.model-id` 已显式绑定现有 `gpt-5.6-terra` 记录，复用数据库配置；公共默认仍为空。这是规划角色复用 GPT，未新增独立小模型；原生兼容性和运行质量尚未实测。
 禁止重新引入业务意图词表、动词计数编排或逐工具中文触发词；Tool 描述以 Registry 为唯一来源。
 预加载知识与 searchKnowledge 必须共用 RagRetrievalService 的 tenantId + userId 混合检索；跨会话记忆只检索相关长期事实，不顺带注入全用户近期摘要。当前会话历史/工作状态和画像独立装配。
 自动模式由实际候选决定，候选失败不回退到全部绑定能力；OFF 检索不暴露工具。详见 `docs/核心逻辑详解/Agent运行时与Harness.md`。
-`app.agent.reasoning.*` 只保留当前循环真实读取的反思和工作记忆开关。
+`app.agent.reasoning.*` 只保留工作记忆开关。旧文本意图纠偏、模拟反思评分和同步/流式双份循环已删除；错误建议按稳定状态追加到工具观察，连续错误有界收敛，根 Run 预算始终兜底。
 
 执行轨迹写入 `agent_execution_trace`；质量观测来自运行轨迹，确定性成功标准和回归指标由 Agent Eval 数据集维护。
 
@@ -238,17 +244,22 @@ Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据�
 文件上传、解析、入库、向量索引分属以下模块：
 
 - `FileUploadController`
-- `FileProcessingSubmissionService`
+- `IndexTaskStore` / `IndexTaskWorker` / `IndexTaskProcessor`
 - `FileProcessingWorker`
 - `FileParserService`
 - `FileStorageService`
 - `KnowledgeService`
 - `KnowledgeVectorIndexService`
+- `RagDocumentIndexer`
+
+知识与文件复用一次分块结果写 Milvus/ES，文件创建/删除与 FILE 任务同事务；旧进程内异步提交和即时清理已删除。ES 固定 v3/rag_icu（官方 analysis-icu），首次及周期校验插件/strict Mapping/analyzer。历史重建要求维护模式并排空全部实例，管理接口仅处理当前 ADMIN 本人的来源；不自动重建历史、不宣称跨存储原子事务。操作与实际未验范围见 [中文检索与索引维护](docs/核心逻辑详解/中文检索与索引维护.md)。
 
 支持文本、CSV、Excel、Word、PowerPoint 和 PDF 的真实文本提取。未实现的文件类型（包括图片）会明确拒绝，
 不返回占位内容。可索引的文本会进入 MySQL，同时写入 Milvus 向量索引和 Elasticsearch 全文索引。
 
 RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25，向量召回使用 Milvus，两路通过 RRF 融合，再由外部 HTTP Cross-Encoder 对候选精排，最后执行父上下文解析、压缩和引用生成。Cross-Encoder 默认模型为 `BAAI/bge-reranker-v2-m3`；超时、限流、上游异常或响应契约错误时按 `RERANK_FAIL_OPEN` 决定是否降级到规则 Provider。真实黄金集对比尚未运行前，不得宣称模型精排已经提升指标。
+
+通用 PDF/DOCX/PPTX 解析使用官方 PDFBox/POI DocumentParser，文本用 TextDocumentParser；Excel 保留业务表格输出。RagQueryTransformer 包装官方 Default/Compressing/Expanding 组件，删除旧业务词表与 300 字截断；可信历史显式传入，Router 已补全的问题不重复补全，扩展默认关闭且有界。VectorMemoryService 真实使用 EmbeddingStoreContentRetriever，两个 Gateway 实现框架接口并保留用途/预算/熔断/Milvus 恢复，不能旁路直连。变体参与两路召回，RRF/精排各一次，不给 AiServices 再挂无条件检索。见 [文档解析与框架检索](docs/核心逻辑详解/文档解析与框架检索.md)。
 
 ## 记忆系统
 
@@ -264,6 +275,8 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 ## 向量和 Embedding
 
 向量代码在 `com.ai.vector`。
+
+文档通用切分由 `DocumentSplitterConfiguration` 装配官方段落→行→中文句末 Regex→英文句子→词→字符 splitter，TextChunker 注入使用；500/100 字符参数在公共配置显式声明。框架重叠按完整句子上限，内部仍用英文模型，不是固定回退或完整中文重叠。末级仅按 code point 修正 UTF-16 代理对；章节/结构标签、原文位置对齐和父级范围留在项目。递归纯重叠片段以覆盖终点对齐并去冗余，不能伪造位置或丢正文。旧 SmartTextChunker/SemanticChunker/SemanticChunk 已删除，不得再建并行切分引擎。历史索引不自动重建，需验证新分块与原始范围及向量/全文一致。见 [文档分块与框架适配](docs/核心逻辑详解/文档分块与框架适配.md)。
 
 - Embedding 只通过外部 OpenAI-compatible 服务生成，JVM 不加载本地 Embedding 模型，也没有本地回退。
 - `EMBEDDING_API_BASE_URL`、`EMBEDDING_MODEL_NAME` 和 `EMBEDDING_DIMENSION` 必须显式配置；内网无鉴权服务的 `EMBEDDING_API_KEY` 可以为空。

@@ -1,15 +1,10 @@
 package com.ai.memory;
 
-import com.ai.mcp.McpModelService;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import com.ai.mcp.StructuredAssistantFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.cfg.CoercionAction;
-import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.type.LogicalType;
+import dev.langchain4j.service.UserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -32,18 +27,16 @@ public class SemanticMemoryExtractor {
     private static final int MAX_CANDIDATES = 3;
     private static final int MAX_CONTENT_LENGTH = 240;
     private static final int MAX_INPUT_LENGTH = 12000;
-    private static final int MAX_RESPONSE_LENGTH = 8000;
     private static final Pattern SENSITIVE_PATTERN = Pattern.compile(
             "(?i)(api[_ -]?key|access[_ -]?token|secret|password|密码|密钥|身份证|银行卡)\\s*[:=：]?\\s*\\S+");
 
-    private final McpModelService modelService;
+    private final StructuredAssistantFactory assistantFactory;
     private final ObjectMapper objectMapper;
     private final MemoryProperties memoryProperties;
-    private final ObjectReader extractionReader = strictReader();
 
-    public SemanticMemoryExtractor(McpModelService modelService,
+    public SemanticMemoryExtractor(StructuredAssistantFactory assistantFactory,
             ObjectMapper objectMapper, MemoryProperties memoryProperties) {
-        this.modelService = modelService;
+        this.assistantFactory = assistantFactory;
         this.objectMapper = objectMapper;
         this.memoryProperties = memoryProperties;
     }
@@ -66,11 +59,9 @@ public class SemanticMemoryExtractor {
             String payload = objectMapper.writeValueAsString(Map.of(
                     "userMessage", user,
                     "assistantReply", limit(normalize(assistantReply), 1000)));
-            String response = modelService.callBackgroundModelJson(buildPrompt(payload), modelId);
-            if (!StringUtils.hasText(response) || response.length() > MAX_RESPONSE_LENGTH) {
-                return List.of();
-            }
-            Extraction extraction = extractionReader.readValue(response);
+            // 后台提取不消耗已经结束的 Run 预算，但模型调用仍受用户配额与记账约束。
+            Extraction extraction = assistantFactory.create(MemoryAssistant.class, Extraction.class,
+                    modelId, false, true).extract(buildPrompt(payload));
             if (extraction == null || extraction.memories().size() > MAX_CANDIDATES) {
                 return List.of();
             }
@@ -112,22 +103,9 @@ public class SemanticMemoryExtractor {
                 && !containsSensitiveInformation(candidate.content());
     }
 
-    private static ObjectReader strictReader() {
-        JsonMapper mapper = JsonMapper.builder()
-                .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-                .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
-                        DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES,
-                        DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
-                .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
-                .build();
-        mapper.coercionConfigFor(LogicalType.Textual)
-                .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
-                .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
-                .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail);
-        return mapper.readerFor(Extraction.class);
+    /** 框架生成嵌套数组及枚举 Schema，返回通过合同校验的 Java 对象。 */
+    public interface MemoryAssistant {
+        Extraction extract(@UserMessage String prompt);
     }
 
     private String buildPrompt(String payload) {
@@ -173,12 +151,19 @@ public class SemanticMemoryExtractor {
         return value.length() <= maximum ? value : value.substring(0, maximum);
     }
 
-    private enum SpeechAct { ASSERTION, SAVE_REQUEST, QUESTION, QUOTATION, HYPOTHETICAL, REJECTION }
+    public enum SpeechAct { ASSERTION, SAVE_REQUEST, QUESTION, QUOTATION, HYPOTHETICAL, REJECTION }
 
-    private enum RetentionScope { CROSS_SESSION, CURRENT_TASK }
+    public enum RetentionScope { CROSS_SESSION, CURRENT_TASK }
 
-    private record Extraction(List<Proposal> memories) { }
+    public record Extraction(
+            @JsonProperty(required = true) List<Proposal> memories) { }
 
-    private record Proposal(MemoryType type, String semanticKey, String content, double confidence,
-            String evidence, SpeechAct speechAct, RetentionScope scope) { }
+    public record Proposal(
+            @JsonProperty(required = true) MemoryType type,
+            @JsonProperty(required = true) String semanticKey,
+            @JsonProperty(required = true) String content,
+            @JsonProperty(required = true) double confidence,
+            @JsonProperty(required = true) String evidence,
+            @JsonProperty(required = true) SpeechAct speechAct,
+            @JsonProperty(required = true) RetentionScope scope) { }
 }

@@ -47,6 +47,7 @@ public class AgentRunStateEntity {
     private String agentId;
 
     @Enumerated(EnumType.STRING)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
     @Column(nullable = false, length = 32)
     private AgentExecutionMode mode;
 

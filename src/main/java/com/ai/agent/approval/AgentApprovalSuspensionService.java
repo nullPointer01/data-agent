@@ -1,5 +1,6 @@
 package com.ai.agent.approval;
 
+import com.ai.agent.agentic.SupervisorExecutionScope;
 import com.ai.agent.durable.AgentCheckpointCodec;
 import com.ai.agent.durable.AgentCheckpointMessageMapper;
 import com.ai.agent.durable.AgentCheckpointVersion;
@@ -70,6 +71,7 @@ public class AgentApprovalSuspensionService {
             AgentToolExecutionResult executionResult,
             AgentToolInvocationContext invocationContext,
             List<ChatMessage> messages) {
+        SupervisorExecutionScope.requireApprovalContinuationSupported();
         AgentRunContext runContext = AgentRunScope.current()
                 .orElseThrow(() -> new IllegalStateException("审批暂停缺少 Agent Run Context"));
         if (!properties.isEnabled() || !executionResult.approvalRequired()) {

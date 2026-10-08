@@ -10,17 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.agent.reasoning")
 public class AgentReasoningProperties {
 
-    private boolean reflectionEnabled = true;
-
     private boolean workingMemoryEnabled = true;
-
-    public boolean isReflectionEnabled() {
-        return reflectionEnabled;
-    }
-
-    public void setReflectionEnabled(boolean reflectionEnabled) {
-        this.reflectionEnabled = reflectionEnabled;
-    }
 
     public boolean isWorkingMemoryEnabled() {
         return workingMemoryEnabled;

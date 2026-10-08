@@ -18,6 +18,12 @@ import java.util.Optional;
  */
 public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEntity, String> {
 
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AgentRunStateEntity r set r.mode = :mode, r.version = r.version + 1 "
+            + "where r.runId = :runId and r.mode = com.ai.agent.runtime.AgentExecutionMode.PLANNING "
+            + "and r.status = com.ai.agent.runtime.AgentRunStatus.RUNNING")
+    int bindMode(@Param("runId") String runId, @Param("mode") com.ai.agent.runtime.AgentExecutionMode mode);
+
     Optional<AgentRunStateEntity> findByRunIdAndTenantIdAndUserId(String runId, String tenantId, String userId);
 
     List<AgentRunStateEntity> findByStatusAndLeaseUntilBeforeOrderByUpdatedAtAsc(

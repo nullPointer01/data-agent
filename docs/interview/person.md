@@ -1,5 +1,7 @@
 > 张原铭专版 · 2026-06-07
 
+> 历史学习笔记：运行时/ReAct 等部分包含旧实现，不作为当前源码地图。2026-10-03 的框架解析、查询变换和 Retriever 入口见 [文档解析与框架检索](../核心逻辑详解/文档解析与框架检索.md)；完整现状以 [验收交接](./当前进度与验收交接.md) 为准。
+
 ---
 
 ## 目录
@@ -491,7 +493,7 @@ ConfigurableAgentExecutor（要求 AgentRunScope，不能自行推断模式）
 六阶段串行执行（有 `StopWatch` 分段计时落 Trace）：
 
 ```
-RagQueryRewriter.analyze(query)          → 查询改写 + 类型分类
+RagQueryTransformer.analyze(query)       → 官方直通 / 显式历史补全 / 可选扩展（不再词表分类）
 HybridRetriever.retrieveWithTrace(...)   → 向量 + 全文双路检索
 RrfFusionRanker.fuse(...)               → RRF 融合排序
 RagReranker.rerankHybrid(...)           → 重排 + filter(min-score=0.45)

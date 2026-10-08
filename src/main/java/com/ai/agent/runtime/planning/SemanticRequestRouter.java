@@ -1,5 +1,7 @@
 package com.ai.agent.runtime.planning;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -71,13 +73,13 @@ public interface SemanticRequestRouter {
      * @param candidateTools 从输入目录选择的精确工具名
      */
     record Decision(
-            RequestIntent intent,
-            ContextRequirement semanticMemory,
-            ContextRequirement knowledgeBase,
-            String retrievalQuery,
-            double confidence,
-            String reason,
-            List<String> candidateTools) {
+            @JsonProperty(required = true) RequestIntent intent,
+            @JsonProperty(required = true) ContextRequirement semanticMemory,
+            @JsonProperty(required = true) ContextRequirement knowledgeBase,
+            @JsonProperty(required = true) String retrievalQuery,
+            @JsonProperty(required = true) double confidence,
+            @JsonProperty(required = true) String reason,
+            @JsonProperty(required = true) List<String> candidateTools) {
         public Decision {
             // 保留重复名称供准入校验拒绝，反序列化时不能被 Set 悄悄去重。
             candidateTools = candidateTools == null ? List.of() : List.copyOf(candidateTools);

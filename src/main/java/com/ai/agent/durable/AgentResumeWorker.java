@@ -1,5 +1,7 @@
 package com.ai.agent.durable;
 
+import com.ai.indexing.RagIndexMaintenance;
+
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.capability.AgentCapabilityService;
@@ -14,7 +16,6 @@ import com.ai.agent.outcome.AgentOutcomeEvaluator;
 import com.ai.agent.outcome.AgentOutcomeEvaluator.OutcomeEvidence;
 import com.ai.agent.outcome.AgentTaskContract;
 import com.ai.agent.react.ReActExecutionResult;
-import com.ai.agent.react.ReActLoopRunner;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunRegistry;
 import com.ai.agent.runtime.AgentRunScope;
@@ -26,7 +27,6 @@ import com.ai.agent.tool.governance.AgentToolExecutionResult;
 import com.ai.agent.tool.governance.AgentToolExecutionStatus;
 import com.ai.agent.tool.governance.AgentToolInvocationContext;
 import com.ai.model.AgentProfile;
-import com.ai.model.AnalysisResponse;
 import com.ai.repository.AgentProfileRepository;
 import com.ai.service.AgentExecutionTraceService;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -38,7 +38,6 @@ import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,13 +63,14 @@ public class AgentResumeWorker {
     private final AgentCapabilityService capabilityService;
     private final AgentProfileRepository agentProfileRepository;
     private final AgentToolInvoker toolInvoker;
-    private final ReActLoopRunner loopRunner;
+    private final DurableToolContinuation continuation;
     private final AgentRunRegistry runRegistry;
     private final AgentApprovalTelemetry telemetry;
     private final AgentExecutionTraceService traceService;
     private final AgentOutcomeEvaluator outcomeEvaluator;
     private final AgentConversationRecorder conversationRecorder;
     private final AsyncTaskExecutor resumeExecutor;
+    private final RagIndexMaintenance maintenance;
     private final Set<String> scheduledApprovals = ConcurrentHashMap.newKeySet();
 
     public AgentResumeWorker(AgentDurableRuntimeProperties properties,
@@ -83,13 +83,14 @@ public class AgentResumeWorker {
             AgentCapabilityService capabilityService,
             AgentProfileRepository agentProfileRepository,
             AgentToolInvoker toolInvoker,
-            ReActLoopRunner loopRunner,
+            DurableToolContinuation continuation,
             AgentRunRegistry runRegistry,
             AgentApprovalTelemetry telemetry,
             AgentExecutionTraceService traceService,
             AgentOutcomeEvaluator outcomeEvaluator,
             AgentConversationRecorder conversationRecorder,
-            @Qualifier("agentResumeExecutor") AsyncTaskExecutor resumeExecutor) {
+            @Qualifier("agentResumeExecutor") AsyncTaskExecutor resumeExecutor,
+            RagIndexMaintenance maintenance) {
         this.properties = properties;
         this.stateService = stateService;
         this.leaseService = leaseService;
@@ -100,18 +101,19 @@ public class AgentResumeWorker {
         this.capabilityService = capabilityService;
         this.agentProfileRepository = agentProfileRepository;
         this.toolInvoker = toolInvoker;
-        this.loopRunner = loopRunner;
+        this.continuation = continuation;
         this.runRegistry = runRegistry;
         this.telemetry = telemetry;
         this.traceService = traceService;
         this.outcomeEvaluator = outcomeEvaluator;
         this.conversationRecorder = conversationRecorder;
         this.resumeExecutor = resumeExecutor;
+        this.maintenance = maintenance;
     }
 
     @Scheduled(fixedDelayString = "${app.agent.durable.scan-interval:PT15S}")
     public void resumeApprovedRuns() {
-        if (!properties.isEnabled()) {
+        if (!properties.isEnabled() || maintenance.isEnabled()) {
             return;
         }
         for (AgentToolApprovalEntity candidate : stateService.candidates()) {
@@ -200,17 +202,18 @@ public class AgentResumeWorker {
                 return;
             }
             if (executionResult.success()) {
+                conversationRecorder.recordResumedConversation(runId,
+                        context.executionContext().getRequest().getQuestion(), executionResult.answer(), checkpoint.modelId());
                 context.control().complete();
-                leaseService.release(runId);
                 stateService.completeTerminal(
                         approvalId,
                         context.snapshot(),
                         executionResult.answer(),
                         AgentApprovalExecutionStatus.SUCCEEDED);
+                leaseService.release(runId);
                 recordResume(approval, "SUCCEEDED");
                 recordTrace(context, approval, "SUCCEEDED", "Agent Run 恢复完成",
                         executionResult.answer(), checkpointTaskContract);
-                updateConversation(runId, executionResult.answer(), null, checkpoint.modelId());
             } else {
                 failIfLeaseOwned(
                         context,
@@ -274,15 +277,12 @@ public class AgentResumeWorker {
             throw new ToolResumeException();
         }
         restored.messages().add(ToolExecutionResultMessage.from(request, toolResult.toModelObservation()));
-        return loopRunner.run(
+        return continuation.resume(
                 restored.messages(),
-                toolInvoker.buildToolSpecifications().stream()
-                        .filter(specification -> invocationContext.allowedToolNames().contains(specification.name()))
-                        .toList(),
+                toolInvoker.buildExactToolSpecifications(invocationContext.allowedToolNames()),
                 restored.checkpoint().modelId(),
                 restored.context().sessionId(),
                 restored.context().executionContext().getRequest().getQuestion(),
-                new ArrayList<AnalysisResponse.ThinkingStep>(),
                 invocationContext);
     }
 

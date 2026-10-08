@@ -2,6 +2,7 @@ package com.ai.agent.tool.governance;
 
 import com.ai.agent.durable.AgentDurableRuntimeProperties;
 import com.ai.agent.tool.AgentTools;
+import com.ai.integration.mcp.McpToolCatalog;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
@@ -23,6 +24,8 @@ import java.util.stream.Collectors;
 
 /**
  * Agent 工具规格、执行器和治理描述符的唯一服务端目录。
+ * ToolSpecifications 负责从框架的 @Tool/@P 生成 JSON Schema，DefaultToolExecutor 负责参数转换与方法调用。
+ * 本目录不手写 Function Calling 协议；权限、审批和幂等由调用前的治理管道负责。
  *
  * @author data-agent
  */
@@ -32,12 +35,13 @@ public class AgentToolRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentToolRegistry.class);
 
     private final Map<String, RegisteredTool> tools;
-    private final List<ToolSpecification> specifications;
     private final Set<String> enabledToolNames;
+    private final McpToolCatalog mcpTools;
 
     public AgentToolRegistry(AgentTools agentTools,
             AgentToolGovernanceProperties properties,
-            AgentDurableRuntimeProperties durableProperties) {
+            AgentDurableRuntimeProperties durableProperties, McpToolCatalog mcpTools) {
+        this.mcpTools = mcpTools;
         Map<String, RegisteredTool> registered = new LinkedHashMap<>();
         List<Method> methods = Arrays.stream(AgentTools.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(Tool.class))
@@ -61,7 +65,9 @@ public class AgentToolRegistry {
             }
         }
         this.tools = Map.copyOf(registered);
-        this.specifications = registered.values().stream().map(RegisteredTool::specification).toList();
+        if (mcpTools.configuredToolNames().stream().anyMatch(tools::containsKey)) {
+            throw new IllegalArgumentException("MCP 工具不能覆盖本地工具");
+        }
         this.enabledToolNames = resolveEnabledTools(
                 properties.getEnabledTools(), registered, durableProperties);
         LOGGER.info("Registered {} governed Agent tools, enabled={}", tools.size(), enabledToolNames.size());
@@ -70,7 +76,8 @@ public class AgentToolRegistry {
     private Set<String> resolveEnabledTools(Set<String> configured,
             Map<String, RegisteredTool> registered,
             AgentDurableRuntimeProperties durableProperties) {
-        Set<String> registeredNames = registered.keySet();
+        Set<String> registeredNames = new java.util.HashSet<>(registered.keySet());
+        registeredNames.addAll(mcpTools.configuredToolNames());
         Set<String> requested = configured == null || configured.isEmpty()
                 ? Set.copyOf(registeredNames)
                 : Set.copyOf(configured);
@@ -101,16 +108,28 @@ public class AgentToolRegistry {
     }
 
     public Optional<RegisteredTool> find(String name) {
-        return Optional.ofNullable(tools.get(name));
+        RegisteredTool local = tools.get(name);
+        return local == null ? mcpTools.find(name) : Optional.of(local);
     }
 
     public List<ToolSpecification> specifications() {
-        return specifications;
+        return registeredToolNames().stream().sorted().map(this::find).flatMap(Optional::stream)
+                .map(RegisteredTool::specification).toList();
     }
 
     public Set<String> registeredToolNames() {
-        return tools.keySet();
+        Set<String> names = new java.util.HashSet<>(tools.keySet());
+        names.addAll(mcpTools.configuredToolNames());
+        return Set.copyOf(names);
     }
+
+    /** 远端服务在能力发现和实际执行时使用同一租户范围。 */
+    public boolean isVisibleToTenant(String name, String tenantId) {
+        return tools.containsKey(name) || mcpTools.allowsTenant(name, tenantId);
+    }
+
+    /** 标记远端能力，供目录展示准确的 externalAccess 风险信息。 */
+    public boolean isExternal(String name) { return mcpTools.configuredToolNames().contains(name); }
 
     public Set<String> enabledToolNames() {
         return enabledToolNames;

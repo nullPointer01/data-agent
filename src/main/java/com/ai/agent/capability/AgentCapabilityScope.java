@@ -36,9 +36,18 @@ public final class AgentCapabilityScope {
         if (snapshot == null || supplier == null) {
             throw new IllegalArgumentException("Agent 能力作用域参数不能为空");
         }
+        return bind(snapshot, supplier);
+    }
+
+    /** 没有能力快照的异步任务不能继承回调线程正在执行的 Agent 权限。 */
+    public static <T> T without(Supplier<T> supplier) {
+        return bind(null, java.util.Objects.requireNonNull(supplier));
+    }
+
+    private static <T> T bind(AgentCapabilityBindingSnapshot snapshot, Supplier<T> supplier) {
         AgentCapabilityBindingSnapshot previous = CURRENT.get();
         try {
-            CURRENT.set(snapshot);
+            restore(snapshot);
             return supplier.get();
         } finally {
             restore(previous);

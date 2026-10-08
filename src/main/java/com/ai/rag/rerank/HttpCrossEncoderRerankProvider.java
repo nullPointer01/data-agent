@@ -1,6 +1,8 @@
 package com.ai.rag.rerank;
 
 import com.ai.rag.RerankerProperties;
+import com.ai.resilience.ExternalCallPolicy;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import com.ai.security.OutboundUrlGuard;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,15 +49,16 @@ public class HttpCrossEncoderRerankProvider implements RerankProvider {
     private final ObjectMapper objectMapper;
     private final OutboundUrlGuard outboundUrlGuard;
     private final HttpClient httpClient;
-    private int consecutiveFailures;
-    private long circuitOpenUntilMillis;
-    private boolean recoveryCallInProgress;
+    private final ExternalCallPolicy callPolicy;
 
     public HttpCrossEncoderRerankProvider(RerankerProperties properties,
             ObjectMapper objectMapper,
             OutboundUrlGuard outboundUrlGuard) {
         properties.validate();
         this.properties = properties;
+        this.callPolicy = new ExternalCallPolicy(properties.getMaxAttempts(), properties.getInitialBackoff(),
+                properties.getCircuitFailureThreshold(), properties.getCircuitOpenDuration(),
+                error -> error instanceof RerankProviderException failure && failure.retriable());
         this.objectMapper = objectMapper;
         this.outboundUrlGuard = outboundUrlGuard;
         this.httpClient = HttpClient.newBuilder()
@@ -69,31 +72,22 @@ public class HttpCrossEncoderRerankProvider implements RerankProvider {
         if (request == null || request.candidates() == null || request.candidates().isEmpty()) {
             return new RerankResponse(List.of());
         }
-        acquireCircuitPermission();
-        for (int attempt = 1; attempt <= properties.getMaxAttempts(); attempt++) {
-            try {
+        try {
+            return callPolicy.execute(PROVIDER_NAME, () -> {
                 RerankResponse response = executeHttp(request);
                 validateResponseContract(response, request.candidates().size());
-                recordSuccess();
                 return response;
-            } catch (RerankProviderException exception) {
-                if (!exception.retriable() || attempt == properties.getMaxAttempts()) {
-                    recordFailure();
-                    throw exception;
-                }
-                long delayMillis = retryDelayMillis(attempt);
-                LOGGER.warn("Reranker 调用将在退避后重试: provider={}, model={}, attempt={}/{}, delayMs={}, category={}",
-                        providerName(), modelName(), attempt, properties.getMaxAttempts(), delayMillis,
-                        exception.category());
-                try {
-                    sleep(delayMillis);
-                } catch (RerankProviderException interrupted) {
-                    recordFailure();
-                    throw interrupted;
-                }
-            }
+            }, () -> LOGGER.warn("Reranker 瞬时故障，框架执行退避重试"));
+        } catch (CallNotPermittedException exception) {
+            throw new RerankProviderException("CIRCUIT_OPEN", "Reranker 熔断器处于打开或探测状态", false);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new RerankProviderException("INTERRUPTED", "Reranker 调用已中断", false, exception);
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new RerankProviderException("UNKNOWN", "Reranker 调用失败", false, exception);
         }
-        throw new RerankProviderException("UNKNOWN", "Reranker 调用未产生结果", false);
     }
 
     @Override
@@ -207,48 +201,6 @@ public class HttpCrossEncoderRerankProvider implements RerankProvider {
             if (!Double.isFinite(score.score())) {
                 throw new RerankProviderException("RESPONSE_CONTRACT", "Reranker 返回非法相关性分数", false);
             }
-        }
-    }
-
-    private synchronized void acquireCircuitPermission() {
-        long now = System.currentTimeMillis();
-        if (circuitOpenUntilMillis > now) {
-            throw new RerankProviderException("CIRCUIT_OPEN", "Reranker 熔断器处于打开状态", false);
-        }
-        if (circuitOpenUntilMillis > 0L) {
-            if (recoveryCallInProgress) {
-                throw new RerankProviderException("CIRCUIT_OPEN", "Reranker 恢复探测正在执行", false);
-            }
-            recoveryCallInProgress = true;
-        }
-    }
-
-    private synchronized void recordSuccess() {
-        consecutiveFailures = 0;
-        circuitOpenUntilMillis = 0L;
-        recoveryCallInProgress = false;
-    }
-
-    private synchronized void recordFailure() {
-        consecutiveFailures++;
-        if (recoveryCallInProgress || consecutiveFailures >= properties.getCircuitFailureThreshold()) {
-            circuitOpenUntilMillis = System.currentTimeMillis() + properties.getCircuitOpenDuration().toMillis();
-            recoveryCallInProgress = false;
-        }
-    }
-
-    private long retryDelayMillis(int completedAttempt) {
-        long baseMillis = Math.max(1L, properties.getInitialBackoff().toMillis());
-        int shift = completedAttempt - 1;
-        return baseMillis > (Long.MAX_VALUE >> shift) ? Long.MAX_VALUE : baseMillis << shift;
-    }
-
-    private void sleep(long delayMillis) {
-        try {
-            Thread.sleep(delayMillis);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new RerankProviderException("INTERRUPTED", "Reranker 重试退避被中断", false, exception);
         }
     }
 

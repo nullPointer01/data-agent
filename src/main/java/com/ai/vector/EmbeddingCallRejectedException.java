@@ -12,12 +12,9 @@ public class EmbeddingCallRejectedException extends IllegalStateException {
      *
      * @param profileIdentity Embedding Profile 安全身份
      * @param operation 低基数操作名
-     * @param remainingMillis 熔断剩余毫秒数
      */
-    public EmbeddingCallRejectedException(String profileIdentity, String operation,
-            long remainingMillis) {
+    public EmbeddingCallRejectedException(String profileIdentity, String operation) {
         super("Embedding 调用被熔断器拒绝: profile=" + profileIdentity
-                + ", operation=" + operation
-                + ", remainingMillis=" + Math.max(remainingMillis, 0L));
+                + ", operation=" + operation);
     }
 }

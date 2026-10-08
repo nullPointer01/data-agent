@@ -35,7 +35,7 @@ public class MemoryContextPromptFormatter {
         if (memoryContext == null) {
             return false;
         }
-        return StringUtils.hasText(memoryContext.conversationHistory())
+        return !memoryContext.conversationHistory().isEmpty()
                 || StringUtils.hasText(memoryContext.workingMemory())
                 || StringUtils.hasText(memoryContext.longTermContext())
                 || hasProfile(memoryContext.userProfile());
@@ -48,10 +48,8 @@ public class MemoryContextPromptFormatter {
      * @return Prompt 章节，无有效记忆时返回空字符串
      */
     public String toSection(MemoryContext memoryContext) {
-        if (!hasMemory(memoryContext)) {
-            return "";
-        }
-        return MEMORY_SECTION_TITLE + "\n" + format(memoryContext);
+        String body = format(memoryContext);
+        return StringUtils.hasText(body) ? MEMORY_SECTION_TITLE + "\n" + body : "";
     }
 
     /**
@@ -65,10 +63,7 @@ public class MemoryContextPromptFormatter {
             return "";
         }
         StringBuilder builder = new StringBuilder();
-        if (StringUtils.hasText(memoryContext.conversationHistory())) {
-            builder.append("- 当前会话历史（用于理解追问和指代）:\n")
-                    .append(memoryContext.conversationHistory());
-        }
+        // 会话历史由原生 ChatMessage 单独装配，不能再复制进当前用户消息。
         appendUserProfile(builder, memoryContext.userProfile());
         if (StringUtils.hasText(memoryContext.workingMemory())) {
             builder.append("- 当前会话工作状态（先前步骤记录，不代表本次已执行）: ")
@@ -90,7 +85,7 @@ public class MemoryContextPromptFormatter {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(KEY_MEMORY_USED, hasMemory(memoryContext));
         metadata.put(KEY_HAS_CONVERSATION_HISTORY, memoryContext != null
-                && StringUtils.hasText(memoryContext.conversationHistory()));
+                && !memoryContext.conversationHistory().isEmpty());
         metadata.put(KEY_HAS_WORKING_MEMORY, memoryContext != null
                 && StringUtils.hasText(memoryContext.workingMemory()));
         metadata.put(KEY_HAS_LONG_TERM_CONTEXT, memoryContext != null

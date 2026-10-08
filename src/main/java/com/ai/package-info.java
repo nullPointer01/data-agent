@@ -18,6 +18,7 @@
  *   <li>{@code com.ai.skill}：Skill 配置、版本和动态执行。</li>
  *   <li>{@code com.ai.security}：JWT 认证、RBAC、租户边界和用户管理。</li>
  *   <li>{@code com.ai.modelconfig}、{@code com.ai.mcp}：模型配置、客户端构建与调用；{@code mcp} 是历史命名，不等于 MCP 协议实现。</li>
+ *   <li>{@code com.ai.integration.mcp}：官方标准 MCP 客户端，发现远端只读工具并接入统一工具治理；默认没有外部服务配置。</li>
  *   <li>{@code com.ai.controller}：HTTP API 入口；具体业务通常委托给 Service。</li>
  * </ul>
  *

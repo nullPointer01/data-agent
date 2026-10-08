@@ -83,7 +83,9 @@ services:
 
   elasticsearch:
     container_name: data-agent-elasticsearch
-    image: elasticsearch:8.12.0
+    image: data-agent-elasticsearch:8.12.0-icu
+    build:
+      context: ./docker/elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false

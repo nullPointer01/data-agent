@@ -27,13 +27,14 @@ public class MarkdownStructureParser implements DocumentStructureParser {
     private static final String CODE_FENCE_TILDE = "~~~";
     private static final String LINE_SEPARATOR = "\n";
     private static final int HEADING_DEPTH = 6;
+    private static final Pattern SOURCE_LINE = Pattern.compile("[^\\r\\n]*(?:\\r\\n|\\r|\\n|$)");
 
     @Override
     public List<DocumentStructureSegment> parse(String content) {
         if (!StringUtils.hasText(content)) {
             return List.of();
         }
-        return splitIntoSegments(normalizeLineEndings(content));
+        return splitIntoSegments(content);
     }
 
     private List<DocumentStructureSegment> splitIntoSegments(String content) {
@@ -41,12 +42,13 @@ public class MarkdownStructureParser implements DocumentStructureParser {
         List<LinePart> buffer = new ArrayList<>();
         String[] sectionStack = new String[HEADING_DEPTH];
         DocumentSegmentType currentType = DocumentSegmentType.PARAGRAPH;
-        int cursor = 0;
-        for (String rawLine : content.split(LINE_SEPARATOR, -1)) {
+        // 在原始文本上读取行，保留 CRLF/CR 占用的实际字符位置供引用和父上下文使用。
+        Matcher lines = SOURCE_LINE.matcher(content);
+        while (lines.find() && lines.start() < lines.end()) {
+            String rawLine = lines.group();
             String line = rawLine.stripTrailing();
-            int lineStart = cursor;
+            int lineStart = lines.start();
             int lineEnd = lineStart + line.length();
-            cursor += rawLine.length() + 1;
             if (currentType == DocumentSegmentType.CODE) {
                 buffer.add(new LinePart(line, lineStart, lineEnd));
                 if (isCodeFence(line)) {
@@ -61,12 +63,13 @@ public class MarkdownStructureParser implements DocumentStructureParser {
                 continue;
             }
             DocumentSegmentType nextType = classifyLine(line, currentType);
+            LinePart e = new LinePart(line.trim(), lineStart, lineEnd);
             if (nextType == DocumentSegmentType.CODE || nextType == DocumentSegmentType.HEADING) {
                 flushSegments(segments, buffer, currentType, currentSectionPath(sectionStack));
                 if (nextType == DocumentSegmentType.HEADING) {
                     updateSectionStack(sectionStack, line);
                 }
-                buffer.add(new LinePart(line.trim(), lineStart, lineEnd));
+                buffer.add(e);
                 currentType = nextType;
                 if (nextType == DocumentSegmentType.HEADING) {
                     flushSegments(segments, buffer, currentType, currentSectionPath(sectionStack));
@@ -77,7 +80,7 @@ public class MarkdownStructureParser implements DocumentStructureParser {
             if (shouldStartNewSegment(currentType, nextType)) {
                 flushSegments(segments, buffer, currentType, currentSectionPath(sectionStack));
             }
-            buffer.add(new LinePart(line.trim(), lineStart, lineEnd));
+            buffer.add(e);
             currentType = nextType;
         }
         flushSegments(segments, buffer, currentType, currentSectionPath(sectionStack));
@@ -104,11 +107,11 @@ public class MarkdownStructureParser implements DocumentStructureParser {
         if (currentType == nextType) {
             return false;
         }
-        return !isEmptyCompatible(currentType) || !isEmptyCompatible(nextType);
+        return isEmptyCompatible(currentType) || isEmptyCompatible(nextType);
     }
 
     private boolean isEmptyCompatible(DocumentSegmentType type) {
-        return DocumentSegmentType.PARAGRAPH == type;
+        return DocumentSegmentType.PARAGRAPH != type;
     }
 
     private void flushSegments(List<DocumentStructureSegment> segments, List<LinePart> buffer,
@@ -124,10 +127,6 @@ public class MarkdownStructureParser implements DocumentStructureParser {
         if (StringUtils.hasText(text)) {
             segments.add(new DocumentStructureSegment(text, sectionPath, charStart, charEnd, type));
         }
-    }
-
-    private String normalizeLineEndings(String content) {
-        return content.replace("\r\n", "\n").replace('\r', '\n');
     }
 
     private boolean isHeading(String line) {

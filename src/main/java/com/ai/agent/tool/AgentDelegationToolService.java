@@ -2,21 +2,16 @@ package com.ai.agent.tool;
 
 import com.ai.agent.AgentExecutionContext;
 import com.ai.agent.AgentRunOrigin;
-import com.ai.agent.ConfigurableAgentExecutor;
+import com.ai.agent.agentic.AgenticDelegationWorkflow;
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.capability.AgentDelegationGuard;
-import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunScope;
-import com.ai.agent.runtime.PersonalAgentExecutionModeResolver;
-import com.ai.agent.runtime.planning.RequestExecutionPlan;
-import com.ai.memory.dto.MemoryContext;
 import com.ai.model.AgentProfile;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.repository.AgentProfileRepository;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,17 +27,14 @@ public class AgentDelegationToolService {
 
     private final AgentProfileRepository agentRepository;
     private final AgentDelegationGuard delegationGuard;
-    private final ObjectProvider<PersonalAgentExecutionModeResolver> modeResolverProvider;
-    private final ObjectProvider<ConfigurableAgentExecutor> executorProvider;
+    private final AgenticDelegationWorkflow workflow;
 
     public AgentDelegationToolService(AgentProfileRepository agentRepository,
             AgentDelegationGuard delegationGuard,
-            ObjectProvider<PersonalAgentExecutionModeResolver> modeResolverProvider,
-            ObjectProvider<ConfigurableAgentExecutor> executorProvider) {
+            AgenticDelegationWorkflow workflow) {
         this.agentRepository = agentRepository;
         this.delegationGuard = delegationGuard;
-        this.modeResolverProvider = modeResolverProvider;
-        this.executorProvider = executorProvider;
+        this.workflow = workflow;
     }
 
     /**
@@ -75,18 +67,9 @@ public class AgentDelegationToolService {
                 runContext.executionContext().getSession(),
                 runContext.executionContext().getFileContent(),
                 AgentRunOrigin.DELEGATED);
-        RequestExecutionPlan childPlan = modeResolverProvider.getObject()
-                .plan(childProfile, childExecutionContext);
-        AgentExecutionMode childMode = childPlan.mode();
-
+        // 防环路/深度检查覆盖整个工作流，非法委派不能先消耗一次规划模型调用。
         return delegationGuard.call(parentSnapshot.agentId(), childAgentId, () -> {
-            AnalysisResponse response = executorProvider.getObject().execute(
-                    childProfile,
-                    childRequest,
-                    childExecutionContext.getFileContent(),
-                    MemoryContext.empty(),
-                    childMode,
-                    childPlan);
+            AnalysisResponse response = workflow.execute(childProfile, childExecutionContext);
             if (response == null || !response.isSuccess() || response.getResult() == null) {
                 throw new IllegalStateException("子 Agent 未返回可用结果");
             }

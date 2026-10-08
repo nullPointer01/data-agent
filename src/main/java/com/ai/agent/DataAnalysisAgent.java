@@ -3,6 +3,7 @@ package com.ai.agent;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.agent.runtime.event.AgentEventSink;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 数据分析 Agent 统一入口。
@@ -26,5 +27,5 @@ public interface DataAnalysisAgent {
      * @param eventSink 传输无关事件接收端
      * @return 完整分析响应
      */
-    AnalysisResponse analyzeStreaming(AnalysisRequest request, AgentEventSink eventSink);
+    CompletableFuture<AnalysisResponse> analyzeStreaming(AnalysisRequest request, AgentEventSink eventSink);
 }

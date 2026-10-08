@@ -1,6 +1,7 @@
 package com.ai.memory;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import com.ai.indexing.RagIndexMaintenance;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,19 +25,21 @@ public class MemoryDecayScheduler {
     private final MemoryProperties memoryProperties;
     private final MeterRegistry meterRegistry;
     private final UserProfileMemoryRefreshService userProfileMemoryRefreshService;
+    private final RagIndexMaintenance maintenance;
 
     public MemoryDecayScheduler(ShortTermMemory shortTermMemory,
             LongTermMemory longTermMemory,
             MemoryRetentionService memoryRetentionService,
             MemoryProperties memoryProperties,
             MeterRegistry meterRegistry,
-            UserProfileMemoryRefreshService userProfileMemoryRefreshService) {
+            UserProfileMemoryRefreshService userProfileMemoryRefreshService, RagIndexMaintenance maintenance) {
         this.shortTermMemory = shortTermMemory;
         this.longTermMemory = longTermMemory;
         this.memoryRetentionService = memoryRetentionService;
         this.memoryProperties = memoryProperties;
         this.meterRegistry = meterRegistry;
         this.userProfileMemoryRefreshService = userProfileMemoryRefreshService;
+        this.maintenance = maintenance;
     }
 
     /**
@@ -45,6 +48,7 @@ public class MemoryDecayScheduler {
     @Scheduled(cron = "${app.memory.decay-cron:0 0 3 * * *}")
     @Transactional(rollbackFor = Exception.class)
     public void maintainMemories() {
+        if (maintenance.isEnabled()) return;
         maintainMemories(LocalDateTime.now(), memoryProperties.getRetentionBatchSize());
     }
 

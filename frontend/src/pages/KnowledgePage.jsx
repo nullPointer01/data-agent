@@ -42,6 +42,32 @@ export function KnowledgePage({ api, toast }) {
 
   useEffect(() => { load(); }, []);
 
+  // 仅在当前列表有未完成任务时刷新状态，完成后停止轮询；卸载后不再更新页面。
+  const hasPendingIndex = items.some((item) => ['PENDING', 'RUNNING', 'RETRY'].includes(item.indexing?.state));
+  useEffect(() => {
+    if (!hasPendingIndex) return;
+    let active = true;
+    let timer;
+    const refresh = async () => {
+      try {
+        const states = await api.get('/api/v1/knowledge/index-tasks');
+        if (active) setItems((current) => current.map((item) => ({ ...item, indexing: states[item.knowledgeId] || item.indexing })));
+      } catch {
+        // 临时网络故障保留最近一次状态，下一周期重试。
+      } finally {
+        if (active) timer = setTimeout(refresh, 3000);
+      }
+    };
+    timer = setTimeout(refresh, 3000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [hasPendingIndex, api]);
+
+  const retryIndex = async (item) => {
+    const response = await api.post(`/api/v1/knowledge/${item.knowledgeId}/index-retry`, {});
+    toast(response.message, response.success === false ? 'error' : 'success');
+    load();
+  };
+
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) {
@@ -102,7 +128,7 @@ export function KnowledgePage({ api, toast }) {
       />
       <div className="grid grid-4">
         <Metric label="知识文档" value={stats.knowledgeCount || items.length || 0} />
-        <Metric label="向量片段" value={stats.vectorStoreCount || 0} />
+        <Metric label="预计知识片段" value={stats.vectorStoreCount || 0} />
         <Metric label="存储后端" value={stats.usingMilvus ? 'Milvus' : '内存'} />
         <Metric label="筛选结果" value={filtered.length} />
       </div>
@@ -110,9 +136,10 @@ export function KnowledgePage({ api, toast }) {
         { key: 'name', title: '名称', render: (item) => <><strong>{item.name}</strong><div className="muted">{truncate(item.description, 90)}</div></> },
         { key: 'sourceType', title: '来源', render: (item) => <Badge tone="gray">{item.sourceType || 'TEXT'}</Badge> },
         { key: 'chunkCount', title: '片段' },
+        { key: 'indexing', title: '索引状态', render: (item) => <Badge tone={item.indexing?.state === 'SUCCEEDED' ? 'green' : item.indexing?.state === 'FAILED' ? 'red' : 'amber'}>{({ PENDING: '等待索引', RUNNING: '索引中', RETRY: '等待重试', FAILED: '索引失败', SUCCEEDED: '已就绪' })[item.indexing?.state] || '待验证'}</Badge> },
         { key: 'contentLength', title: '大小', render: (item) => formatBytes(item.contentLength) },
         { key: 'createdAt', title: '创建时间', render: (item) => formatTime(item.createdAt) },
-        { key: 'actions', title: '操作', render: (item) => <div className="toolbar"><button className="btn" onClick={() => openDetail(item)}><Eye size={16} />详情</button><button className="btn" onClick={() => editDetail(item)}>编辑</button><button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} /></button></div> }
+        { key: 'actions', title: '操作', render: (item) => <div className="toolbar">{['FAILED', 'UNKNOWN'].includes(item.indexing?.state) && <button className="btn" onClick={() => retryIndex(item)}><RefreshCw size={16} />{item.indexing?.state === 'UNKNOWN' ? '建立索引' : '重试索引'}</button>}<button className="btn" onClick={() => openDetail(item)}><Eye size={16} />详情</button><button className="btn" onClick={() => editDetail(item)}>编辑</button><button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} /></button></div> }
       ]} rows={filtered} rowKey="knowledgeId" loading={loading} empty={<EmptyState title="暂无知识" desc="上传文件或添加文本后，这里会显示知识条目。" />} />
       {textModal && <Modal title={detail?.knowledgeId ? '编辑知识' : '添加文本知识'} onClose={() => setTextModal(false)} size="lg" actions={<button className="btn primary" onClick={saveText}><Save size={16} />保存</button>}>
         <div className="form-stack">

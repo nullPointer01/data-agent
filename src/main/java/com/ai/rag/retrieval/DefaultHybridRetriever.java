@@ -14,6 +14,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 
 /**
  * 默认混合检索实现，通过向量检索与全文检索双通道召回，再经 RRF 融合。
@@ -26,6 +31,8 @@ public class DefaultHybridRetriever implements HybridRetriever {
     private final VectorMemoryService vectorMemoryService;
     private final FullTextRetriever fullTextRetriever;
     private final RrfFusionRanker rrfFusionRanker;
+
+    private static final int MAX_QUERIES = 4;
 
     public DefaultHybridRetriever(VectorMemoryService vectorMemoryService,
             FullTextRetriever fullTextRetriever,
@@ -51,8 +58,8 @@ public class DefaultHybridRetriever implements HybridRetriever {
             return HybridRetrievalResult.empty();
         }
         long vectorStartedAt = System.currentTimeMillis();
-        List<EmbeddingMatch<TextSegment>> vectorMatches = vectorMemoryService.searchMatches(
-                analysis.rewrittenQuery(), candidateTopK, minScore, tenantId, userId, sourceTypes);
+        List<EmbeddingMatch<TextSegment>> vectorMatches = retrieveVectors(
+                analysis, tenantId, userId, candidateTopK, minScore, sourceTypes);
         long vectorTimeMs = System.currentTimeMillis() - vectorStartedAt;
         long fullTextStartedAt = System.currentTimeMillis();
         List<FullTextSearchResult> fullTextResults = fullTextRetriever.retrieve(analysis, tenantId, userId,
@@ -63,6 +70,23 @@ public class DefaultHybridRetriever implements HybridRetriever {
         long fusionTimeMs = System.currentTimeMillis() - fusionStartedAt;
         return new HybridRetrievalResult(results, safeList(vectorMatches), safeList(fullTextResults),
                 sizeOf(vectorMatches), sizeOf(fullTextResults), vectorTimeMs, fullTextTimeMs, fusionTimeMs);
+    }
+
+    /** 框架生成的变体实际参与召回；顺序执行保留身份，不另建无界扇出线程池。 */
+    private List<EmbeddingMatch<TextSegment>> retrieveVectors(RagQueryAnalysis analysis, String tenantId,
+            String userId, int topK, double minScore, List<String> sourceTypes) {
+        LinkedHashSet<String> queries = new LinkedHashSet<>();
+        queries.add(analysis.rewrittenQuery());
+        if (analysis.variants() != null) analysis.variants().stream().filter(StringUtils::hasText).forEach(queries::add);
+        List<EmbeddingMatch<TextSegment>> allMatches = new ArrayList<>();
+        for (String query : queries.stream().limit(MAX_QUERIES).toList()) {
+            allMatches.addAll(vectorMemoryService.searchMatches(query, topK, minScore, tenantId, userId, sourceTypes));
+        }
+        // 同一向量空间的分数可比较；同一物理记录保留最优命中，随后只进行一次双通道 RRF。
+        Map<String, EmbeddingMatch<TextSegment>> unique = new LinkedHashMap<>();
+        allMatches.stream().sorted(Comparator.comparingDouble((EmbeddingMatch<TextSegment> match) -> match.score()).reversed())
+                .forEach(match -> unique.putIfAbsent(match.embeddingId(), match));
+        return unique.values().stream().limit(topK).toList();
     }
 
     private int sizeOf(List<?> values) {

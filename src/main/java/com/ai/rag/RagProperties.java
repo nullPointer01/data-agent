@@ -28,6 +28,37 @@ public class RagProperties {
 
     private BenchmarkProperties benchmark = new BenchmarkProperties();
 
+    private QueryProperties query = new QueryProperties();
+
+    public QueryProperties getQuery() { return query; }
+    public void setQuery(QueryProperties query) { this.query = query; }
+
+    /** 查询变换开关是执行策略；实际模型仍由受治理模型注册中心选择。 */
+    public static class QueryProperties {
+        private boolean compressionEnabled = true;
+        private boolean expansionEnabled = false;
+        private String modelId = "";
+        private int maxQueries = 3;
+        private int maxQueryChars = 6000;
+
+        public boolean isCompressionEnabled() { return compressionEnabled; }
+        public void setCompressionEnabled(boolean value) { compressionEnabled = value; }
+        public boolean isExpansionEnabled() { return expansionEnabled; }
+        public void setExpansionEnabled(boolean value) { expansionEnabled = value; }
+        public String getModelId() { return modelId; }
+        public void setModelId(String value) { modelId = value == null ? "" : value.strip(); }
+        public int getMaxQueries() { return maxQueries; }
+        public void setMaxQueries(int value) {
+            if (value < 2 || value > 4) throw new IllegalArgumentException("max-queries 必须在 2 到 4 之间");
+            maxQueries = value;
+        }
+        public int getMaxQueryChars() { return maxQueryChars; }
+        public void setMaxQueryChars(int value) {
+            if (value < 1 || value > 10000) throw new IllegalArgumentException("max-query-chars 必须在 1 到 10000 之间");
+            maxQueryChars = value;
+        }
+    }
+
     public boolean isEnabled() {
         return enabled;
     }

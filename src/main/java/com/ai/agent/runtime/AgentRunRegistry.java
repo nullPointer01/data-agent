@@ -41,6 +41,14 @@ public class AgentRunRegistry {
         }
     }
 
+    /** 规划到执行的上下文切换必须保留同一个控制器，取消与切换并发时不丢失取消状态。 */
+    public void bindRoute(AgentRunContext planning, AgentRunContext resolved) {
+        if (!planning.runId().equals(resolved.runId()) || planning.control() != resolved.control()
+                || !activeRuns.replace(planning.runId(), planning, resolved)) {
+            throw new IllegalStateException("绑定运行路线失败");
+        }
+    }
+
     /**
      * 由系统生命周期事件取消运行，不执行用户身份判断。
      *

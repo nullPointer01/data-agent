@@ -1,5 +1,8 @@
 package com.ai.service.knowledge;
 
+import com.ai.indexing.IndexTask;
+import com.ai.indexing.IndexTaskStore;
+
 import com.ai.service.file.FileParserService;
 
 import com.ai.service.VectorMemoryService;
@@ -17,7 +20,7 @@ import com.ai.knowledge.dto.KnowledgeStatsResponse;
 import com.ai.model.KnowledgeEntry;
 import com.ai.rag.retrieval.HybridRetriever;
 import com.ai.rag.RagQueryAnalysis;
-import com.ai.rag.RagQueryRewriter;
+import com.ai.rag.RagQueryTransformer;
 import com.ai.rag.RagReranker;
 import com.ai.rag.retrieval.RetrievalResult;
 import com.ai.repository.KnowledgeEntryRepository;
@@ -26,7 +29,7 @@ import com.ai.vector.VectorDocumentTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
@@ -59,30 +62,33 @@ public class KnowledgeService {
     private final SecurityContextHelper securityContextHelper;
     private final FileParserService fileParserService;
     private final KnowledgeVectorIndexService knowledgeVectorIndexService;
-    private final KnowledgeVectorEventPublisher knowledgeVectorEventPublisher;
+    private final KnowledgeIndexScheduler knowledgeIndexScheduler;
     private final HybridRetriever hybridRetriever;
-    private final RagQueryRewriter ragQueryRewriter;
+    private final RagQueryTransformer ragQueryTransformer;
     private final RagReranker ragReranker;
+    private final IndexTaskStore indexTasks;
+    private final TransactionTemplate transactions;
 
     public KnowledgeService(KnowledgeEntryRepository knowledgeRepository,
             SecurityContextHelper securityContextHelper,
             FileParserService fileParserService,
             KnowledgeVectorIndexService knowledgeVectorIndexService,
-            KnowledgeVectorEventPublisher knowledgeVectorEventPublisher,
+            KnowledgeIndexScheduler knowledgeIndexScheduler,
             HybridRetriever hybridRetriever,
-            RagQueryRewriter ragQueryRewriter,
-            RagReranker ragReranker) {
+            RagQueryTransformer ragQueryTransformer,
+            RagReranker ragReranker, IndexTaskStore indexTasks, TransactionTemplate transactions) {
         this.knowledgeRepository = knowledgeRepository;
         this.securityContextHelper = securityContextHelper;
         this.fileParserService = fileParserService;
         this.knowledgeVectorIndexService = knowledgeVectorIndexService;
-        this.knowledgeVectorEventPublisher = knowledgeVectorEventPublisher;
+        this.knowledgeIndexScheduler = knowledgeIndexScheduler;
         this.hybridRetriever = hybridRetriever;
-        this.ragQueryRewriter = ragQueryRewriter;
+        this.ragQueryTransformer = ragQueryTransformer;
         this.ragReranker = ragReranker;
+        this.indexTasks = indexTasks;
+        this.transactions = transactions;
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public KnowledgeBatchUploadResponse batchUploadAndIndex(List<MultipartFile> files) {
         int success = 0;
         int failed = 0;
@@ -102,7 +108,6 @@ public class KnowledgeService {
         return new KnowledgeBatchUploadResponse(true, files.size(), success, failed, results);
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public KnowledgeMutationResponse uploadAndIndex(MultipartFile file, String name, String description) {
         try {
             String filename = getOriginalFilename(file);
@@ -121,8 +126,7 @@ public class KnowledgeService {
                     SOURCE_TYPE_FILE,
                     filename);
             int chunkCount = refreshChunkMetadata(entry, content);
-            knowledgeRepository.saveAndFlush(entry);
-            knowledgeVectorEventPublisher.publishIndex(entry);
+            saveAndSchedule(entry);
 
             LOGGER.info("Knowledge saved and indexing scheduled: {} ({} chunks, {} chars)",
                     displayName, chunkCount, content.length());
@@ -135,7 +139,6 @@ public class KnowledgeService {
         }
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public KnowledgeMutationResponse addTextKnowledge(String name, String content, String description) {
         try {
             String knowledgeId = UUID.randomUUID().toString();
@@ -149,8 +152,7 @@ public class KnowledgeService {
                     SOURCE_TYPE_TEXT,
                     null);
             int chunkCount = refreshChunkMetadata(entry, content);
-            knowledgeRepository.saveAndFlush(entry);
-            knowledgeVectorEventPublisher.publishIndex(entry);
+            saveAndSchedule(entry);
 
             LOGGER.info("Text knowledge saved and indexing scheduled: {} ({} chunks)", displayName, chunkCount);
 
@@ -162,19 +164,48 @@ public class KnowledgeService {
         }
     }
 
+    /** 每个文件独立提交主数据和任务；异常先回滚，再转换为用户可读结果。 */
+    private void saveAndSchedule(KnowledgeEntry entry) {
+        transactions.executeWithoutResult(status -> {
+            knowledgeRepository.saveAndFlush(entry);
+            knowledgeIndexScheduler.schedule(entry);
+        });
+    }
+
     public KnowledgeListResponse listKnowledge() {
         String tenantId = securityContextHelper.getCurrentTenantId();
         String userId = securityContextHelper.getCurrentUserId();
         List<KnowledgeEntry> entries = knowledgeRepository
                 .findByTenantIdAndCreatedByOrderByCreatedAtDesc(tenantId, userId);
+        var statuses = indexTasks.statuses(tenantId,userId);
         List<KnowledgeItemResponse> list = entries.stream()
-                .map(KnowledgeItemResponse::from)
+                .map(entry -> KnowledgeItemResponse.from(entry, statuses.getOrDefault(entry.getKnowledgeId(),
+                        IndexTask.Status.unknown())))
                 .collect(Collectors.toList());
 
         return new KnowledgeListResponse(true, list, list.size());
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    public Map<String, IndexTask.Status> indexTaskStatuses() {
+        return indexTasks.statuses(securityContextHelper.getCurrentTenantId(),securityContextHelper.getCurrentUserId());
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public KnowledgeMutationResponse retryIndex(String knowledgeId) {
+        String tenant = securityContextHelper.getCurrentTenantId();
+        String user = securityContextHelper.getCurrentUserId();
+        if (!indexTasks.statuses(tenant, user).containsKey(knowledgeId)) {
+            var entry = findCurrentTenantKnowledge(knowledgeId);
+            if (entry.isEmpty()) return KnowledgeMutationResponse.failure("知识条目不存在");
+            knowledgeIndexScheduler.schedule(entry.get());
+            return KnowledgeMutationResponse.success("历史知识索引任务已提交");
+        }
+        boolean queued=indexTasks.retryKnowledge(securityContextHelper.getCurrentTenantId(),
+                securityContextHelper.getCurrentUserId(),knowledgeId);
+        return queued ? KnowledgeMutationResponse.success("索引重试已提交")
+                : KnowledgeMutationResponse.failure("没有可重试的索引任务");
+    }
+
     public KnowledgeMutationResponse deleteKnowledge(String knowledgeId) {
         Optional<KnowledgeEntry> entryOptional = findCurrentTenantKnowledge(knowledgeId);
         if (entryOptional.isEmpty()) {
@@ -183,8 +214,10 @@ public class KnowledgeService {
         KnowledgeEntry entry = entryOptional.get();
 
         try {
-            knowledgeRepository.delete(entry);
-            knowledgeVectorEventPublisher.publishDelete(entry);
+            transactions.executeWithoutResult(status -> {
+                knowledgeRepository.delete(entry);
+                knowledgeIndexScheduler.schedule(entry);
+            });
             LOGGER.info("Knowledge deleted: {}", knowledgeId);
             return KnowledgeMutationResponse.success("知识条目已删除");
         } catch (Exception e) {
@@ -216,7 +249,6 @@ public class KnowledgeService {
         return KnowledgeDetailEnvelope.success(KnowledgeDetailResponse.from(entryOptional.get()));
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public KnowledgeMutationResponse updateKnowledge(String knowledgeId, String name, String content,
             String description) {
         Optional<KnowledgeEntry> entryOptional = findCurrentTenantKnowledge(knowledgeId);
@@ -233,8 +265,7 @@ public class KnowledgeService {
             }
             int chunkCount = refreshChunkMetadata(entry, content);
 
-            knowledgeRepository.saveAndFlush(entry);
-            knowledgeVectorEventPublisher.publishReindex(entry);
+            saveAndSchedule(entry);
             LOGGER.info("Knowledge updated and reindexing scheduled: {} ({} chunks, {} chars)",
                     entry.getName(), chunkCount, content.length());
 
@@ -252,7 +283,7 @@ public class KnowledgeService {
         if (tenantId == null || tenantId.isBlank() || userId == null || userId.isBlank()) {
             return KnowledgeSearchResponse.empty("未找到相关知识");
         }
-        RagQueryAnalysis analysis = ragQueryRewriter.analyze(query);
+        RagQueryAnalysis analysis = ragQueryTransformer.analyze(query);
         if (analysis.rewrittenQuery().isBlank()) {
             return KnowledgeSearchResponse.empty("未找到相关知识");
         }

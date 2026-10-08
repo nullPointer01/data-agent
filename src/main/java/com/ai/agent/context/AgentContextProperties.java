@@ -31,6 +31,12 @@ public class AgentContextProperties {
     private int protectedRecentMessages = 4;
 
     private Map<String, Integer> modelWindowOverrides = new LinkedHashMap<>();
+    private Map<String, String> modelTokenizers = new LinkedHashMap<>();
+
+    public Map<String, String> getModelTokenizers() { return modelTokenizers; }
+    public void setModelTokenizers(Map<String, String> values) {
+        modelTokenizers = values == null ? new LinkedHashMap<>() : new LinkedHashMap<>(values);
+    }
 
     private final Compaction compaction = new Compaction();
 
@@ -135,7 +141,7 @@ public class AgentContextProperties {
     }
 
     /**
-     * 上下文压缩开关。第一版只允许显式开启，模型摘要默认关闭。
+     * 上下文裁剪开关。应用配置开启完整轮次裁剪，模型摘要保持关闭。
      */
     public static class Compaction {
 

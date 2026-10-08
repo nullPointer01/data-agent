@@ -45,21 +45,15 @@ public class FileProcessingServiceImpl implements FileProcessingService {
 
     private final FileStorageService fileStorageService;
     private final FileMetadataLifecycleService metadataLifecycleService;
-    private final FileProcessingSubmissionService submissionService;
-    private final FileVectorCleanupService vectorCleanupService;
     private final MeterRegistry meterRegistry;
     private final AuditLogService auditLogService;
 
     public FileProcessingServiceImpl(FileStorageService fileStorageService,
             FileMetadataLifecycleService metadataLifecycleService,
-            FileProcessingSubmissionService submissionService,
-            FileVectorCleanupService vectorCleanupService,
             MeterRegistry meterRegistry,
             AuditLogService auditLogService) {
         this.fileStorageService = fileStorageService;
         this.metadataLifecycleService = metadataLifecycleService;
-        this.submissionService = submissionService;
-        this.vectorCleanupService = vectorCleanupService;
         this.meterRegistry = meterRegistry;
         this.auditLogService = auditLogService;
     }
@@ -91,11 +85,6 @@ public class FileProcessingServiceImpl implements FileProcessingService {
                     "文件已上传并进入后台处理: " + storedFile.filename());
             LOGGER.info("File upload accepted: {}, tenant: {}", storedFile.filename(), metadata.getTenantId());
 
-            FileProcessingSubmissionResult submission = submissionService.submit(metadata);
-            if (!submission.accepted()) {
-                return FileResponse.failure(fileId, submission.message());
-            }
-
             return FileResponse.accepted(metadata, "文件已上传，正在后台处理");
         } catch (Exception e) {
             cleanupUntrackedFile(storedFile, metadata);
@@ -126,7 +115,6 @@ public class FileProcessingServiceImpl implements FileProcessingService {
         try {
             fileStorageService.delete(metadata.getPath());
             metadataLifecycleService.delete(metadata);
-            vectorCleanupService.removeFileVectors(fileId, metadata.getTenantId());
             meterRegistry.counter(METRIC_FILE_DELETE_TOTAL, TAG_STATUS, STATUS_SUCCESS).increment();
             auditLogService.record(ACTION_FILE_DELETE, RESOURCE_TYPE_FILE, fileId, AUDIT_STATUS_SUCCESS,
                     "文件删除成功: " + metadata.getFilename());

@@ -114,10 +114,17 @@ function timelineEvent(event) {
 
   switch (event.type) {
     case 'run_started':
-      return { ...common, title: '运行已开始', summary: `执行模式：${event.mode || 'AUTO'}` };
+      return { ...common, title: '运行已开始', summary: event.mode === 'PLANNING' ? '正在理解请求并规划执行方式' : `执行模式：${event.mode || 'AUTO'}` };
     case 'rag_context':
       return { ...common, title: '知识检索', summary: describeRetrieval(event) };
     case 'thinking_start':
+      if (event.engine === 'SUPERVISOR') {
+        return {
+          ...common,
+          title: event.stage === 'executor' ? '执行协作任务' : '规划专家协作',
+          summary: event.stage === 'executor' ? '正在执行已分配的任务' : '正在选择下一位执行者'
+        };
+      }
       return {
         ...common,
         title: `执行第 ${numberOrZero(event.iteration) || 1} 轮`,

@@ -33,6 +33,11 @@ public class AgentDurableRunStore {
     }
 
     @Transactional
+    public boolean bindMode(String runId, com.ai.agent.runtime.AgentExecutionMode mode) {
+        return repository.bindMode(runId, mode) == 1;
+    }
+
+    @Transactional
     public AgentRunStateEntity create(AgentRunContext context) {
         if (!isEnabled()) {
             throw new IllegalStateException("持久化 Agent Runtime 未启用");

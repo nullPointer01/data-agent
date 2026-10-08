@@ -45,9 +45,18 @@ public final class AgentRunScope {
         if (context == null || supplier == null) {
             throw new IllegalArgumentException("Agent Run scope 参数不能为空");
         }
+        return bind(context, supplier);
+    }
+
+    /** 恢复没有 Run 的任务快照时，显式隔离回调线程上可能残留的另一运行。 */
+    public static <T> T without(Supplier<T> supplier) {
+        return bind(null, java.util.Objects.requireNonNull(supplier));
+    }
+
+    private static <T> T bind(AgentRunContext context, Supplier<T> supplier) {
         AgentRunContext previous = CURRENT.get();
         try {
-            CURRENT.set(context);
+            restore(context);
             return supplier.get();
         } finally {
             restore(previous);

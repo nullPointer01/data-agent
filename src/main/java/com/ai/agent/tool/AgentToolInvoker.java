@@ -92,9 +92,10 @@ public class AgentToolInvoker {
         if (toolNames == null || toolNames.isEmpty()) {
             return List.of();
         }
-        return registry.specifications().stream()
-                .filter(specification -> registry.isEnabled(specification.name()))
-                .filter(specification -> toolNames.contains(specification.name()))
+        // 精确候选才触发远端规格发现，避免一次调用探测全部 MCP 服务。
+        return toolNames.stream().sorted().filter(registry::isEnabled)
+                .map(registry::find).flatMap(java.util.Optional::stream)
+                .map(AgentToolRegistry.RegisteredTool::specification)
                 .toList();
     }
 

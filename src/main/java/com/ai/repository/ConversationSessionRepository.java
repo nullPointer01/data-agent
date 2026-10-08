@@ -13,6 +13,14 @@ import java.util.Optional;
  */
 public interface ConversationSessionRepository extends JpaRepository<ConversationSessionEntity, String> {
 
+    /** 保存一轮消息时锁定所属会话，串行更新计数并保证同一 Run 重放不重复追加。 */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT s FROM ConversationSessionEntity s WHERE s.sessionId = :sessionId AND s.userId = :userId AND s.tenantId = :tenantId")
+    Optional<ConversationSessionEntity> findOwnedForUpdate(
+            @org.springframework.data.repository.query.Param("sessionId") String sessionId,
+            @org.springframework.data.repository.query.Param("userId") String userId,
+            @org.springframework.data.repository.query.Param("tenantId") String tenantId);
+
     /**
      * 查询某个用户拥有的会话。
      *

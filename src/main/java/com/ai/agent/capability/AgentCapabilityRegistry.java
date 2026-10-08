@@ -76,7 +76,9 @@ public class AgentCapabilityRegistry {
         Map<String, AgentCapabilityDescriptor> registered = new LinkedHashMap<>();
         toolRegistry.registeredToolNames().stream()
                 .filter(name -> !AgentTools.isCapabilityAdapter(name))
+                .filter(name -> toolRegistry.isVisibleToTenant(name, tenantId))
                 .sorted()
+                .map(toolRegistry::find).flatMap(Optional::stream)
                 .map(this::toolDescriptor)
                 .forEach(descriptor -> register(registered, descriptor));
         visibleSkills(tenantId).stream()
@@ -118,10 +120,9 @@ public class AgentCapabilityRegistry {
         }
     }
 
-    private AgentCapabilityDescriptor toolDescriptor(String name) {
-        AgentToolRegistry.RegisteredTool registered = toolRegistry.find(name)
-                .orElseThrow(() -> new IllegalStateException("工具注册信息不存在: " + name));
+    private AgentCapabilityDescriptor toolDescriptor(AgentToolRegistry.RegisteredTool registered) {
         ToolSpecification specification = registered.specification();
+        String name = specification.name();
         AgentToolDescriptor governance = registered.descriptor();
         boolean enabled = toolRegistry.isEnabled(name);
         boolean riskAllowed = governance.risk().ordinal() <= toolGovernanceProperties.getMaxRisk().ordinal();
@@ -244,7 +245,8 @@ public class AgentCapabilityRegistry {
     private AgentCapabilityDescriptor.RiskMetadata toolRisk(AgentToolDescriptor tool) {
         return new AgentCapabilityDescriptor.RiskMetadata(
                 mapRisk(tool.risk()), tool.readOnly(), tool.idempotent(),
-                tool.approvalRequired(), false, "DECLARED_TOOL_POLICY");
+                tool.approvalRequired(), toolRegistry.isExternal(tool.name()),
+                toolRegistry.isExternal(tool.name()) ? "LOCAL_MCP_POLICY" : "DECLARED_TOOL_POLICY");
     }
 
     private boolean toolAllowedByRuntimePolicy(String toolName) {

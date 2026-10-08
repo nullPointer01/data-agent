@@ -24,22 +24,9 @@ public class AsyncConfig {
         return new ContextPropagatingTaskDecorator();
     }
 
-    @Bean(name = "fileProcessingExecutor")
-    public Executor fileProcessingExecutor(
-            @Value("${app.file-processing.core-pool-size:2}") int corePoolSize,
-            @Value("${app.file-processing.max-pool-size:4}") int maxPoolSize,
-            @Value("${app.file-processing.queue-capacity:100}") int queueCapacity,
-            TaskDecorator taskDecorator) {
-        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "file-processing-", taskDecorator);
-    }
-
-    @Bean(name = "knowledgeVectorExecutor")
-    public Executor knowledgeVectorExecutor(
-            @Value("${app.knowledge-vector.core-pool-size:1}") int corePoolSize,
-            @Value("${app.knowledge-vector.max-pool-size:2}") int maxPoolSize,
-            @Value("${app.knowledge-vector.queue-capacity:100}") int queueCapacity,
-            TaskDecorator taskDecorator) {
-        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "knowledge-vector-", taskDecorator);
+    @Bean(name = "indexTaskExecutor")
+    public Executor indexTaskExecutor(TaskDecorator taskDecorator) {
+        return buildExecutor(2, 2, 10, "index-task-", taskDecorator);
     }
 
     @Bean(name = "sseExecutor")
@@ -54,6 +41,23 @@ public class AsyncConfig {
     @Bean(name = "memoryExtractionExecutor")
     public Executor memoryExtractionExecutor(TaskDecorator taskDecorator) {
         return buildExecutor(1, 2, 100, "memory-extraction-", taskDecorator);
+    }
+
+    /** MVC 订阅 Flux 后的 Servlet 写入仍可能阻塞，使用独立有界池，避免占用模型或 Run 启动池。 */
+    @Bean(name = "mvcStreamingExecutor")
+    public AsyncTaskExecutor mvcStreamingExecutor(TaskDecorator taskDecorator) {
+        return buildExecutor(2, 8, 100, "mvc-streaming-", taskDecorator);
+    }
+
+    /** 终态回调独立于可能等待工具/模型的 SSE worker，避免 ReAct 占满 SSE 池后形成相互等待。 */
+    @Bean(name = "modelCompletionExecutor")
+    public AsyncTaskExecutor modelCompletionExecutor(TaskDecorator taskDecorator) {
+        return buildExecutor(2, 4, 100, "model-completion-", taskDecorator);
+    }
+
+    @Bean(name = "modelInvocationExecutor")
+    public AsyncTaskExecutor modelInvocationExecutor(TaskDecorator taskDecorator) {
+        return buildExecutor(2, 8, 32, "model-invocation-", taskDecorator);
     }
 
     /**

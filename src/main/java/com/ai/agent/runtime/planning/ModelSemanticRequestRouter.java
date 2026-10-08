@@ -1,28 +1,16 @@
 package com.ai.agent.runtime.planning;
 
-import com.ai.mcp.McpModelService;
+import com.ai.mcp.StructuredAssistantFactory;
 import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.runtime.AgentRunTerminatedException;
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.cfg.CoercionAction;
-import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.type.LogicalType;
-import dev.langchain4j.model.chat.request.json.JsonArraySchema;
-import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import dev.langchain4j.model.chat.request.json.JsonSchema;
-import dev.langchain4j.model.chat.request.json.JsonStringSchema;
+import dev.langchain4j.service.UserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -38,61 +26,23 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelSemanticRequestRouter.class);
     private static final int MAX_REASON_CHARS = 200;
-    private static final int MAX_RESPONSE_CHARS = 8000;
     private static final int MAX_QUESTION_CHARS = 12000;
     private static final int MAX_CATALOG_ENTRIES = 64;
     private static final int MAX_INPUT_CHARS = 36000;
-    private static final JsonSchema DECISION_SCHEMA = decisionSchema();
-    private final McpModelService modelService;
+    private final StructuredAssistantFactory assistantFactory;
     private final ObjectMapper objectMapper;
-    private final ObjectReader decisionReader;
     private final AgentPlanningProperties properties;
 
-    public ModelSemanticRequestRouter(McpModelService modelService,
+    public ModelSemanticRequestRouter(StructuredAssistantFactory assistantFactory,
             ObjectMapper objectMapper, AgentPlanningProperties properties) {
-        this.modelService = modelService;
+        this.assistantFactory = assistantFactory;
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.decisionReader = strictDecisionReader();
     }
 
-    /**
-     * 七字段稳定合同交给厂商约束；动态工具权限、数量和置信度继续由服务端检查。
-     * 不把每次变化的工具目录放入 Schema，避免无谓增加厂商合同编译/缓存的开销。
-     */
-    private static JsonSchema decisionSchema() {
-        JsonObjectSchema root = JsonObjectSchema.builder()
-                .addEnumProperty("intent", Arrays.stream(RequestIntent.values()).map(Enum::name).toList())
-                .addEnumProperty("semanticMemory", Arrays.stream(ContextRequirement.values()).map(Enum::name).toList())
-                .addEnumProperty("knowledgeBase", Arrays.stream(ContextRequirement.values()).map(Enum::name).toList())
-                .addStringProperty("retrievalQuery")
-                .addNumberProperty("confidence")
-                .addStringProperty("reason")
-                .addProperty("candidateTools", JsonArraySchema.builder().items(new JsonStringSchema()).build())
-                .required("intent", "semanticMemory", "knowledgeBase", "retrievalQuery",
-                        "confidence", "reason", "candidateTools")
-                .additionalProperties(false)
-                .build();
-        return JsonSchema.builder().name("agent_request_decision").rootElement(root).build();
-    }
-
-    /** JSON 仅是传输协议；使用类型合同解析，禁止默认类型转换把错误输出变成有效决策。 */
-    private static ObjectReader strictDecisionReader() {
-        JsonMapper mapper = JsonMapper.builder()
-                .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-                .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
-                        DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES,
-                        DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES,
-                        DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
-                .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
-                .build();
-        mapper.coercionConfigFor(LogicalType.Textual)
-                .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
-                .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
-                .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail);
-        return mapper.readerFor(Decision.class);
+    /** 框架以 Decision 生成 JSON Schema，服务端只保留动态授权与业务语义校验。 */
+    public interface PlanningAssistant {
+        Decision decide(@UserMessage String prompt);
     }
 
     /** 规划调用统一经过模型服务，保留用户配额、重试和模型日志治理。 */
@@ -115,13 +65,12 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
             String modelId = StringUtils.hasText(properties.getModelId())
                     ? properties.getModelId() : input.agentModelId();
             attempted = true;
-            String response = switch (properties.getResponseFormat()) {
-                case JSON_SCHEMA -> modelService.callModelStructured(prompt, modelId, DECISION_SCHEMA);
-                case JSON_OBJECT -> modelService.callModelJson(prompt, modelId);
-            };
-            // 模型服务可能把调用异常转换成文本；仍需传播子 Agent 的根 Run 取消或预算终止。
+            Decision decision = assistantFactory.create(PlanningAssistant.class, Decision.class, modelId,
+                    true, properties.getResponseFormat() == AgentPlanningProperties.OutputFormat.JSON_SCHEMA)
+                    .decide(prompt);
+            // 子 Agent 规划共享根 Run，取消或预算耗尽不能降级为继续回答。
             AgentRunScope.current().ifPresent(context -> context.control().ensureActive());
-            return new Result(parseDecision(response, input), true, elapsedMillis(startedAt));
+            return new Result(validateDecision(decision, input), true, elapsedMillis(startedAt));
         } catch (AgentRunTerminatedException terminated) {
             // 子 Agent 的 Router 也受根 Run 控制；预算耗尽或取消不能被解释成可继续回答的规划失败。
             throw terminated;
@@ -136,11 +85,7 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
         return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
     }
 
-    private Optional<Decision> parseDecision(String response, Input input) throws JsonProcessingException {
-        if (response == null || response.length() > MAX_RESPONSE_CHARS) {
-            throw new IllegalArgumentException("Router 响应为空或超长");
-        }
-        Decision decision = decisionReader.readValue(response);
+    private Optional<Decision> validateDecision(Decision decision, Input input) {
         if (decision == null) {
             throw new IllegalArgumentException("Router 决策不能为空");
         }

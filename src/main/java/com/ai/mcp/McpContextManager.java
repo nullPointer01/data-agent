@@ -24,6 +24,9 @@ public class McpContextManager {
     private static final String CONTEXT_EXPIRED_LOG = "Context expired: {}";
 
     private final Map<String, McpContext> contexts = new ConcurrentHashMap<>();
+    private final TokenMonitor tokenMonitor;
+
+    public McpContextManager(TokenMonitor tokenMonitor) { this.tokenMonitor = tokenMonitor; }
 
     /**
      * 为一次 Skill 执行创建有超时回收的对话窗口。
@@ -32,7 +35,7 @@ public class McpContextManager {
      */
     public String createContext() {
         String contextId = UUID.randomUUID().toString();
-        McpContext context = new McpContext(contextId);
+        McpContext context = new McpContext(contextId, tokenMonitor);
         contexts.put(contextId, context);
         LOGGER.debug("Context created: {}", contextId);
         return contextId;

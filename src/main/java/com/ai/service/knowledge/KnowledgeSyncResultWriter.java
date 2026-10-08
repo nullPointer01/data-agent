@@ -20,20 +20,20 @@ public class KnowledgeSyncResultWriter {
     private final KnowledgeSyncConfigRepository syncConfigRepository;
     private final KnowledgeEntryRepository knowledgeEntryRepository;
     private final KnowledgeVectorIndexService knowledgeVectorIndexService;
-    private final KnowledgeVectorEventPublisher knowledgeVectorEventPublisher;
+    private final KnowledgeIndexScheduler knowledgeIndexScheduler;
     private final KnowledgeSyncSecurityService securityService;
     private final TransactionTemplate transactionTemplate;
 
     public KnowledgeSyncResultWriter(KnowledgeSyncConfigRepository syncConfigRepository,
             KnowledgeEntryRepository knowledgeEntryRepository,
             KnowledgeVectorIndexService knowledgeVectorIndexService,
-            KnowledgeVectorEventPublisher knowledgeVectorEventPublisher,
+            KnowledgeIndexScheduler knowledgeIndexScheduler,
             KnowledgeSyncSecurityService securityService,
             TransactionTemplate transactionTemplate) {
         this.syncConfigRepository = syncConfigRepository;
         this.knowledgeEntryRepository = knowledgeEntryRepository;
         this.knowledgeVectorIndexService = knowledgeVectorIndexService;
-        this.knowledgeVectorEventPublisher = knowledgeVectorEventPublisher;
+        this.knowledgeIndexScheduler = knowledgeIndexScheduler;
         this.securityService = securityService;
         this.transactionTemplate = transactionTemplate;
     }
@@ -54,7 +54,7 @@ public class KnowledgeSyncResultWriter {
 
             updateKnowledgeEntry(entry, content);
             updateSyncConfig(config);
-            knowledgeVectorEventPublisher.publishReindex(entry);
+            knowledgeIndexScheduler.schedule(entry);
             return "同步成功，向量索引任务已提交，内容长度: " + content.length() + " 字符";
         });
     }

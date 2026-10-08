@@ -1,6 +1,7 @@
 package com.ai.agent.runtime;
 
 import com.ai.model.AnalysisResponse;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Chat、ReAct 与 Orchestrated 共用的执行策略合同。
@@ -24,6 +25,11 @@ public interface AgentExecutionStrategy {
      * @return 策略执行结果
      */
     Result execute(AgentRunContext context, AgentRunRoute route);
+
+    /** 可恢复工具循环保留同步实现；普通聊天覆盖此方法，返回模型异步完成阶段。 */
+    default CompletableFuture<Result> executeAsync(AgentRunContext context, AgentRunRoute route) {
+        return CompletableFuture.completedFuture(execute(context, route));
+    }
 
     /**
      * 策略返回的响应与过程事件状态。

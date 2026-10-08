@@ -18,7 +18,6 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import org.springframework.stereotype.Component;
@@ -32,7 +31,6 @@ import java.util.Set;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.stream.Collectors;
 
 /**
  * 所有 Agent 模型调用共享的上下文准入边界。
@@ -167,9 +165,9 @@ public class AgentContextGovernor {
                 - properties.getSafetyMarginTokens());
         long runInputLimit = Math.max(0L, runRemaining - properties.getReservedOutputTokens());
         long inputLimit = Math.min(modelInputLimit, runInputLimit);
-        List<PlannedMessage> plannedMessages = planMessages(messages);
+        List<PlannedMessage> plannedMessages = planMessages(messages, modelId);
         long messageTokens = plannedMessages.stream().mapToLong(PlannedMessage::estimatedTokens).sum();
-        long toolTokens = estimateToolTokens(toolSpecifications);
+        long toolTokens = estimateToolTokens(toolSpecifications, modelId);
         return new AgentContextPlan(
                 plannedMessages,
                 messageTokens,
@@ -182,7 +180,7 @@ public class AgentContextGovernor {
                 properties.getCompaction().isEnabled());
     }
 
-    private List<PlannedMessage> planMessages(List<ChatMessage> messages) {
+    private List<PlannedMessage> planMessages(List<ChatMessage> messages, String modelId) {
         List<Set<ProtectionReason>> protections = new ArrayList<>(messages.size());
         for (int index = 0; index < messages.size(); index++) {
             protections.add(EnumSet.noneOf(ProtectionReason.class));
@@ -196,7 +194,7 @@ public class AgentContextGovernor {
         for (int index = 0; index < messages.size(); index++) {
             ChatMessage message = messages.get(index);
             planned.add(new PlannedMessage(index, messageKind(message),
-                    tokenMonitor.estimateTokens(extractMessageText(message)), protections.get(index)));
+                    tokenMonitor.estimateMessage(message, modelId), protections.get(index)));
         }
         return List.copyOf(planned);
     }
@@ -286,13 +284,13 @@ public class AgentContextGovernor {
         return Math.max(0L, context.control().getLimits().maxTokens() - snapshot.tokens());
     }
 
-    private long estimateToolTokens(List<ToolSpecification> toolSpecifications) {
+    private long estimateToolTokens(List<ToolSpecification> toolSpecifications, String modelId) {
         if (toolSpecifications == null || toolSpecifications.isEmpty()) {
             return 0L;
         }
         return toolSpecifications.stream()
                 .map(String::valueOf)
-                .mapToLong(tokenMonitor::estimateTokens)
+                .mapToLong(text -> tokenMonitor.estimateTokens(text,modelId))
                 .sum();
     }
 
@@ -362,26 +360,6 @@ public class AgentContextGovernor {
         return MessageKind.OTHER;
     }
 
-    private String extractMessageText(ChatMessage message) {
-        if (message instanceof UserMessage userMessage) {
-            return userMessage.contents().stream()
-                    .filter(TextContent.class::isInstance)
-                    .map(TextContent.class::cast)
-                    .map(TextContent::text)
-                    .collect(Collectors.joining("\n"));
-        }
-        if (message instanceof SystemMessage systemMessage) {
-            return systemMessage.text();
-        }
-        if (message instanceof AiMessage aiMessage) {
-            String text = aiMessage.text() == null ? "" : aiMessage.text();
-            return text + aiMessage.toolExecutionRequests();
-        }
-        if (message instanceof ToolExecutionResultMessage toolResultMessage) {
-            return toolResultMessage.text();
-        }
-        return String.valueOf(message);
-    }
 
     /**
      * 上下文准入后的不可变调用数据。

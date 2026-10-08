@@ -6,9 +6,11 @@ Data Agent 的 RAG 同时解决两类召回问题：Milvus 向量检索负责语
 
 ## 入库链路
 
+知识增删改和文件创建/删除先将主数据和 `index_task` 同事务保存，再由原有后台任务读取最新正文。RagDocumentIndexer 一次分块驱动两边索引；“已保存”不等于“已就绪”，以任务目标版本和状态为准。详见[中文检索与索引维护](./中文检索与索引维护.md)。
+
 ```text
 知识/文件正文
-  -> TextChunker 结构化分块
+  -> TextChunker：章节适配 + LangChain4j 递归分块 + 原文位置/父级范围
   -> 固定 api Embedding Profile + 启动真实维度探测
   -> 串行受控批次
   -> query/document 用途格式化
@@ -16,10 +18,12 @@ Data Agent 的 RAG 同时解决两类召回问题：Milvus 向量检索负责语
   -> 整批数量、非空和维度校验
   -> Milvus addAll + 主键数量校验
   -> 版本化 Milvus 向量索引
-  -> Elasticsearch data-agent-rag-v2 Chunk 索引
+  -> Elasticsearch data-agent-rag-v3 ICU Chunk 索引（与 Milvus 使用同一次分块）
 ```
 
-Embedding 推理只通过外部 OpenAI-compatible 服务完成，Java 进程不加载本地模型。`EMBEDDING_API_BASE_URL`、`EMBEDDING_MODEL_NAME` 和 `EMBEDDING_DIMENSION` 必须显式配置，内网无鉴权端点的 API Key 可以为空。服务不可用时明确失败，不回退本地模型。
+分块使用官方段落/行/中文句界/英文句子/词/字符 splitter 组合，公开配置 `app.vector.chunk-size=500`、`chunk-overlap=100`；按字符而非 Token，重叠遵循框架完整句子上限。项目仅保留章节/结构标签、原文位置与父级范围，删除旧手写 SemanticChunker 链。历史索引需重新索引才采用新分块，学习和限制见 [文档分块与框架适配](./文档分块与框架适配.md)。
+
+Embedding 推理只通过外部 OpenAI-compatible 服务完成，Java 进程不加载本地 Embedding 模型。`EMBEDDING_API_BASE_URL`、`EMBEDDING_MODEL_NAME` 和 `EMBEDDING_DIMENSION` 必须显式配置，内网无鉴权端点的 API Key 可以为空。服务不可用时明确失败，不回退本地模型。
 
 `EMBEDDING_DIMENSION` 是 Profile、返回校验和 Milvus Schema 使用的期望维度。`EMBEDDING_API_OUTPUT_DIMENSIONS` 是可选的请求字段，只在兼容服务明确支持 `dimensions` 裁剪时配置；留空时客户端不发送该字段，配置时必须为正数且等于期望维度。即使发送了请求维度，返回后仍逐向量校验。
 
@@ -35,22 +39,22 @@ Embedding Profile 是向量索引的唯一身份契约，包含固定 provider `
 
 Milvus 配置只保留逻辑基础名称和索引类型。物理 Collection 名自动包含 provider、模型、维度、Metric 和索引版本，长度超限时使用 SHA-256 摘要稳定截断。向量元数据同时保存这五项身份字段，用于追查向量来源；Collection 隔离负责从物理上阻止不同模型或版本混写。
 
-Elasticsearch 使用显式 Mapping：
+Elasticsearch 使用 strict 显式 Mapping，文本入库/查询统一采用官方 ICU analyzer；首次和周期使用校验节点插件、字段类型及版本，旧索引不能仅凭存在就继续使用：
 
 - `tenantId`、`userId`、`sourceType`、`sourceId`、`chunkId`、`parentChunkId`：`keyword`
 - `title`、`content`、`sectionPath`、`parentContext`：`text`
 - 字符位置：`integer`
 - 表格、代码、列表标志：`boolean`
 
-写入或删除 ES 索引失败会向上抛出，不允许仅记录日志后把入库标记成成功。Milvus 与 ES 的跨存储原子双写尚未实现，补偿重放属于后续索引治理范围。
+写入或删除 ES 索引失败会向上抛出，不允许仅记录日志后把入库标记成成功。Milvus 与 ES 的跨存储原子双写尚未实现；知识/文件任务支持持久重试、租约接管和按最新主数据重放。长期记忆重建只更新向量，使用相同持久任务入口。历史双索引尚未自动重建，维护流程见[中文检索与索引维护](./中文检索与索引维护.md)。
 
 ## 查询链路
 
 ```text
 query
-  -> RagQueryRewriter
-  -> Milvus Top20 + Elasticsearch BM25 Top20
-  -> RRF 融合候选
+  -> RagQueryTransformer：官方直通 / 显式历史补全 / 可选有界扩展
+  -> EmbeddingStoreContentRetriever（Milvus Top20）+ Elasticsearch BM25 Top20
+  -> LangChain4j ReciprocalRankFuser 融合候选
   -> HTTP Cross-Encoder 精排（失败时规则降级）
   -> Top6
   -> 父级上下文解析
@@ -59,6 +63,16 @@ query
 ```
 
 `candidateTopK=20` 是候选预算，不是正确率结论；最终 `topK=6` 用于控制进入模型的上下文数量。参数是否合理必须通过固定黄金集的 Recall@K、MRR、NDCG 和 P95 延迟对比确定。
+
+融合排序使用框架标准 RRF（k=60），`RrfFusionRanker` 负责把两路结果适配为框架 Content，以及保留来源、分块和父级元数据。同通道同分块只计一次；同正文不同文档不会被去重。现有 `score` 字段为按双路首位上界归一化的融合排名分，不是相关概率；不再额外混加向量与 BM25 原始分数。框架未暴露融合分数，因此业务层仅为接口投影计算这个分值，不另做排序。重排、阈值和黄金集应据此复验。
+
+`EnhancedRagPipeline` 通过请求级 `DefaultRetrievalAugmentor` 编排查询转换、单次混合召回、聚合精排；服务端闭包绑定 tenantId/userId，使用当前线程执行，不启用无界扇出。随后继续解析父级上下文、压缩和生成引用。
+
+向量召回实际使用官方 `EmbeddingStoreContentRetriever`，通过实现 EmbeddingModel/EmbeddingStore 的受治理 Gateway 保留查询用途、分数、物理 ID 和来源元数据。原 RagQueryRewriter 已删除：默认明确问题直接使用 DefaultQueryTransformer，不添加额外模型调用；显式可信历史用 CompressingQueryTransformer，可选扩展用 ExpandingQueryTransformer。上游 Router 已补全独立问题时不重复传历史。变体确实参与两路召回，向量侧顺序有界执行、按物理 ID 保留最佳分数，之后融合精排各一次。详见 [文档解析与框架检索](./文档解析与框架检索.md)。
+
+回答上下文通过 `DefaultContentInjector` 注入当前 UserMessage，并保留引用编号。知识预加载和 `searchKnowledge` 仍共用 `RagRetrievalService`；是否检索由请求计划决定，不能再给 AiServices 挂一个无条件检索器而造成重复召回。详见 [框架集成与消息生命周期](./框架集成与消息生命周期.md)。
+
+Embedding 与 Reranker 的重试和熔断均由 Resilience4j 2.4.0 执行；业务保留错误分类、Profile 隔离、配置、响应合同、指标和降级。重试后的逻辑结果只计一次熔断统计，取消/中断不计入厂商故障，半开只允许一个探测。
 
 `RagReranker` 通过厂商无关的 `RerankProvider` 调用兼容 `/v1/rerank` 的外部服务，默认模型为 `BAAI/bge-reranker-v2-m3`。它只把候选上限内的 `(query, chunk)` 发送给模型，校验返回索引是否越界、重复、缺失以及分数是否为有限值，再把分数映射回原候选；向量分数、BM25 分数和召回通道不会被覆盖。
 
@@ -120,6 +134,11 @@ BM25原始排名 ------+
 
 ## 更新记录
 
+- 2026-10-03：接入 ICU 严格索引契约和一次分块双索引，文件任务进入持久队列；历史部署/重建与真实效果待验。
+
+- 2026-09-30：文档通用分块迁移到官方递归 splitter；保留章节、原文引用位置和父上下文，修正 CRLF 位置与字符代理对边界，真实检索黄金集未重跑。
+
+- 2026-09-29：RRF 排名与上下文注入改用框架实现；43 项临时合同检查包含融合身份、重复候选与引用保留，真实黄金集未重跑。
 - 2026-09-02：删除 JPA 全文兜底，升级到 `data-agent-rag-v2` 显式 Mapping。
 - 2026-09-02：增加 Embedding Profile、启动维度探测和版本化 Milvus Collection。
 - 2026-09-02：增加真实黄金集加载、四阶段排名证据和管理员批量评测报告。

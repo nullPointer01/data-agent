@@ -43,7 +43,7 @@ public class ReActWorkingMemoryService {
      * @param question 用户问题
      */
     public void recordStart(String sessionId, String question) {
-        if (!StringUtils.hasText(sessionId)) {
+        if (!properties.isWorkingMemoryEnabled() || !StringUtils.hasText(sessionId)) {
             return;
         }
         try {
@@ -58,22 +58,17 @@ public class ReActWorkingMemoryService {
      * 记录单轮迭代状态。
      *
      * @param sessionId 会话编号
-     * @param question 用户问题
      * @param iteration 当前迭代编号
-     * @param modelOutput 模型输出
-     * @param stepResult 循环步骤结果
-     * @param partialAnswer 当前部分答案
+     * @param activity 安全的阶段摘要，不含模型原文或工具原始参数
      */
-    public void recordIteration(String sessionId, String question, int iteration,
-            String modelOutput, ReActLoopStepResult stepResult, String partialAnswer) {
-        if (!StringUtils.hasText(sessionId)) {
+    public void recordIteration(String sessionId, int iteration, String activity) {
+        if (!properties.isWorkingMemoryEnabled() || !StringUtils.hasText(sessionId)) {
             return;
         }
         try {
             StringBuilder content = new StringBuilder();
             content.append("迭代: ").append(iteration).append('\n');
-            content.append("最近模型输出: ").append(modelOutput == null ? "" : modelOutput).append('\n');
-            content.append("当前答案: ").append(partialAnswer == null ? "" : partialAnswer);
+            content.append("执行阶段: ").append(activity == null ? "" : activity);
             memoryManager.saveWorkingMemory(sessionId, content.toString());
         } catch (Exception e) {
             LOGGER.warn("记录 ReAct 迭代状态失败: {}", e.getMessage());
@@ -91,7 +86,7 @@ public class ReActWorkingMemoryService {
      * @param answer 最终答案
      */
     public void recordFailure(String sessionId, String question, int iterations) {
-        if (!StringUtils.hasText(sessionId)) {
+        if (!properties.isWorkingMemoryEnabled() || !StringUtils.hasText(sessionId)) {
             return;
         }
         try {
@@ -103,7 +98,7 @@ public class ReActWorkingMemoryService {
     }
 
     public void recordCompletion(String sessionId, String question, int iterations, String answer) {
-        if (!StringUtils.hasText(sessionId)) {
+        if (!properties.isWorkingMemoryEnabled() || !StringUtils.hasText(sessionId)) {
             return;
         }
         try {

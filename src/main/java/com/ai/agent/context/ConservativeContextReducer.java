@@ -76,9 +76,16 @@ public class ConservativeContextReducer implements ContextReductionStrategy {
     private List<MessageGroup> buildProtocolGroups(List<ChatMessage> messages, AgentContextPlan plan) {
         Map<Integer, Set<Integer>> linkedIndexes = new HashMap<>();
         Map<String, Integer> toolCallOwners = new HashMap<>();
+        Integer currentTurn = null;
         for (int index = 0; index < messages.size(); index++) {
             ChatMessage message = messages.get(index);
             linkedIndexes.computeIfAbsent(index, ignored -> new HashSet<>()).add(index);
+            // 用户输入到下一条用户输入之前构成一个完整轮次，裁剪不能只留下回答或半组工具结果。
+            if (message instanceof dev.langchain4j.data.message.UserMessage) currentTurn = index;
+            if (currentTurn != null) {
+                linkedIndexes.computeIfAbsent(currentTurn, ignored -> new HashSet<>()).add(index);
+                linkedIndexes.get(index).add(currentTurn);
+            }
             if (message instanceof AiMessage assistant && assistant.hasToolExecutionRequests()) {
                 int finalIndex = index;
                 assistant.toolExecutionRequests().forEach(request -> toolCallOwners.put(request.id(), finalIndex));

@@ -7,7 +7,6 @@ import com.ai.model.AnalysisRequest;
 import com.ai.model.ConversationSession;
 import com.ai.security.SecurityContextHelper;
 import com.ai.service.SessionManager;
-import com.ai.service.VectorMemoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,7 +20,6 @@ import org.springframework.stereotype.Component;
 public class AgentConversationRecorder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentConversationRecorder.class);
-    private static final int ASSISTANT_MEMORY_PREVIEW_LENGTH = 500;
     private static final String ANONYMOUS_SESSION_ID = "anonymous";
     private static final String REACT_SKILL_NAME = "react-agent";
     private static final String WAITING_APPROVAL_MESSAGE = "工具操作已提交审批，审批通过后会继续执行。";
@@ -29,20 +27,17 @@ public class AgentConversationRecorder {
     private final TokenMonitor tokenMonitor;
     private final AgentDurableRunStore durableRunStore;
     private final SessionManager sessionManager;
-    private final VectorMemoryService vectorMemoryService;
     private final SecurityContextHelper securityContextHelper;
     private final ConversationMemoryCaptureService conversationMemoryCaptureService;
 
     public AgentConversationRecorder(TokenMonitor tokenMonitor,
             AgentDurableRunStore durableRunStore,
             SessionManager sessionManager,
-            VectorMemoryService vectorMemoryService,
             SecurityContextHelper securityContextHelper,
             ConversationMemoryCaptureService conversationMemoryCaptureService) {
         this.tokenMonitor = tokenMonitor;
         this.durableRunStore = durableRunStore;
         this.sessionManager = sessionManager;
-        this.vectorMemoryService = vectorMemoryService;
         this.securityContextHelper = securityContextHelper;
         this.conversationMemoryCaptureService = conversationMemoryCaptureService;
     }
@@ -58,11 +53,10 @@ public class AgentConversationRecorder {
      */
     public void recordReActConversation(ConversationSession session, AnalysisRequest request, String result,
             String modelId, String runId) {
-        if (!persistConversation(session, request, result, REACT_SKILL_NAME, modelId, runId)) {
+        if (!persistConversation(session, request, result, REACT_SKILL_NAME, modelId, runId, true)) {
             return;
         }
         captureConversationMemory(session, request, result, modelId);
-        indexConversation(session, request, result);
     }
 
     /**
@@ -77,13 +71,13 @@ public class AgentConversationRecorder {
      */
     public void recordSessionConversation(ConversationSession session, AnalysisRequest request, String result,
             String skillUsed, String modelId, String runId) {
-        if (persistConversation(session, request, result, skillUsed, modelId, runId)) {
+        if (persistConversation(session, request, result, skillUsed, modelId, runId, false)) {
             captureConversationMemory(session, request, result, modelId);
         }
     }
 
     /**
-     * 记录完整的分析会话，并同步写入向量记忆。
+     * 记录完整的分析会话，并同事务提交后台向量索引任务。
      *
      * <p>该入口用于默认编排链和配置化 Agent 路由，确保分析结果不仅落到会话历史，
      * 还会进入后续可检索的长期记忆。</p>
@@ -97,11 +91,10 @@ public class AgentConversationRecorder {
      */
     public void recordAnalysisConversation(ConversationSession session, AnalysisRequest request, String result,
             String skillUsed, String modelId, String runId) {
-        if (!persistConversation(session, request, result, skillUsed, modelId, runId)) {
+        if (!persistConversation(session, request, result, skillUsed, modelId, runId, true)) {
             return;
         }
         captureConversationMemory(session, request, result, modelId);
-        indexConversation(session, request, result);
     }
 
     /**
@@ -118,7 +111,7 @@ public class AgentConversationRecorder {
             String skillUsed,
             String modelId,
             String runId) {
-        persistConversation(session, request, WAITING_APPROVAL_MESSAGE, skillUsed, modelId, runId);
+        persistConversation(session, request, WAITING_APPROVAL_MESSAGE, skillUsed, modelId, runId, false);
     }
 
     /**
@@ -142,16 +135,25 @@ public class AgentConversationRecorder {
                     content,
                     skillUsed,
                     modelId,
-                    tokenMonitor.estimateTokens(content)));
+                    tokenMonitor.estimateTokens(content, modelId), null));
         } catch (Exception e) {
             LOGGER.warn("更新 Agent Run 会话状态失败，run: {}", runId, e);
         }
     }
 
+    /** 恢复成功回答必须先保存；主库和索引任务失败时让恢复流程进入失败状态。 */
+    public void recordResumedConversation(String runId, String question, String answer, String modelId) {
+        var run = durableRunStore.find(runId).orElseThrow(() -> new IllegalStateException("待恢复 Run 不存在"));
+        if (!sessionManager.updateRunAssistantMessage(run.getSessionId(), run.getTenantId(), run.getUserId(),
+                runId, answer, null, modelId, tokenMonitor.estimateTokens(answer, modelId), question)) {
+            throw new IllegalStateException("恢复回答生成成功，但会话保存失败");
+        }
+    }
+
     private boolean persistConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId, String runId) {
+            String skillUsed, String modelId, String runId, boolean indexConversation) {
         if (session == null) {
-            return false;
+            throw new IllegalStateException("会话缺失，回答未保存");
         }
         try {
             boolean saved = sessionManager.saveConversationTurn(
@@ -160,9 +162,9 @@ public class AgentConversationRecorder {
                     result,
                     skillUsed,
                     modelId,
-                    tokenMonitor.estimateTokens(request.getQuestion()),
-                    tokenMonitor.estimateTokens(result),
-                    runId);
+                    tokenMonitor.estimateTokens(request.getQuestion(), modelId),
+                    tokenMonitor.estimateTokens(result, modelId),
+                    runId, indexConversation);
             if (saved) {
                 session.addUserMessage(request.getQuestion());
                 session.addAssistantMessage(result);
@@ -170,20 +172,7 @@ public class AgentConversationRecorder {
             return saved;
         } catch (Exception e) {
             LOGGER.warn("持久化 Agent 对话失败，session: {}", session.getSessionId(), e);
-            return false;
-        }
-    }
-
-    private void indexConversation(ConversationSession session, AnalysisRequest request, String result) {
-        try {
-            vectorMemoryService.indexConversation(
-                    resolveSessionId(session),
-                    request.getQuestion(),
-                    preview(result, ASSISTANT_MEMORY_PREVIEW_LENGTH),
-                    securityContextHelper.getCurrentTenantId(),
-                    securityContextHelper.getCurrentUserId());
-        } catch (Exception e) {
-            LOGGER.warn("索引 ReAct 对话到向量记忆失败", e);
+            throw new IllegalStateException("回答生成成功，但会话保存失败，请稍后重试", e);
         }
     }
 
@@ -201,10 +190,4 @@ public class AgentConversationRecorder {
         return session != null ? session.getSessionId() : ANONYMOUS_SESSION_ID;
     }
 
-    private String preview(String value, int maxLength) {
-        if (value == null) {
-            return "";
-        }
-        return value.length() > maxLength ? value.substring(0, maxLength) + "..." : value;
-    }
 }

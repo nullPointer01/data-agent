@@ -18,9 +18,10 @@ public record KnowledgeItemResponse(
         int chunkCount,
         long contentLength,
         Date createdAt,
-        Date updatedAt) {
+        Date updatedAt,
+        com.ai.indexing.IndexTask.Status indexing) {
 
-    public static KnowledgeItemResponse from(KnowledgeEntry entry) {
+    public static KnowledgeItemResponse from(KnowledgeEntry entry, com.ai.indexing.IndexTask.Status indexing) {
         return new KnowledgeItemResponse(
                 entry.getKnowledgeId(),
                 entry.getName(),
@@ -30,6 +31,6 @@ public record KnowledgeItemResponse(
                 entry.getChunkCount(),
                 entry.getContentLength(),
                 entry.getCreatedAt(),
-                entry.getUpdatedAt());
+                entry.getUpdatedAt(), indexing);
     }
 }

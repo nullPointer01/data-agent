@@ -86,4 +86,10 @@ public record AgentRunContext(
     public AgentRunSnapshot snapshot() {
         return control.snapshot();
     }
+
+    /** 规划结束只绑定路线，运行身份、预算、取消控制和事件流保持同一份。 */
+    public AgentRunContext withMode(AgentExecutionMode executionMode) {
+        return new AgentRunContext(runId, tenantId, userId, sessionId, agentId, executionMode,
+                executionContext, control, eventSink, toolAuthorization, toolJournal, taskContract);
+    }
 }

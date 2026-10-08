@@ -4,6 +4,7 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
@@ -37,7 +38,7 @@ import java.util.concurrent.TimeUnit;
  * @author data-agent
  */
 @Component
-public class MilvusVectorStoreGateway {
+public class MilvusVectorStoreGateway implements EmbeddingStore<TextSegment> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MilvusVectorStoreGateway.class);
     private static final int MILVUS_CLOSE_TIMEOUT_SECONDS = 5;
@@ -90,6 +91,7 @@ public class MilvusVectorStoreGateway {
         initMilvusStore();
     }
 
+    @Override
     public String add(Embedding embedding, TextSegment segment) {
         if (!isAvailable()) {
             throw new IllegalStateException("Milvus 客户端未初始化，无法写入向量");
@@ -104,6 +106,29 @@ public class MilvusVectorStoreGateway {
             refreshCollectionState();
             return ensureEmbeddingStore().add(embedding, segment);
         }
+    }
+
+    /** 向量记录必须有业务元数据；拒绝无来源/身份的框架写入重载。 */
+    @Override
+    public String add(Embedding embedding) {
+        throw new UnsupportedOperationException("向量入库必须提供 TextSegment 和业务元数据");
+    }
+
+    @Override
+    public void add(String id, Embedding embedding) {
+        throw new UnsupportedOperationException("向量入库必须提供 TextSegment 和业务元数据");
+    }
+
+    @Override
+    public List<String> addAll(List<Embedding> embeddings) {
+        throw new UnsupportedOperationException("向量入库必须提供 TextSegment 和业务元数据");
+    }
+
+    /** 官方 Retriever 通过 EmbeddingStore 接口检索，仍保留原有加载恢复与单次重试。 */
+    @Override
+    public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
+        return new EmbeddingSearchResult<>(search(request.queryEmbedding(), request.maxResults(),
+                request.minScore(), request.filter()));
     }
 
     /**

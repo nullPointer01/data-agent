@@ -57,16 +57,16 @@
 - 循环什么时候停？会不会死循环？
 
 **你的素材**
-- `ReActLoopRunner.run() / runStreaming()`：一个 while 循环，最多 8 轮（`MAX_ITERATIONS=8`）。
-- 每轮：把 `[系统提示 + 工具规格 + 消息历史]` 发给模型 → 模型回 AiMessage（要么带 tool call，要么是最终答案）→ `ReActResponseParser` 解析 → 有 tool call 就 `AgentToolInvoker` 执行、结果塞回 messages、继续；没有就收敛。
+- `AgentChatService` 使用 AiServices / TokenStream 实现正常多轮工具交互，`GovernedToolSession` 每轮申请共享 Run 预算。
+- 每轮：发送角色消息和工具规格 → 模型返回原生 tool_calls → Session 整批准入 → 框架通过受治理 ToolExecutor 执行 → 框架回填工具结果继续；无工具请求则返回答案。
 - 工具规格不是手写 JSON：`AgentToolInvoker` 用 LangChain4j 的 `ToolSpecifications.toolSpecificationFrom(method)` 从 `@Tool` 注解**反射自动生成**，新增工具只加一个注解方法。
 
 **讲出取舍（加分）**
-> "停止条件我用了两道：模型主动不再调工具就收敛，加一个 8 轮硬上限兜底防死循环。达到上限时我不是直接报错，而是 `MAX_ITERATION_ANSWER_PREFIX` 把已获得的中间结果整合给用户做保守结论——因为 agent 最怕的不是答不全，是无限烧 token。"
+> "普通循环使用框架，Run 在每次调用前执行预算准入。迭代耗尽后明确终止，不把已有片段包装成成功答案，也不再烧一次模型调用做总结。审批则先整批拦截，避免同一响应前面的工具先执行、后面的工具才要求审批。"
 
 **追问陷阱**
 - "8 轮怎么定的？"→ 经验值，数据分析任务很少超过 5 步；可配置。诚实说是拍的，但解释了依据。
-- "模型不支持 function calling 怎么办？"→ 当前主链路要求模型提供原生工具调用；`ReActResponseParser` 只负责解析模型响应和兼容受控格式，不能把文本里“我要调用”当成已执行。模型不支持时应切 Chat 或更换兼容模型，不能伪造工具结果。
+- "模型不支持 function calling 怎么办？"→ 工具模式要求模型提供原生工具调用，SDK 解析结构，不能把文本里“我要调用”当成已执行。模型不支持时应切 Chat 或更换兼容模型，不能伪造工具结果。
 
 ---
 
@@ -234,7 +234,7 @@
 
 **你的素材（真实重构）**
 - **我发现原来是"假流式"**：`AnalysisStreamService` 先同步阻塞跑完整个 `analyze()`，再一次性把所有事件 emit 出去——用户看着是流式，其实等了全程。
-- 改造成真流式：新增 `analyzeStreaming()` 链路，一路透传到 `ReActLoopRunner.runStreaming()`，模型 token 通过 `StreamingChatLanguageModel` 逐个回调 `emitToken`，SSE 实时下发。
+- 当前链路：`analyzeStreaming()` → `AgentChatService` 的 AiServices TokenStream，`StreamingChatModel` 原生文本增量交给 `emitToken`；正常工具循环也异步贯通，审批恢复单独处理。
 - 事件是结构化的（thinking step / token / tool call / done / error），不是裸 token 直通。
 
 **讲出取舍（加分）**
@@ -354,7 +354,7 @@
 | 结构化输出怎么保证？ | `callModelJson` 用 `response_format=json_object`，prompt 里必须含"JSON"字样 |
 | 启动为什么不依赖模型可用？ | 默认用确定性分类/规划，启动只做 schema 修复和内存注册，不做重型外部写入 |
 | 数据源连接怎么管理？ | `JdbcConnectionPoolManager` 连接池复用，不每次新建 |
-| token 怎么估的？ | `SharedTokenizer` 共享分词器估算，记账优先用厂商真实 usage |
+| token 怎么估的？ | `TokenMonitor` 统一框架 TokenCountEstimator；已映射词表用框架 tokenizer，未知模型保守估算，记账优先用厂商真实 usage |
 | 为什么用 LangChain4j 不用 Python？ | 团队 Java 栈、要接 Spring 生态（Security/JPA/事务），LangChain4j 是 JVM 上对标 LangChain 的方案 |
 
 ---

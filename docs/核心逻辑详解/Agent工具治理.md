@@ -32,6 +32,8 @@ Codec 解析异常使用稳定领域错误码，API 只返回字段、Agent 编�
 
 每个 `@Tool` 方法必须同时声明 `@AgentToolPolicy`，包括风险、只读、幂等、可重试、timeout、最大尝试数、权限码和结果长度。`AgentToolRegistry` 同时保存同一个工具的 LangChain4j Schema、底层执行器和治理 Descriptor。
 
+标准 MCP 工具不在本地声明 `@Tool` 方法：由 `McpToolCatalog` 将远端 Schema、官方执行器与本地配置的只读/租户/权限合同合入同一 Registry。默认 Agent 不自动绑定外部工具，越租户调用在网络发现前拒绝。所有工具参数统一用 JSON Schema 库校验；MCP 转换后的 Schema 并不包含远端所有原始约束。配置与限制见 [标准 MCP 工具接入](./标准MCP工具接入.md)。
+
 启动时会拒绝以下配置：
 
 - 工具重名或缺少治理注解
@@ -42,6 +44,8 @@ Codec 解析异常使用稳定领域错误码，API 只返回字段、Agent 编�
 新增工具不能只写描述文本，也不能在配置文件里复制一份容易漂移的安全属性。
 
 ## 固定执行管道
+
+正常工具循环由 AiServices 驱动，注册的 ToolExecutor 委派到本管道。`GovernedToolSession` 在完整模型响应进入框架前预检整批工具，执行器只能消费预检结果一次；幻觉工具同样经过准入。审批暂停通过模型边界的类型化异常传播，框架不能把它当作成功工具文本继续。审批恢复共用该 Session，详见 [框架集成与消息生命周期](./框架集成与消息生命周期.md)。
 
 ```text
 解析 Registry 条目

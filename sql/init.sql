@@ -614,3 +614,23 @@ VALUES
     ('ADMIN', 'app:use'),
     ('ADMIN', 'agent:approval:review'),
     ('ADMIN', '*:*');
+
+-- 持久索引任务：知识/对话与 Outbox 同事务提交，工作线程按租约恢复。
+CREATE TABLE IF NOT EXISTS index_task (
+    task_id VARCHAR(64) NOT NULL PRIMARY KEY,
+    kind VARCHAR(24) NOT NULL,
+    tenant_id VARCHAR(100) NOT NULL,
+    user_id VARCHAR(100) NOT NULL,
+    source_id VARCHAR(128) NOT NULL,
+    payload LONGTEXT NOT NULL,
+    desired_version BIGINT NOT NULL,
+    completed_version BIGINT NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    attempts INT NOT NULL,
+    next_attempt_at DATETIME(6) NOT NULL,
+    lease_owner VARCHAR(64),
+    lease_until DATETIME(6),
+    last_error VARCHAR(100),
+    updated_at DATETIME(6) NOT NULL,
+    INDEX idx_index_task_ready(status,next_attempt_at)
+);

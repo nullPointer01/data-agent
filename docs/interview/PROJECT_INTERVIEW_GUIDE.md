@@ -46,7 +46,8 @@ Agent 配置不提供旁路试运行；保存并设为默认配置后直接从�
 - `AgentRunCoordinator`：唯一顶层运行入口，管理路由、生命周期、预算、事件和 Trace。
 - `AgentRunRouteResolver`：固化 AgentProfile 和 RequestExecutionPlan。
 - `ConfigurableAgentExecutor`：在 AgentRunScope 内执行 Chat、ReAct 或受控委派。
-- `ReActLoopRunner`：同步/流式 ReAct 循环执行器。
+- `AgentChatService`：创建 AiServices / TokenStream 助手并注册受治理工具。
+- `GovernedToolSession`：完整响应整批准入、审批暂停和根 Run 迭代预算。
 
 主流程：
 
@@ -72,21 +73,20 @@ Agent 配置不提供旁路试运行；保存并设为默认配置后直接从�
 ### 5.1 ReAct 循环
 
 配置化 Agent 由 `ConfigurableAgentExecutor` 准备消息、模型和精确能力白名单，再交给
-`ReActLoopRunner` 执行模型调用、工具 Observation 回填和终止判断。模型可以自主决定是否调用工具，
+`AgentChatService` 创建的 AiServices 执行模型调用、工具 Observation 回填和终止判断。模型可以自主决定是否调用工具，
 但每次实际工具执行仍必须经过 Registry、RBAC、Profile allowlist、风险策略和 Run 预算。
 
-`ReActLoopRunner` 负责真正的循环。它的关键机制：
+AiServices 负责正常工具循环，Harness 的关键机制：
 
-- 最大迭代次数为 8，避免 Agent 陷入无限循环；
-- 每轮调用模型，解析模型返回中的工具调用语法；
-- 如果需要工具，交给 `AgentToolInvoker` 执行；
-- 工具结果作为 Observation 追加回消息上下文；
-- 如果模型给出最终答案，就结束循环；
-- 全程记录 `REACT_START`、`REACT_ITERATION_START`、`REACT_ITERATION_RESULT`、`REACT_COMPLETION` 等结构化事件。
+- 每轮从同一根 Run 申请迭代预算，超限明确终止，不再额外请求模型；
+- 框架解析原生 tool_calls，并按协议回填 ToolExecutionResultMessage；
+- 整组请求先准入，再由受治理 ToolExecutor 调用 `AgentToolInvoker`；
+- 存在审批请求时整组暂停，Worker 重新鉴权后续跑原生消息；
+- TokenStream 输出文本，Pipeline 发布工具证据，Coordinator 发布唯一终态。
 
 面试说法：
 
-> ReAct 的难点不是写一个 prompt，而是要把循环边界、工具解析、异常恢复、流式输出、工作记忆和日志追踪都控制住。我这里由 `ConfigurableAgentExecutor` 组装一次请求的上下文和能力快照，`ReActLoopRunner` 负责循环，`AgentToolInvoker` 负责受治理的工具执行。
+> 我把通用模型与工具循环交给 AiServices，项目重点负责执行权限、整批准入、预算和持久化审批。不能直接把工具对象注册进去，否则会绕过治理；框架不支持原生现场恢复的部分，保留一个只服务审批的最小续跑器。
 
 ### 5.2 工具系统
 
@@ -149,22 +149,22 @@ RAG 主链路在 `EnhancedRagPipeline`。
 
 ```text
 用户问题
-  -> RagQueryRewriter 分析/改写查询
+  -> RagQueryTransformer：官方直通 / 显式历史补全 / 可选扩展
   -> HybridRetriever 混合检索
-     -> Milvus 向量检索
-     -> JPA/Elasticsearch 全文检索
+     -> EmbeddingStoreContentRetriever + Milvus 向量检索
+     -> Elasticsearch BM25 全文检索
   -> RagReranker 重排
   -> RagParentContextResolver 补充父级上下文
   -> RagContextCompressor 压缩上下文
   -> 生成引用 RagCitation
-  -> 注入 ReAct prompt
+  -> DefaultContentInjector 注入本次 UserMessage
 ```
 
 关键设计点：
 
 - 向量库：`MilvusVectorStoreGateway`
 - Embedding：`EmbeddingGateway` 统一调用 OpenAI-compatible 外部服务，启动探测并逐次校验向量维度
-- 分块：`TextChunker`、`SmartTextChunker`、`HierarchicalChunker`、`MarkdownStructureParser`
+- 分块：`TextChunker` 装配 LangChain4j 官方递归切分器；`MarkdownStructureParser`、`ChunkSourceLocator`、`HierarchicalChunker` 负责章节、原文位置与父上下文。见[分块学习说明](../核心逻辑详解/文档分块与框架适配.md)。
 - 混合检索：`DefaultHybridRetriever`
 - 全文召回：`ElasticsearchFullTextRetriever`，BM25 + 租户/来源精确过滤
 - 融合排序：`RrfFusionRanker`
@@ -273,9 +273,7 @@ app:
 
 - `FileProcessingServiceImpl`
 - `FileProcessingWorker`
-- `PdfFileContentParser`
-- `DocxFileContentParser`
-- `PptxFileContentParser`
+- `FrameworkDocumentFileContentParser`（官方 PDFBox/POI 解析器）
 - `SpreadsheetFileContentParser`
 - `PlainTextFileContentParser`
 - `FileVectorCleanupService`
@@ -285,12 +283,12 @@ app:
 - `KnowledgeService`
 - `KnowledgeVectorIndexService`
 - `KnowledgeSyncService`
-- `KnowledgeVectorEventPublisher`
-- `KnowledgeVectorEventListener`
+- `KnowledgeIndexScheduler`
+- `IndexTaskStore` / `IndexTaskWorker`
 
 讲法：
 
-> 文件上传后不是只存原文件，而是会解析成文本，生成元数据，再异步写入向量库。知识库也类似，新增或同步后触发向量索引。这样 Agent 后续可以通过 RAG 找到文件和知识内容，而不是每次都把全文塞进 prompt。
+> 文件上传后不是只存原文件，而是会解析成文本，生成元数据，再异步写入向量库。知识库新增或同步时把主数据与索引任务同事务提交，后台按租约执行 Milvus/ES 索引，失败可重试和恢复。这样 Agent 后续可以通过 RAG 找到文件和知识内容，而不是每次都把全文塞进 prompt。
 
 ## 12. 数据源和 SQL 工具
 
@@ -387,7 +385,7 @@ Agent 工具包括：
 
 答：
 
-我把 ReAct 拆成四块：`ConfigurableAgentExecutor` 负责组装 Profile、上下文和能力快照，`ReActLoopRunner` 负责循环，`ReActResponseParser` 负责解析模型工具调用，`AgentToolInvoker` 负责受治理的执行。每轮模型输出后，如果检测到工具调用，就执行工具并把 Observation 追加回上下文；如果得到最终回答就结束。Run Control 统一限制迭代、模型、工具、Token 和超时预算。
+`ConfigurableAgentExecutor` 组装 Profile、上下文和能力快照，`AgentChatService` 通过 AiServices 处理正常工具循环和原生结果回填。`GovernedToolSession` 在执行前预检整批工具，`AgentToolInvoker` 接统一治理管道；Run Control 限制迭代、模型、工具、Token 和超时预算。审批后的原生消息恢复使用独立续跑边界，共用治理，不伪造新用户请求。
 
 ### Q3：RAG 是怎么做的？
 

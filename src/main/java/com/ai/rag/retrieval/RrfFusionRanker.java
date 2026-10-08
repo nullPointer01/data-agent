@@ -1,16 +1,17 @@
 package com.ai.rag.retrieval;
-import com.ai.rag.retrieval.RetrievalResult;
-import com.ai.rag.retrieval.RetrievalChannel;
 import com.ai.rag.fulltext.FullTextSearchResult;
 
 import com.ai.vector.ChunkMetadata;
 import com.ai.vector.VectorMetadataKeys;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.aggregator.ReciprocalRankFuser;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,15 +19,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 使用 RRF（Reciprocal Rank Fusion）融合向量检索与全文检索结果。
+ * 用框架 RRF 融合向量与全文排名；本层只适配文档身份、分块元数据和业务分数字段。
  *
  * @author data-agent
  */
 @Component
 public class RrfFusionRanker {
 
-    private static final double RANK_CONSTANT = 60D;
-    private static final double RAW_SCORE_WEIGHT = 0.05D;
+    private static final int RANK_CONSTANT = 60;
 
     /**
      * 融合向量与全文候选。
@@ -41,56 +41,71 @@ public class RrfFusionRanker {
         if (topK <= 0) {
             return List.of();
         }
-        Map<String, FusionCandidate> candidates = new LinkedHashMap<>();
-        addVectorMatches(candidates, vectorMatches);
-        addFullTextResults(candidates, fullTextResults);
-        return candidates.values().stream()
-                .map(this::toResult)
-                .sorted(Comparator.comparingDouble(RetrievalResult::score).reversed())
+        Map<CandidateKey, FusionCandidate> candidates = new LinkedHashMap<>();
+        List<FusionCandidate> vectorRanking = addVectorMatches(candidates, vectorMatches);
+        List<FusionCandidate> fullTextRanking = addFullTextResults(candidates, fullTextResults);
+        // 两路先合并正文和元数据，再生成同一个 Content，避免同一分块被误认为两个候选。
+        Map<Content, FusionCandidate> byContent = new LinkedHashMap<>();
+        candidates.values().forEach(candidate -> byContent.put(candidate.toContent(), candidate));
+        return ReciprocalRankFuser.fuse(List.of(
+                        vectorRanking.stream().map(FusionCandidate::toContent).toList(),
+                        fullTextRanking.stream().map(FusionCandidate::toContent).toList()), RANK_CONSTANT).stream()
                 .limit(topK)
+                .map(content -> toResult(byContent.get(content)))
                 .toList();
     }
 
-    private void addVectorMatches(Map<String, FusionCandidate> candidates,
+    private List<FusionCandidate> addVectorMatches(Map<CandidateKey, FusionCandidate> candidates,
             List<EmbeddingMatch<TextSegment>> vectorMatches) {
+        List<FusionCandidate> ranking = new ArrayList<>();
         if (vectorMatches == null || vectorMatches.isEmpty()) {
-            return;
+            return ranking;
         }
+        Set<CandidateKey> seen = new LinkedHashSet<>();
         for (int index = 0; index < vectorMatches.size(); index++) {
             EmbeddingMatch<TextSegment> match = vectorMatches.get(index);
             VectorResult vectorResult = VectorResult.from(match);
-            if (!vectorResult.isValid()) {
+            if (!vectorResult.isValid() || !seen.add(vectorResult.key())) {
                 continue;
             }
             FusionCandidate candidate = candidates.computeIfAbsent(vectorResult.key(), key -> FusionCandidate.of(
                     vectorResult.sourceType(), vectorResult.sourceId(), vectorResult.chunkId()));
-            candidate.addVector(vectorResult, match.score(), rrfContribution(index + 1));
+            candidate.addVector(vectorResult, match.score(), rrfContribution(ranking.size() + 1));
+            ranking.add(candidate);
         }
+        return ranking;
     }
 
-    private void addFullTextResults(Map<String, FusionCandidate> candidates,
+    private List<FusionCandidate> addFullTextResults(Map<CandidateKey, FusionCandidate> candidates,
             List<FullTextSearchResult> fullTextResults) {
+        List<FusionCandidate> ranking = new ArrayList<>();
         if (fullTextResults == null || fullTextResults.isEmpty()) {
-            return;
+            return ranking;
         }
+        Set<CandidateKey> seen = new LinkedHashSet<>();
         for (int index = 0; index < fullTextResults.size(); index++) {
             FullTextSearchResult result = fullTextResults.get(index);
-            if (!StringUtils.hasText(result.sourceType()) || !StringUtils.hasText(result.sourceId())
-                    || !StringUtils.hasText(result.chunkId())) {
+            if (result == null || !StringUtils.hasText(result.sourceType()) || !StringUtils.hasText(result.sourceId())
+                    || !StringUtils.hasText(result.chunkId()) || !StringUtils.hasText(result.content())) {
                 continue;
             }
-            String key = keyOf(result.sourceType(), result.sourceId(), result.chunkId());
+            CandidateKey key = keyOf(result.sourceType(), result.sourceId(), result.chunkId());
+            if (!seen.add(key)) {
+                continue;
+            }
             FusionCandidate candidate = candidates.computeIfAbsent(key, ignored -> FusionCandidate.of(
                     result.sourceType(), result.sourceId(), result.chunkId()));
-            candidate.addFullText(result, rrfContribution(index + 1));
+            candidate.addFullText(result, rrfContribution(ranking.size() + 1));
+            ranking.add(candidate);
         }
+        return ranking;
     }
 
     private RetrievalResult toResult(FusionCandidate candidate) {
         double maxRrfScore = 2D / (RANK_CONSTANT + 1D);
-        double rawScore = Math.max(candidate.vectorScore == null ? 0D : candidate.vectorScore,
-                candidate.fullTextScore == null ? 0D : candidate.fullTextScore);
-        double normalizedScore = Math.min(1D, candidate.rrfScore / maxRrfScore + rawScore * RAW_SCORE_WEIGHT);
+        // 框架只返回排名、不公开融合分数；这里投影到既有 API 的 0..1 字段，不再次排序。
+        // 该值是融合排名分，不是相关概率；向量/BM25 原始分数单独保留，不混加不同量纲。
+        double normalizedScore = Math.min(1D, candidate.rrfScore / maxRrfScore);
         return new RetrievalResult(candidate.sourceType, candidate.sourceId, candidate.chunkId,
                 candidate.content, normalizedScore, candidate.vectorScore, candidate.fullTextScore,
                 List.copyOf(candidate.channels), candidate.metadata(), candidate.parentContext);
@@ -100,8 +115,11 @@ public class RrfFusionRanker {
         return 1D / (RANK_CONSTANT + rank);
     }
 
-    private static String keyOf(String sourceType, String sourceId, String chunkId) {
-        return sourceType + "::" + sourceId + "::" + chunkId;
+    private static CandidateKey keyOf(String sourceType, String sourceId, String chunkId) {
+        return new CandidateKey(sourceType, sourceId, chunkId);
+    }
+
+    private record CandidateKey(String sourceType, String sourceId, String chunkId) {
     }
 
     private static final class FusionCandidate {
@@ -192,6 +210,13 @@ public class RrfFusionRanker {
             return new ChunkMetadata(sectionPath, charStart, charEnd, containsTable, containsCode, containsList,
                     parentChunkId, parentCharStart, parentCharEnd);
         }
+
+        private Content toContent() {
+            // Content 的相等性包含 TextSegment 元数据：相同正文、不同文档不能被合并。
+            Metadata identity = Metadata.from(Map.of(VectorMetadataKeys.TYPE, sourceType,
+                    VectorMetadataKeys.SOURCE_ID, sourceId, VectorMetadataKeys.ID, chunkId));
+            return Content.from(TextSegment.from(content, identity));
+        }
     }
 
     private record VectorResult(String sourceType,
@@ -233,10 +258,10 @@ public class RrfFusionRanker {
 
         private boolean isValid() {
             return StringUtils.hasText(sourceType) && StringUtils.hasText(sourceId)
-                    && StringUtils.hasText(chunkId);
+                    && StringUtils.hasText(chunkId) && StringUtils.hasText(content);
         }
 
-        private String key() {
+        private CandidateKey key() {
             return keyOf(sourceType, sourceId, chunkId);
         }
 

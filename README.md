@@ -4,6 +4,14 @@
 
 Agent 不按“数据/知识/报告”预先分类，而是由模型、System Prompt、Capabilities 和 Chat/ReAct/Orchestrated 运行模式组合出实际能力。
 
+正常聊天与工具对话使用 LangChain4j AiServices、`@SystemMessage` 和官方 Reactor 事件 Flux；HTTP 接口通过 Spring MVC 返回 `Flux<ServerSentEvent<String>>`。项目通过受治理的 ToolExecutor 接入权限、预算和整批审批预检；审批恢复单独续跑原生消息，与普通助手共用治理。实现和阅读顺序见 [框架集成与消息生命周期](docs/核心逻辑详解/框架集成与消息生命周期.md)。
+
+默认角色为通用个人 Agent，数据分析属于可选能力。专家委派使用 `langchain4j-agentic` 顺序工作流串联任务规划与执行；Orchestrated 可切换主助手 Tool Calling 与框架 Supervisor 动态协作。本地默认 Supervisor，权限、预算与委派深度继续由 Harness 约束；Supervisor 的整图审批恢复暂未实现。学习对照见 [Supervisor 与原编排对照](docs/核心逻辑详解/Supervisor与原编排对照.md)。
+
+标准 MCP 使用官方 `langchain4j-mcp:1.20.2-beta30` 的 Streamable HTTP 客户端，远端只读工具经统一目录、租户/RBAC、Profile 绑定和工具执行管道准入。个人/专家设置支持逐项开启外部工具；默认配置为空，不会自动连接外部服务。配置、学习断点与边界见 [标准 MCP 工具接入](docs/核心逻辑详解/标准MCP工具接入.md)。
+
+知识/文件/长期记忆的通用文本分块使用 LangChain4j 官方递归 splitter，章节、原文位置和父上下文由项目适配；500/100 字符参数可见配置，旧手写切分链已移除。学习与历史索引更新说明见 [文档分块与框架适配](docs/核心逻辑详解/文档分块与框架适配.md)。
+
 ```text
 定义 Agent -> 发起任务 -> Harness 路由与治理 -> 结果 + 证据 -> Outcome / Eval
 ```
@@ -15,8 +23,10 @@ Agent 不按“数据/知识/报告”预先分类，而是由模型、System Pr
 - Spring Security + JWT
 - Spring Data JPA
 - MySQL
-- LangChain4j Core / OpenAI 1.19.0
-- LangChain4j Milvus 1.19.0-beta29（Milvus 适配器在 1.19 发布线上的官方 beta 版本）
+- LangChain4j Core / OpenAI 1.20.2
+- LangChain4j Milvus 1.20.2-beta30（对应发布线的 Milvus 集成仍为 beta）
+- LangChain4j Reactor / Agentic 1.20.2-beta30（Agentic 为实验性编排模块）
+- Resilience4j 2.4.0（模型、Embedding、Reranker 重试与熔断）
 - Milvus 2.3
 - React + Vite
 - Apache POI / PDFBox
@@ -206,6 +216,7 @@ com.ai.agent.runtime     统一 Run、路由与执行策略
 com.ai.agent.tool       Agent 工具
 com.ai.skill            动态技能
 com.ai.mcp              模型调用、缓存、重试、token 记录
+com.ai.integration.mcp  标准 MCP 客户端、远端工具映射与连接生命周期
 com.ai.memory           记忆系统
 com.ai.rag              RAG 检索
 com.ai.vector           Embedding 与 Milvus
@@ -250,12 +261,18 @@ Tool、Skill 和子 Agent 会投影为统一 Capability Descriptor，包含稳�
 
 知识库和文件内容以 MySQL 为事实源，同时写入 Milvus 向量索引和 Elasticsearch Chunk 全文索引。个人 Agent 的两条召回通道、父级上下文回查和资源管理接口都同时按 `tenantId + userId` 隔离；管理控制台的租户级视图不复用普通用户接口。RAG 全文召回固定使用 Elasticsearch BM25：
 
-```bash
-RAG_ELASTICSEARCH_BASE_URL=http://localhost:9200
-RAG_ELASTICSEARCH_INDEX=data-agent-rag-v2
+公共配置在 `src/main/resources/application.yml`：
+
+```yaml
+app:
+  rag:
+    elasticsearch:
+      base-url: http://localhost:9200
+      index-name: data-agent-rag-v3
+      analyzer: rag_icu
 ```
 
-`data-agent-rag-v2` 使用显式 Mapping：租户、来源和 Chunk 标识为 `keyword`，正文、标题和章节为 `text`。旧的动态 Mapping 索引不会被自动删除，需要显式重建数据。
+`data-agent-rag-v3` 使用官方 ICU 与 strict Mapping，首次和周期使用检查插件、字段类型和分词合同。知识/文件一次分块写入两边索引，文件任务复用持久队列。旧索引不会自动删除，历史需维护窗口分批重建；镜像启动、分页重建接口与评测工具见 [中文检索与索引维护](docs/核心逻辑详解/中文检索与索引维护.md)。代码离线验证通过，真实部署和检索效果尚未验收。
 
 RRF 融合后的候选默认通过外部 Cross-Encoder 精排。首个配置使用硅基流动兼容接口和 `BAAI/bge-reranker-v2-m3`；真实密钥只放在本地 Shell 环境或部署平台 Secret：
 

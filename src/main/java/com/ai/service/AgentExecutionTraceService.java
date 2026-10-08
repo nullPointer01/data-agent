@@ -104,7 +104,7 @@ public class AgentExecutionTraceService {
         trace.setQuestion(truncate(context.executionContext().getRequest().getQuestion()));
         trace.setSelectedAgent(resolveRunSelectedAgent(route));
         trace.setSelectedType(context.mode().name());
-        trace.setIntent(route.requestPlan().intent().name());
+        trace.setIntent(route == null ? null : route.requestPlan().intent().name());
         trace.setComplexity(null);
         trace.setSuccess(response != null && response.isSuccess());
         // 新计划已禁止扩大候选的工具兜底；保留数据库列供历史 Trace 读取。
@@ -273,7 +273,7 @@ public class AgentExecutionTraceService {
     }
 
     private String resolveRunSelectedAgent(AgentRunRoute route) {
-        if (route.profile() != null) {
+        if (route != null && route.profile() != null) {
             return route.profile().getName();
         }
         return "configured-agent";
@@ -284,7 +284,7 @@ public class AgentExecutionTraceService {
             AgentRunRoute route) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.putAll(buildRunMetadata(snapshot));
-        payload.put("requestPlan", route.requestPlan().toEvidence());
+        payload.put("requestPlan", route == null ? Map.of("status", "PLANNING_INCOMPLETE") : route.requestPlan().toEvidence());
         if (response != null && response.getThinkingSteps() != null) {
             payload.put("thinkingSteps", response.getThinkingSteps());
         }
@@ -297,8 +297,13 @@ public class AgentExecutionTraceService {
             AgentRunRoute route) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("run", buildRunMetadata(snapshot));
-        payload.put("requestPlan", route.requestPlan().toEvidence());
+        payload.put("requestPlan", route == null ? Map.of("status", "PLANNING_INCOMPLETE") : route.requestPlan().toEvidence());
         payload.put("runOrigin", context.executionContext().getOrigin().name());
+        // 仅保存服务端生成的编排指标，不持久化 Supervisor 原始决策/任务参数。
+        if (response != null && response.getExecutionMetadata() != null
+                && response.getExecutionMetadata().containsKey("orchestration")) {
+            payload.put("orchestration", response.getExecutionMetadata().get("orchestration"));
+        }
         Map<String, Object> toolGovernance = new LinkedHashMap<>();
         toolGovernance.put("records", context.toolJournal().snapshot());
         toolGovernance.put("overflowCount", context.toolJournal().overflowCount());

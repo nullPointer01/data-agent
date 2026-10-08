@@ -7,7 +7,7 @@
 完成这套实验后，你应该能够自己回答四个问题：
 
 1. 一份知识文档怎样被切成 Chunk，并分别写入 Milvus 与 Elasticsearch。
-2. Vector、BM25、RRF 和规则重排分别解决什么问题。
+2. Vector、BM25、RRF 和模型精排分别解决什么问题。
 3. 正确文档在哪个阶段丢失，应该调整切块、Embedding、融合还是重排。
 4. 怎样固定数据集、一次只改变一个变量，证明优化确实有效。
 
@@ -84,7 +84,15 @@ curl 'http://localhost:8080/api/v1/knowledge/list' \
 
 ## 第 4 步：生成可运行黄金集
 
-复制 `golden-dataset.template.json` 到仓库外或本机运维配置目录，然后按文档名称全局替换以下六个占位符：
+上传完成后，使用当前管理员的真实来源生成黄金集（输出文件必须不存在）：
+
+```bash
+node scripts/rag-golden-dataset.mjs examples/rag-evaluation-lab/golden-dataset.template.json config/rag-golden-dataset.json --base-url http://localhost:8080
+```
+
+工具从进程环境 `RAG_ADMIN_TOKEN` 读取鉴权 Token，不输出 Token、不上传或改写知识；通过来源管理 API 游标分页读取当前 ADMIN 本人的文档。按下面的中文名称或原始 Markdown 文件名精确绑定，缺失、重名或重复 ID 都拒绝。也可使用 `--sources 来源数组.json`，输入为 `[{"sourceId":"实际ID","title":"文档名"}]`；它只验证映射，不能代替确认数据属于该账号。
+
+手工替换时对应关系如下：
 
 | 占位符 | 对应文档 |
 |---|---|
@@ -97,13 +105,16 @@ curl 'http://localhost:8080/api/v1/knowledge/list' \
 
 第一轮只使用 `expectedSourceIds`，判断正确文档是否被召回。不要急着填写 `expectedChunkIds`；文档级闭环稳定后，再从评测报告的实际排名证据中人工核对 Chunk。
 
-配置应用读取替换后的文件：
+配置应用读取替换后的文件，在 `src/main/resources/application.yml` 修改显式配置（默认路径已经是下列值），然后重启：
 
-```bash
-RAG_BENCHMARK_DATASET_PATH=/absolute/path/to/rag-learning-golden-dataset.json
+```yaml
+app:
+  rag:
+    benchmark:
+      dataset-path: ./config/rag-golden-dataset.json
 ```
 
-必须确认占位符已经全部替换，否则评测虽然可以运行，但所有标签都会指向不存在的来源。
+加载器会拒绝未替换占位符。生成文件后仍需人工核对每条标注；这 30 道教学题不满足正式中文改造五类各 6 道的分类设计，正式数据需单独准备。
 
 ## 第 5 步：运行批量评测
 
@@ -119,27 +130,33 @@ curl -X POST 'http://localhost:8080/api/v1/rag/benchmark/run' \
 报告会给出四个阶段：
 
 ```text
-VECTOR -> BM25 -> RRF -> HEURISTIC_RERANK
+VECTOR -> BM25 -> RRF -> RERANK
 ```
 
 重点查看：
 
 - `RRF.recallAt20`：正确来源有没有进入候选集合。
-- `HEURISTIC_RERANK.mrrAt10`：正确来源是否被排到前面。
-- `HEURISTIC_RERANK.hitAt6`：最终六条上下文中是否存在正确来源。
+- `RERANK.mrrAt10`：正确来源是否被排到前面。
+- `RERANK.hitAt6`：最终六条上下文中是否存在正确来源。
 - `failedCaseIds` 和逐案 `failureStage`：问题具体在哪一阶段失败。
 - `dataset.sha256` 与 `configuration`：两次报告是否真的可比较。
 
 ## 第 6 步：做一次受控对比
 
-保存第一次报告作为 A。只修改一个变量，例如 Chunk 大小、Embedding 模型或重排策略，再对同一批文档和同一份黄金集运行一次，保存为 B。
+保存第一次报告作为 A。中文索引改造依次固定其他变量，对照旧分块 + standard、旧分块 + ICU、中文分块 + ICU。使用旧检索实验环境时需要只接入新报告快照采集，不改变其分块/分词实现；缺少快照的旧报告不能直接比较。现有主分支只保留一套分块/ICU 实现，不提供 standard 运行开关。
 
 只有同时满足以下条件，A/B 对比才有意义：
 
 - `dataset.sha256` 相同。
 - `corpusVersion` 相同。
 - 除目标变量外，其余配置相同。
-- 两次报告都没有 `EXECUTION_ERROR`。
+- 两次报告都没有 `EXECUTION_ERROR` 或精排降级。
+- 每条用例实际 `retrievalQueries` 相同，查询扩展不能随机改变对照输入。
+
+```bash
+node scripts/rag-compare-reports.mjs baseline.json candidate.json
+```
+
+工具输出四个阶段的指标差和延迟比，非目标模型/配置/问句变化、标签哈希不一致、旧报告缺字段都会拒绝。单轮输出不是发布结论；相同预热下至少三轮，并人工检查分类收益、编号漏召回和引用位置。部署与维护重建操作见 [中文检索与索引维护](../../docs/核心逻辑详解/中文检索与索引维护.md)。
 
 教学数据只能证明评测机制和参数影响，不能代替真实用户问题。面试中应表述为“我建立并跑通了可复现评测闭环”，不能把教学集指标说成线上业务收益。
-

@@ -56,7 +56,17 @@ public record RagBenchmarkReport(
             int candidateTopK,
             int topK,
             double minScore,
-            int maxContextChars) {
+            int maxContextChars,
+            String fullTextIndexName,
+            String fullTextAnalyzer,
+            String configuredChunkingVersion,
+            int chunkSize,
+            int chunkOverlap,
+            boolean queryCompressionEnabled,
+            boolean queryExpansionEnabled,
+            String queryModelId,
+            int maxQueries,
+            int maxQueryChars) {
     }
 
     /**
@@ -88,7 +98,8 @@ public record RagBenchmarkReport(
             String rerankerFallbackProvider,
             boolean rerankerFallback,
             String rerankerErrorCategory,
-            List<StageResult> stages) {
+            List<StageResult> stages,
+            List<String> retrievalQueries) {
     }
 
     /**

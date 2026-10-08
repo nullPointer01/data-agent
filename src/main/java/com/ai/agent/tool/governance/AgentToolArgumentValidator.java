@@ -2,14 +2,12 @@ package com.ai.agent.tool.governance;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
-import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
-import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
-import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
+import dev.langchain4j.internal.JsonSchemaElementJsonUtils;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
-import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -21,7 +19,6 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 使用模型看到的同一 ToolSpecification Schema 校验不可信工具参数。
@@ -30,6 +27,8 @@ import java.util.Set;
  */
 @Component
 public class AgentToolArgumentValidator {
+
+    private static final JsonSchemaFactory SCHEMAS = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
 
     private final ObjectMapper objectMapper;
     private final AgentToolGovernanceProperties properties;
@@ -46,56 +45,30 @@ public class AgentToolArgumentValidator {
         }
         JsonNode parsed;
         try {
-            parsed = objectMapper.readTree(json);
+            parsed = objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(json);
         } catch (Exception e) {
             return AgentToolArgumentValidation.invalid("{length=" + json.length() + "}", "工具参数不是有效 JSON");
         }
         if (!(parsed instanceof ObjectNode objectNode)) {
-            return AgentToolArgumentValidation.invalid("{type=" + parsed.getNodeType() + "}", "工具参数必须是 JSON 对象");
+            return AgentToolArgumentValidation.invalid("{type=" + (parsed == null ? "missing" : parsed.getNodeType()) + "}", "工具参数必须是 JSON 对象");
         }
         String summary = summarize(objectNode);
-        Map<String, JsonSchemaElement> declared = schema == null || schema.properties() == null
-                ? Map.of()
-                : schema.properties();
-        Set<String> actual = new java.util.LinkedHashSet<>();
-        objectNode.fieldNames().forEachRemaining(actual::add);
-        Set<String> unknown = actual.stream()
-                .filter(name -> !declared.containsKey(name))
-                .collect(java.util.stream.Collectors.toSet());
-        if (!unknown.isEmpty()) {
-            return AgentToolArgumentValidation.invalid(summary, "工具参数包含未知字段: " + sorted(unknown));
-        }
-        List<String> required = schema == null || schema.required() == null ? List.of() : schema.required();
-        List<String> missing = required.stream()
-                .filter(name -> !objectNode.has(name) || objectNode.get(name).isNull())
-                .sorted()
-                .toList();
-        if (!missing.isEmpty()) {
-            return AgentToolArgumentValidation.invalid(summary, "工具参数缺少必填字段: " + missing);
-        }
-        for (Map.Entry<String, JsonSchemaElement> entry : declared.entrySet()) {
-            JsonNode value = objectNode.get(entry.getKey());
-            if (value != null && !value.isNull() && !isCompatible(value, entry.getValue())) {
-                return AgentToolArgumentValidation.invalid(summary, "工具参数字段类型错误: " + entry.getKey());
+        try {
+            ObjectNode contract = objectMapper.valueToTree(schema == null
+                    ? Map.of("type", "object", "properties", Map.of()) : JsonSchemaElementJsonUtils.toMap(schema));
+            // 保留本地工具原有的顶层未知字段拒绝；MCP 显式允许 additionalProperties 时尊重其合同。
+            if (!contract.has("additionalProperties")) contract.put("additionalProperties", false);
+            if (contract.findValues("$ref").stream().anyMatch(ref -> !ref.isTextual() || !ref.asText().startsWith("#"))) {
+                return AgentToolArgumentValidation.invalid(summary, "工具 Schema 不允许外部引用");
             }
+            if (!SCHEMAS.getSchema(contract).validate(objectNode).isEmpty()) {
+                // 第三方校验错误可能包含参数原文，只返回固定安全说明。
+                return AgentToolArgumentValidation.invalid(summary, "工具参数不符合 JSON Schema（必填字段、类型、枚举或额外字段）");
+            }
+        } catch (RuntimeException failure) {
+            return AgentToolArgumentValidation.invalid(summary, "工具参数 Schema 无法校验");
         }
         return AgentToolArgumentValidation.valid(objectNode, summary);
-    }
-
-    private boolean isCompatible(JsonNode value, JsonSchemaElement schema) {
-        if (schema instanceof JsonStringSchema || schema instanceof JsonEnumSchema) {
-            return value.isTextual();
-        }
-        if (schema instanceof JsonIntegerSchema) {
-            return value.isIntegralNumber();
-        }
-        if (schema instanceof JsonNumberSchema) {
-            return value.isNumber();
-        }
-        if (schema instanceof JsonBooleanSchema) {
-            return value.isBoolean();
-        }
-        return false;
     }
 
     private String summarize(ObjectNode arguments) {
@@ -119,7 +92,4 @@ public class AgentToolArgumentValidator {
         }
     }
 
-    private List<String> sorted(Set<String> values) {
-        return values.stream().sorted().toList();
-    }
 }

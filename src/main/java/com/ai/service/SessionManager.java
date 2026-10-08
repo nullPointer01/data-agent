@@ -1,5 +1,8 @@
 package com.ai.service;
 
+import com.ai.indexing.IndexTask;
+import com.ai.indexing.IndexTaskStore;
+
 import com.ai.model.ConversationMessage;
 import com.ai.model.ConversationSession;
 import com.ai.model.ConversationSessionEntity;
@@ -50,15 +53,18 @@ public class SessionManager {
     private final ConversationMessageRepository messageRepository;
     private final SecurityContextHelper securityContextHelper;
     private final RedisTemplate<String, ConversationSession> sessionRedisTemplate;
+    private final IndexTaskStore indexTasks;
 
     public SessionManager(ConversationSessionRepository sessionRepository,
             ConversationMessageRepository messageRepository,
             SecurityContextHelper securityContextHelper,
-            RedisTemplate<String, ConversationSession> sessionRedisTemplate) {
+            RedisTemplate<String, ConversationSession> sessionRedisTemplate,
+            IndexTaskStore indexTasks) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.securityContextHelper = securityContextHelper;
         this.sessionRedisTemplate = sessionRedisTemplate;
+        this.indexTasks = indexTasks;
     }
 
     private String redisKey(String sessionId) {
@@ -188,11 +194,11 @@ public class SessionManager {
             String modelUsed,
             long userTokens,
             long assistantTokens,
-            String runId) {
-        Optional<ConversationSessionEntity> entityOptional = findCurrentUserSession(sessionId);
+            String runId, boolean indexConversation) {
+        Optional<ConversationSessionEntity> entityOptional = sessionRepository.findOwnedForUpdate(sessionId,
+                securityContextHelper.getCurrentUserId(), securityContextHelper.getCurrentTenantId());
         if (entityOptional.isEmpty()) {
-            LOGGER.warn("跳过保存对话，会话不存在或无权限: {}", sessionId);
-            return false;
+            throw new IllegalStateException("会话不存在或无权限，回答未保存");
         }
         if (StringUtils.hasText(runId) && findRunAssistantMessage(sessionId, runId).isPresent()) {
             return false;
@@ -207,14 +213,12 @@ public class SessionManager {
         messageRepository.save(assistantMessage);
         updateSessionMetadata(entity, ROLE_USER, userContent, null, null, userTokens);
         updateSessionMetadata(entity, ROLE_ASSISTANT, assistantContent, skillUsed, modelUsed, assistantTokens);
-
-        ConversationSession session = sessionRedisTemplate.opsForValue().get(redisKey(sessionId));
-        if (session != null) {
-            appendSessionMessage(session, ROLE_USER, userContent);
-            appendSessionMessage(session, ROLE_ASSISTANT, assistantContent);
-            sessionRedisTemplate.opsForValue().set(redisKey(sessionId), session,
-                    SESSION_TTL_MINUTES, TimeUnit.MINUTES);
+        if (indexConversation) {
+            if (!StringUtils.hasText(runId)) throw new IllegalArgumentException("对话索引缺少 Run 身份");
+            indexTasks.enqueue(IndexTask.Kind.CONVERSATION,entity.getTenantId(),entity.getUserId(),runId,
+                    new IndexTask.Conversation(sessionId,userContent,assistantContent));
         }
+        invalidateCacheAfterCommit(sessionId);
         return true;
     }
 
@@ -241,13 +245,13 @@ public class SessionManager {
             String content,
             String skillUsed,
             String modelUsed,
-            long tokens) {
+            long tokens, String questionForIndex) {
         if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(tenantId)
                 || !StringUtils.hasText(userId) || !StringUtils.hasText(runId)) {
             return false;
         }
         Optional<ConversationSessionEntity> entityOptional = sessionRepository
-                .findBySessionIdAndUserIdAndTenantId(sessionId, userId, tenantId);
+                .findOwnedForUpdate(sessionId, userId, tenantId);
         Optional<ConversationMessage> messageOptional = findRunAssistantMessage(sessionId, runId);
         if (entityOptional.isEmpty() || messageOptional.isEmpty()) {
             LOGGER.warn("未找到待更新的 Run 会话消息: sessionId={}, runId={}", sessionId, runId);
@@ -275,8 +279,23 @@ public class SessionManager {
             entity.setModelId(modelUsed);
         }
         sessionRepository.save(entity);
-        sessionRedisTemplate.delete(redisKey(sessionId));
+        if (StringUtils.hasText(questionForIndex)) {
+            indexTasks.enqueue(IndexTask.Kind.CONVERSATION, tenantId, userId, runId,
+                    new IndexTask.Conversation(sessionId, questionForIndex, content));
+        }
+        invalidateCacheAfterCommit(sessionId);
         return true;
+    }
+
+    private void invalidateCacheAfterCommit(String sessionId) {
+        // 主库和 Outbox 提交后再失效缓存，回滚时不能留下看似保存成功的缓存消息。
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCommit() {
+                        try { sessionRedisTemplate.delete(redisKey(sessionId)); }
+                        catch (RuntimeException error) { LOGGER.warn("会话提交后缓存失效失败: sessionId={}",sessionId); }
+                    }
+                });
     }
 
     public List<ConversationSessionEntity> getUserSessions(String userId) {

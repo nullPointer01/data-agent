@@ -112,6 +112,14 @@ public class RagBenchmarkDatasetLoader {
         if (!hasSource && !hasChunk && !hasGradedChunk) {
             throw invalid(path, "用例缺少sourceId或chunkId标注: caseId=" + caseId);
         }
+        java.util.stream.Stream.concat(
+                benchmarkCase.expectedSourceIds() == null ? java.util.stream.Stream.empty() : benchmarkCase.expectedSourceIds().stream(),
+                benchmarkCase.expectedChunkIds() == null ? java.util.stream.Stream.empty() : benchmarkCase.expectedChunkIds().stream())
+                .forEach(id -> {
+                    if (id == null || id.isBlank() || id.startsWith("REPLACE_WITH_")) {
+                        throw invalid(path, "标注 ID 为空或仍为占位符: caseId=" + caseId);
+                    }
+                });
         validateGrades(benchmarkCase.relevanceGrades(), caseId, path);
     }
 
@@ -120,7 +128,8 @@ public class RagBenchmarkDatasetLoader {
             return;
         }
         for (Map.Entry<String, Integer> entry : grades.entrySet()) {
-            if (!StringUtils.hasText(entry.getKey()) || entry.getValue() == null || entry.getValue() < 0) {
+            if (!StringUtils.hasText(entry.getKey()) || entry.getKey().startsWith("REPLACE_WITH_")
+                    || entry.getValue() == null || entry.getValue() < 0) {
                 throw invalid(path, "relevanceGrades非法: caseId=" + caseId);
             }
         }

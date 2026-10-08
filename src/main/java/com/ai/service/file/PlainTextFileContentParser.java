@@ -1,10 +1,13 @@
 package com.ai.service.file;
 
+import dev.langchain4j.data.document.BlankDocumentException;
+import dev.langchain4j.data.document.parser.TextDocumentParser;
+import java.io.InputStream;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 通过以 UTF-8 文本形式读取纯文本和未知文件来解析它们。
+ * 官方 TextDocumentParser 读取已识别的 UTF-8 文本；未知二进制仍由拒绝策略处理。
  *
  * @author data-agent
  */
@@ -19,6 +22,10 @@ public class PlainTextFileContentParser implements FileContentParser {
 
     @Override
     public String parse(FileParsingContext context) throws Exception {
-        return context.readText();
+        try (InputStream input = context.openInputStream()) {
+            return new TextDocumentParser().parse(input).text();
+        } catch (BlankDocumentException blank) {
+            return "";
+        }
     }
 }

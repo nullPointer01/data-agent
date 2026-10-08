@@ -31,9 +31,9 @@ app:
     key: local-development-encryption-key-32chars
   agent:
     context:
-      # 线上暂与本地保持一致：先观察治理证据，再显式打开压缩。
+      # 按预算裁剪完整历史轮次，不额外调用模型生成摘要。
       compaction:
-        enabled: false
+        enabled: true
         model-summary-enabled: false
     durable:
       # 当前线上配置与本地验收环境一致，直接开启审批恢复和隔离沙箱工具。

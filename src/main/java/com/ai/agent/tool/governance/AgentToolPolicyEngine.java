@@ -24,6 +24,9 @@ public class AgentToolPolicyEngine {
         if (runContext == null || invocationContext == null) {
             return Decision.deny(AgentToolExecutionStatus.UNAUTHORIZED, "工具调用缺少服务端执行上下文");
         }
+        if (!registry.isVisibleToTenant(descriptor.name(), runContext.tenantId())) {
+            return Decision.deny(AgentToolExecutionStatus.UNAUTHORIZED, "工具服务未向当前租户授权");
+        }
         if (!registry.isEnabled(descriptor.name()) || !invocationContext.allows(descriptor.name())) {
             return Decision.deny(AgentToolExecutionStatus.UNAUTHORIZED, "当前 Agent 未获准调用该工具");
         }

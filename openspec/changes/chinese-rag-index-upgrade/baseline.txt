@@ -1,0 +1,166 @@
+10cdefabaa802ed80c2b6051ac044e06f2dfb169
+ M CLAUDE.md
+ M README.md
+ M docs/interview/INTERVIEW_TECH_STORIES.md
+ M docs/interview/PROJECT_INTERVIEW_GUIDE.md
+ M docs/interview/person.md
+ M "docs/interview/\345\275\223\345\211\215\350\277\233\345\272\246\344\270\216\351\252\214\346\224\266\344\272\244\346\216\245.md"
+ M "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/Agent\345\267\245\345\205\267\346\262\273\347\220\206.md"
+ M "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/Agent\350\277\220\350\241\214\346\227\266\344\270\216Harness.md"
+ M "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/RAG\346\243\200\347\264\242\351\223\276\350\267\257.md"
+ M "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\347\233\256\345\275\225\347\264\242\345\274\225.md"
+ M frontend/src/agent/runEvidence.js
+ M frontend/src/components/CapabilityPackPicker.jsx
+ M frontend/src/pages/KnowledgePage.jsx
+ M pom.xml
+ M sql/init.sql
+ D src/main/java/com/ai/agent/AgentPromptComposer.java
+ M src/main/java/com/ai/agent/AgentReasoningProperties.java
+ M src/main/java/com/ai/agent/AgentRuntimeService.java
+ M src/main/java/com/ai/agent/AgentSystemPrompts.java
+ M src/main/java/com/ai/agent/ConfigurableAgentExecutor.java
+ M src/main/java/com/ai/agent/DataAnalysisAgent.java
+ M src/main/java/com/ai/agent/DataAnalysisAgentImpl.java
+ M src/main/java/com/ai/agent/approval/AgentApprovalSuspensionService.java
+ M src/main/java/com/ai/agent/capability/AgentCapabilityRegistry.java
+ M src/main/java/com/ai/agent/capability/AgentCapabilityScope.java
+ M src/main/java/com/ai/agent/capability/AgentCapabilityService.java
+ M src/main/java/com/ai/agent/context/AgentContextGovernor.java
+ M src/main/java/com/ai/agent/context/AgentContextProperties.java
+ M src/main/java/com/ai/agent/context/ConservativeContextReducer.java
+ M src/main/java/com/ai/agent/durable/AgentDurableRunStore.java
+ M src/main/java/com/ai/agent/durable/AgentResumeWorker.java
+ M src/main/java/com/ai/agent/durable/AgentRunStateEntity.java
+ M src/main/java/com/ai/agent/durable/AgentRunStateRepository.java
+ M src/main/java/com/ai/agent/react/ReActExecutionResult.java
+ D src/main/java/com/ai/agent/react/ReActLoopRunner.java
+ D src/main/java/com/ai/agent/react/ReActLoopStepResult.java
+ D src/main/java/com/ai/agent/react/ReActModelCaller.java
+ D src/main/java/com/ai/agent/react/ReActRecoveryDecision.java
+ D src/main/java/com/ai/agent/react/ReActRecoveryTracker.java
+ D src/main/java/com/ai/agent/react/ReActResponseParser.java
+ D src/main/java/com/ai/agent/react/ReActStepHandler.java
+ D src/main/java/com/ai/agent/react/ReActStepOutcome.java
+ D src/main/java/com/ai/agent/react/ReActStreamingStepProcessor.java
+ D src/main/java/com/ai/agent/react/ReActSynchronousStepProcessor.java
+ M src/main/java/com/ai/agent/react/ReActWorkingMemoryService.java
+ D src/main/java/com/ai/agent/react/SelfReflector.java
+ M src/main/java/com/ai/agent/runtime/AgentExecutionMode.java
+ M src/main/java/com/ai/agent/runtime/AgentExecutionStrategy.java
+ M src/main/java/com/ai/agent/runtime/AgentRunContext.java
+ M src/main/java/com/ai/agent/runtime/AgentRunCoordinator.java
+ M src/main/java/com/ai/agent/runtime/AgentRunRegistry.java
+ M src/main/java/com/ai/agent/runtime/AgentRunRouteResolver.java
+ M src/main/java/com/ai/agent/runtime/AgentRunScope.java
+ M src/main/java/com/ai/agent/runtime/ChatExecutionStrategy.java
+ M src/main/java/com/ai/agent/runtime/ConfiguredAgentExecutionService.java
+ M src/main/java/com/ai/agent/runtime/planning/ModelSemanticRequestRouter.java
+ M src/main/java/com/ai/agent/runtime/planning/SemanticRequestRouter.java
+ M src/main/java/com/ai/agent/tool/AgentConversationRecorder.java
+ M src/main/java/com/ai/agent/tool/AgentDelegationToolService.java
+ M src/main/java/com/ai/agent/tool/AgentToolInvoker.java
+ M src/main/java/com/ai/agent/tool/governance/AgentToolAdmissionService.java
+ M src/main/java/com/ai/agent/tool/governance/AgentToolArgumentValidator.java
+ M src/main/java/com/ai/agent/tool/governance/AgentToolPolicyEngine.java
+ M src/main/java/com/ai/agent/tool/governance/AgentToolRegistry.java
+ M src/main/java/com/ai/config/AsyncConfig.java
+ M src/main/java/com/ai/config/ContextPropagatingTaskDecorator.java
+ D src/main/java/com/ai/config/SharedTokenizer.java
+ M src/main/java/com/ai/controller/AnalysisController.java
+ M src/main/java/com/ai/controller/KnowledgeController.java
+ M src/main/java/com/ai/knowledge/dto/KnowledgeItemResponse.java
+ M src/main/java/com/ai/mcp/McpContext.java
+ M src/main/java/com/ai/mcp/McpContextManager.java
+ M src/main/java/com/ai/mcp/McpModelService.java
+ M src/main/java/com/ai/mcp/ModelRetryExecutor.java
+ M src/main/java/com/ai/mcp/TokenMonitor.java
+ M src/main/java/com/ai/memory/MemoryContextPromptFormatter.java
+ M src/main/java/com/ai/memory/SemanticMemoryExtractor.java
+ M src/main/java/com/ai/memory/dto/MemoryContext.java
+ M src/main/java/com/ai/model/ConversationSession.java
+ M src/main/java/com/ai/package-info.java
+ M src/main/java/com/ai/rag/EnhancedRagPipeline.java
+ M src/main/java/com/ai/rag/RagParentContextResolver.java
+ M src/main/java/com/ai/rag/RagProperties.java
+ D src/main/java/com/ai/rag/RagQueryRewriter.java
+ M src/main/java/com/ai/rag/RagRetrievalService.java
+ M src/main/java/com/ai/rag/eval/RagBenchmarkService.java
+ M src/main/java/com/ai/rag/rerank/HttpCrossEncoderRerankProvider.java
+ M src/main/java/com/ai/rag/retrieval/DefaultHybridRetriever.java
+ M src/main/java/com/ai/rag/retrieval/RrfFusionRanker.java
+ M src/main/java/com/ai/repository/ConversationSessionRepository.java
+ M src/main/java/com/ai/service/AgentExecutionTraceService.java
+ M src/main/java/com/ai/service/AgentProfileService.java
+ M src/main/java/com/ai/service/AnalysisStreamService.java
+ M src/main/java/com/ai/service/SessionManager.java
+ M src/main/java/com/ai/service/VectorMemoryService.java
+ D src/main/java/com/ai/service/file/DocxFileContentParser.java
+ M src/main/java/com/ai/service/file/FileParsingContext.java
+ M src/main/java/com/ai/service/file/FileProcessingWorker.java
+ D src/main/java/com/ai/service/file/PdfFileContentParser.java
+ M src/main/java/com/ai/service/file/PlainTextFileContentParser.java
+ D src/main/java/com/ai/service/file/PptxFileContentParser.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeService.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeSyncResultWriter.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEvent.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventListener.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventPublisher.java
+ D src/main/java/com/ai/service/knowledge/KnowledgeVectorEventType.java
+ M src/main/java/com/ai/service/knowledge/KnowledgeVectorIndexService.java
+ M src/main/java/com/ai/vector/ChunkMetadata.java
+ M src/main/java/com/ai/vector/EmbeddingCallExecutor.java
+ M src/main/java/com/ai/vector/EmbeddingCallRejectedException.java
+ M src/main/java/com/ai/vector/EmbeddingGateway.java
+ M src/main/java/com/ai/vector/MarkdownStructureParser.java
+ M src/main/java/com/ai/vector/MilvusVectorStoreGateway.java
+ D src/main/java/com/ai/vector/SemanticChunk.java
+ D src/main/java/com/ai/vector/SemanticChunker.java
+ D src/main/java/com/ai/vector/SmartTextChunker.java
+ M src/main/java/com/ai/vector/TextChunker.java
+ M src/main/resources/application-local.yml
+ M src/main/resources/application-prod.yml
+ M src/main/resources/application.yml
+ D src/main/resources/static/assets/index-CQB4o72U.js
+ D src/main/resources/static/assets/vendor-BI-34hfk.js
+ M src/main/resources/static/index.html
+?? "docs/\346\234\257\350\257\255/"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/Supervisor\344\270\216\345\216\237\347\274\226\346\216\222\345\257\271\347\205\247.md"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\344\270\255\346\226\207\345\210\206\345\235\227\344\270\216\346\243\200\347\264\242\346\224\271\351\200\240\350\247\204\345\210\222.md"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\346\226\207\346\241\243\345\210\206\345\235\227\344\270\216\346\241\206\346\236\266\351\200\202\351\205\215.md"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\346\226\207\346\241\243\350\247\243\346\236\220\344\270\216\346\241\206\346\236\266\346\243\200\347\264\242.md"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\346\240\207\345\207\206MCP\345\267\245\345\205\267\346\216\245\345\205\245.md"
+?? "docs/\346\240\270\345\277\203\351\200\273\350\276\221\350\257\246\350\247\243/\346\241\206\346\236\266\351\233\206\346\210\220\344\270\216\346\266\210\346\201\257\347\224\237\345\221\275\345\221\250\346\234\237.md"
+?? openspec/changes/agentic-delegation-workflow/
+?? openspec/changes/agentic-supervisor/
+?? openspec/changes/aiservices-governed-tools/
+?? openspec/changes/declarative-prompt-flux/
+?? openspec/changes/framework-document-splitting/
+?? openspec/changes/framework-rag-components/
+?? openspec/changes/harden-agent-lifecycle/
+?? openspec/changes/modernize-langchain4j-assistant/
+?? openspec/changes/standard-mcp-tools/
+?? sql/upgrade-index-tasks.sql
+?? src/main/java/com/ai/agent/AgentChatAssistant.java
+?? src/main/java/com/ai/agent/AgentChatService.java
+?? src/main/java/com/ai/agent/AgentChatToolService.java
+?? src/main/java/com/ai/agent/agentic/
+?? src/main/java/com/ai/agent/durable/DurableToolContinuation.java
+?? src/main/java/com/ai/agent/tool/ai/
+?? src/main/java/com/ai/config/MvcStreamingConfig.java
+?? src/main/java/com/ai/config/TaskContextSnapshot.java
+?? src/main/java/com/ai/indexing/
+?? src/main/java/com/ai/integration/
+?? src/main/java/com/ai/mcp/ModelCallExecutor.java
+?? src/main/java/com/ai/mcp/ModelInvocationException.java
+?? src/main/java/com/ai/mcp/ModelResponseStream.java
+?? src/main/java/com/ai/mcp/ModelStreamRuntime.java
+?? src/main/java/com/ai/mcp/StructuredAssistantFactory.java
+?? src/main/java/com/ai/rag/RagQueryTransformer.java
+?? src/main/java/com/ai/resilience/
+?? src/main/java/com/ai/service/file/FrameworkDocumentFileContentParser.java
+?? src/main/java/com/ai/service/knowledge/KnowledgeIndexScheduler.java
+?? src/main/java/com/ai/vector/ChunkSourceLocator.java
+?? src/main/java/com/ai/vector/DocumentSplitterConfiguration.java
+?? src/main/resources/static/assets/index-CZG8gPUi.js
+?? src/main/resources/static/assets/vendor-x7Yyc7qk.js
+

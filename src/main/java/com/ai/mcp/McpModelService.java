@@ -1,28 +1,26 @@
 package com.ai.mcp;
 
 import com.ai.agent.context.AgentContextGovernor;
-import com.ai.agent.context.AgentContextGovernor.GovernedContext;
+import com.ai.agent.context.AgentContextGovernor.ContextLimitException;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunControl;
 import com.ai.agent.runtime.AgentRunScope;
+import com.ai.agent.runtime.AgentRunTerminatedException;
 import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.event.ModelConfigChangeEvent;
 import com.ai.event.ModelConfigChangeEvent.ChangeType;
 import com.ai.logging.StructuredLogger;
+import com.ai.config.TaskContextSnapshot;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ChatRequestParameters;
+import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.request.ResponseFormat;
-import dev.langchain4j.model.chat.request.ResponseFormatType;
-import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
@@ -35,13 +33,23 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.concurrent.Flow;
+import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
+import dev.langchain4j.model.chat.response.PartialResponse;
+import dev.langchain4j.model.chat.response.CompleteResponse;
+import org.reactivestreams.FlowAdapters;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 /**
- * 模型调用门面，统一编排上下文、配额、重试和 token 记账。
+ * 所有模型调用的统一治理入口：AiServices 和工具循环共享上下文、预算、重试与记账。
+ * 失败以异常传播，流式记账留在发起请求的线程，保留租户和 Run 上下文。
  *
  * @author data-agent
  */
@@ -49,13 +57,6 @@ import java.util.stream.Collectors;
 public class McpModelService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(McpModelService.class);
-    private static final int STREAMING_TIMEOUT_SECONDS = 300;
-    private static final String DEFAULT_MODEL_KEY = "default";
-    private static final String ROLE_USER = "user";
-    private static final String ROLE_ASSISTANT = "assistant";
-    private static final String ERROR_CIRCUIT_PREFIX = "模型[";
-    private static final String ERROR_MODEL_CALL_PREFIX = "模型调用失败: ";
-
     private final McpContextManager contextManager;
     private final TokenMonitor tokenMonitor;
     private final ModelRetryExecutor retryExecutor;
@@ -64,16 +65,14 @@ public class McpModelService {
     private final TokenQuotaGuard tokenQuotaGuard;
     private final StructuredLogger structuredLogger;
     private final AgentContextGovernor contextGovernor;
+    private final ModelStreamRuntime streamRuntime;
+    private final ModelCallExecutor callExecutor;
 
-    public McpModelService(
-            McpContextManager contextManager,
-            TokenMonitor tokenMonitor,
-            ModelRetryExecutor retryExecutor,
-            TokenUsageRecorder tokenUsageRecorder,
-            ModelClientRegistry modelClientRegistry,
-            TokenQuotaGuard tokenQuotaGuard,
-            StructuredLogger structuredLogger,
-            AgentContextGovernor contextGovernor) {
+    public McpModelService(McpContextManager contextManager, TokenMonitor tokenMonitor,
+            ModelRetryExecutor retryExecutor, TokenUsageRecorder tokenUsageRecorder,
+            ModelClientRegistry modelClientRegistry, TokenQuotaGuard tokenQuotaGuard,
+            StructuredLogger structuredLogger, AgentContextGovernor contextGovernor, ModelStreamRuntime streamRuntime,
+            ModelCallExecutor callExecutor) {
         this.contextManager = contextManager;
         this.tokenMonitor = tokenMonitor;
         this.retryExecutor = retryExecutor;
@@ -82,487 +81,346 @@ public class McpModelService {
         this.tokenQuotaGuard = tokenQuotaGuard;
         this.structuredLogger = structuredLogger;
         this.contextGovernor = contextGovernor;
-        LOGGER.info("McpModelService initialized");
+        this.streamRuntime = streamRuntime;
+        this.callExecutor = callExecutor;
     }
 
+    /** 配置变更后移除旧客户端，下次按当前租户配置重建。 */
     @EventListener
     public void onModelConfigChange(ModelConfigChangeEvent event) {
-        String modelId = event.getModelId();
-        ChangeType changeType = event.getChangeType();
-        if (changeType == ChangeType.UPDATED || changeType == ChangeType.TOGGLED || changeType == ChangeType.DELETED) {
-            modelClientRegistry.refreshModelCache(modelId);
-            LOGGER.info("Model cache refreshed: {} ({})", modelId, changeType);
+        ChangeType type = event.getChangeType();
+        if (type == ChangeType.UPDATED || type == ChangeType.TOGGLED || type == ChangeType.DELETED) {
+            modelClientRegistry.refreshModelCache(event.getModelId());
         }
     }
 
-    public String callModelWithContext(String contextId, String prompt) {
-        return callModelWithContext(contextId, prompt, null, null);
+    /** 提供给 AiServices 的同步适配器，所有请求仍经过统一治理。 */
+    public ChatModel chatModel(String modelId) {
+        return new ChatModel() {
+            @Override
+            public ChatResponse doChat(ChatRequest request) {
+                return callRequest(request, modelId, null, true);
+            }
+        };
     }
 
-    public String callModelWithContext(String contextId, String prompt, String modelId) {
-        return callModelWithContext(contextId, prompt, modelId, null);
+    /** 声明式任务按返回类型请求原生 Schema；兼容模式显式请求 JSON Object，不自动降级重发。 */
+    public ChatModel structuredChatModel(String modelId, boolean governRun, boolean nativeSchema) {
+        return new ChatModel() {
+            @Override
+            public Set<Capability> supportedCapabilities() {
+                return nativeSchema ? Set.of(Capability.RESPONSE_FORMAT_JSON_SCHEMA) : Set.of();
+            }
+
+            @Override
+            public ChatRequestParameters defaultRequestParameters() {
+                return ChatRequestParameters.builder().responseFormat(nativeSchema ? null : ResponseFormat.JSON).build();
+            }
+
+            @Override
+            public ChatResponse doChat(ChatRequest request) {
+                return callRequest(request, modelId, null, governRun);
+            }
+        };
     }
 
+    /**
+     * 提供给 AiServices 的流式适配器，框架负责事件 Flux，治理层负责预算与终态。
+     * start 后立即返回，最终记账与完成事件在恢复身份的回调中执行。
+     */
+    public StreamingChatModel streamingChatModel(String modelId) {
+        TaskContextSnapshot owner = TaskContextSnapshot.capture();
+        return new StreamingChatModel() {
+            /** AiServices 的事件 Flux 使用响应式 SPI；仍复用同一模型预算、记账和传输取消。 */
+            @Override
+            public Flow.Publisher<ChatModelStreamingEvent> doChat(ChatRequest request) {
+                var events = Flux.<ChatModelStreamingEvent>create(sink -> owner.wrap(() -> {
+                            var future = callStreamingRequestAsync(request, modelId, token -> {
+                                if (token != null && !token.isEmpty()) {
+                                    sink.next(new PartialResponse(token));
+                                }
+                            });
+                            sink.onCancel(() -> future.cancel(true));
+                            future.whenComplete((response, error) -> {
+                                if (error != null) {
+                                    sink.error(unwrap(error));
+                                } else {
+                                    sink.next(new CompleteResponse(response));
+                                    sink.complete();
+                                }
+                            });
+                        }).run(), FluxSink.OverflowStrategy.ERROR)
+                        .onBackpressureBuffer(256);
+                return FlowAdapters.toFlowPublisher(events);
+            }
+
+            @Override
+            public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
+                callStreamingRequestAsync(request, modelId, handler::onPartialResponse)
+                        .whenComplete((response, error) -> {
+                            if (error != null) {
+                                handler.onError(unwrap(error));
+                            } else {
+                                // 工具预检/框架回调可能暂停或失败，必须交给 onError，避免 Future 永不完成。
+                                try {
+                                    handler.onCompleteResponse(response);
+                                } catch (Exception failure) {
+                                    handler.onError(failure);
+                                }
+                            }
+                        });
+            }
+        };
+    }
+
+    /** 在 Skill 临时窗口中执行一轮，窗口由 Skill 生命周期管理。 */
     public String callModelWithContext(String contextId, String prompt, String modelId, String skillId) {
         McpContext context = contextManager.getContext(contextId);
         if (context == null) {
-            throw new IllegalArgumentException("Context not found: " + contextId);
+            throw new IllegalArgumentException("模型上下文不存在: " + contextId);
         }
-
-        TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quotaResult.allowed()) {
-            return quotaResult.message();
-        }
-
-        contextManager.addConversationTurn(contextId, ROLE_USER, prompt);
-        // ChatMemory 窗口已包含本次 user 消息，按消息对象传给模型，保留角色结构
-        GovernedContext governedContext = contextGovernor.govern(context.historyMessages(), null, modelId);
-        List<ChatMessage> messages = governedContext.messages();
-        long inputTokens = governedContext.evidence().estimatedTokensAfter();
-        boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
-        String modelKey = modelClientRegistry.modelKey(modelId);
-        long startTime = System.currentTimeMillis();
-        LOGGER.info("Calling model with context | modelId={} | isDefault={} | historyMessages={} | promptTokens={} | contextId={}",
-                isDefault ? DEFAULT_MODEL_KEY : modelId, isDefault, messages.size(), inputTokens, contextId);
-
-        AgentRunControl runControl = beginAgentModelCall();
-        try {
-            ChatResponse response = invokeModelMessages(messages, modelId, modelKey, isDefault);
-            String responseText = responseText(response);
-            // token 记账优先使用厂商返回的真实用量
-            long realInputTokens = realInputTokens(response, inputTokens);
-            long outputTokens = realOutputTokens(response, responseText);
-            long totalTokens = realInputTokens + outputTokens;
-            settleAgentModelCall(runControl, response, totalTokens);
-
-            contextManager.addConversationTurn(contextId, ROLE_ASSISTANT, responseText);
-            tokenUsageRecorder.record(modelId, skillId, realInputTokens, outputTokens, totalTokens, null);
-            structuredLogger.logLlmCall(contextId, resolveLogModelId(modelId, isDefault), realInputTokens, outputTokens,
-                    System.currentTimeMillis() - startTime, true, null);
-            return responseText;
-        } catch (Exception e) {
-            LOGGER.error("Model call with context failed", e);
-            structuredLogger.logLlmCall(contextId, resolveLogModelId(modelId, isDefault), inputTokens, 0L,
-                    System.currentTimeMillis() - startTime, false, e.getMessage());
-            return formatModelException(e);
-        }
+        // 当前输入必须进入准入检查，不能先被短期窗口自动淘汰。
+        var messages = new java.util.ArrayList<>(context.historyMessages());
+        messages.add(UserMessage.from(prompt));
+        ChatResponse response = callRequest(ChatRequest.builder().messages(messages).build(),
+                modelId, skillId, true);
+        String text = responseText(response);
+        contextManager.addConversationTurn(contextId, "user", prompt);
+        contextManager.addConversationTurn(contextId, "assistant", text);
+        return text;
     }
 
+    /** 使用默认模型执行文本任务。 */
     public String callModel(String prompt) {
         return callModel(prompt, null);
     }
 
+    /** 使用指定模型执行无持久会话的文本任务。 */
     public String callModel(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, null, true);
+        return callText(prompt, modelId, null, true);
     }
 
-    /**
-     * 以 JSON 强制输出模式调用模型（response_format=json_object），用于结构化输出场景。
-     *
-     * <p>注意：提示词中必须包含 "JSON" 字样（OpenAI 协议要求）。</p>
-     *
-     * @param prompt 提示词
-     * @param modelId 模型编号
-     * @return 模型响应或失败说明；调用方仍需验证 JSON 合同
-     */
+    /** 请求 JSON Object，语义和字段校验仍由业务调用方负责。 */
     public String callModelJson(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, ResponseFormat.JSON, true);
+        return callText(prompt, modelId, ResponseFormat.JSON, true);
     }
 
-    /**
-     * 使用厂商原生 JSON Schema 约束输出，复用配额、上下文、重试和 Run 预算治理。
-     * 格式不受支持时按既有错误路径返回，不能无条件追加另一种格式的模型调用。
-     *
-     * @param prompt 包含业务决策规则的提示词
-     * @param modelId 模型编号，空值表示租户默认模型
-     * @param schema 输出结构合同，不能为空
-     * @return 模型响应或失败说明；结构正确仍不等于业务决策正确
-     */
-    public String callModelStructured(String prompt, String modelId, JsonSchema schema) {
-        Objects.requireNonNull(schema, "结构化输出必须提供 Schema");
-        ResponseFormat format = ResponseFormat.builder()
-                .type(ResponseFormatType.JSON).jsonSchema(schema).build();
-        return callModelInternal(prompt, modelId, format, true);
-    }
-
-    /**
-     * 为回答完成后的后台任务调用 JSON 模型，不再占用已结束 Agent Run 的执行预算。
-     *
-     * <p>该入口仍执行用户配额检查、token 记账、重试和结构化日志，不是绕过治理的模型调用。</p>
-     *
-     * @param prompt 包含 JSON 输出要求的提示词
-     * @param modelId 模型编号
-     * @return 模型返回的 JSON 文本
-     */
-    public String callBackgroundModelJson(String prompt, String modelId) {
-        return callModelInternal(prompt, modelId, ResponseFormat.JSON, false);
-    }
-
-    private String callModelInternal(String prompt, String modelId, ResponseFormat format, boolean governRun) {
-        TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quotaResult.allowed()) {
-            return quotaResult.message();
-        }
-
-        GovernedContext governedContext = contextGovernor.govern(
-                List.of(UserMessage.from(prompt)), null, modelId);
-        long inputTokens = governedContext.evidence().estimatedTokensAfter();
-        boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
-        String modelKey = modelClientRegistry.modelKey(modelId);
-        long startTime = System.currentTimeMillis();
-        String formatName = format == null ? "TEXT" : format.jsonSchema() == null ? "JSON_OBJECT" : "JSON_SCHEMA";
-        LOGGER.info("Calling model | modelId={} | isDefault={} | responseFormat={} | promptLength={} | promptTokens={}",
-                isDefault ? DEFAULT_MODEL_KEY : modelId, isDefault, formatName, prompt.length(), inputTokens);
-
-        AgentRunControl runControl = governRun ? beginAgentModelCall() : null;
-        try {
-            ChatResponse response = invokeModelMessages(
-                    governedContext.messages(), modelId, modelKey, isDefault, format);
-            String responseText = responseText(response);
-            // token 记账优先使用厂商返回的真实用量
-            long realInputTokens = realInputTokens(response, inputTokens);
-            long outputTokens = realOutputTokens(response, responseText);
-            long totalTokens = realInputTokens + outputTokens;
-            settleAgentModelCall(runControl, response, totalTokens);
-            tokenUsageRecorder.record(isDefault ? null : modelId, null, realInputTokens, outputTokens, totalTokens,
-                    null);
-            structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), realInputTokens, outputTokens,
-                    System.currentTimeMillis() - startTime, true, null);
-            return responseText;
-        } catch (Exception e) {
-            LOGGER.error("{} model call failed after retries", isDefault ? "Default" : "Custom", e);
-            structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, 0L,
-                    System.currentTimeMillis() - startTime, false, e.getMessage());
-            return formatModelException(e);
-        }
-    }
-
-    /**
-     * 以流式方式调用模型，并返回完整响应文本。
-     *
-     * @param prompt 提示词
-     * @param modelId 模型编号
-     * @param tokenConsumer token 片段消费者
-     * @return 完整响应
-     */
-    public String callModelStreaming(String prompt, String modelId, Consumer<String> tokenConsumer) {
-        TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quotaResult.allowed()) {
-            tokenConsumer.accept(quotaResult.message());
-            return quotaResult.message();
-        }
-
-        GovernedContext governedContext = contextGovernor.govern(
-                List.of(UserMessage.from(prompt)), null, modelId);
-        long inputTokens = governedContext.evidence().estimatedTokensAfter();
-        boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
-        long startTime = System.currentTimeMillis();
-        AgentRunControl runControl = beginAgentModelCall();
-        try {
-            String result = streamWithLangChain(governedContext.messages(), modelId, tokenConsumer);
-            long outputTokens = tokenMonitor.estimateTokens(result);
-            long totalTokens = inputTokens + outputTokens;
-            settleAgentModelCall(runControl, null, totalTokens);
-            String modelKey = modelClientRegistry.modelKey(modelId);
-            tokenUsageRecorder.record(isDefault ? null : modelId, null,
-                    inputTokens, outputTokens, totalTokens, null);
-            structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, outputTokens,
-                    System.currentTimeMillis() - startTime, true, null);
-            return result;
-        } catch (Exception e) {
-            LOGGER.error("Streaming model call failed, falling back to sync", e);
-            structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, 0L,
-                    System.currentTimeMillis() - startTime, false, e.getMessage());
-            String fallback = callModelInternal(prompt, modelId, null, false);
-            settleAgentModelCall(runControl, null,
-                    inputTokens + tokenMonitor.estimateTokens(fallback));
-            tokenConsumer.accept(fallback);
-            return fallback;
-        }
-    }
-
-    private ChatResponse invokeModelMessages(List<ChatMessage> messages, String modelId, String modelKey,
-            boolean isDefault) throws Exception {
-        return invokeModelMessages(messages, modelId, modelKey, isDefault, null);
-    }
-
-    private ChatResponse invokeModelMessages(List<ChatMessage> messages, String modelId, String modelKey,
-            boolean isDefault, ResponseFormat format) throws Exception {
-        ChatModel model = modelClientRegistry.getChatModel(isDefault ? null : modelId);
-        // 输出合同属于单次请求；共享客户端不携带业务格式，也不会在 YAML 默认模型上丢失合同。
-        ChatRequest.Builder request = ChatRequest.builder().messages(messages);
+    private String callText(String prompt, String modelId, ResponseFormat format, boolean governRun) {
+        ChatRequest.Builder request = ChatRequest.builder().messages(UserMessage.from(prompt));
         if (format != null) {
             request.responseFormat(format);
         }
-        ChatRequest chatRequest = request.build();
-        return retryExecutor.execute(() -> model.chat(chatRequest), modelKey);
+        return responseText(callRequest(request.build(), modelId, null, governRun));
     }
 
-    /**
-     * 以多轮消息和工具规格调用模型（LangChain4j 原生协议）。
-     *
-     * <p>消息角色结构原样传给厂商（system/user/assistant/tool），工具调用走原生
-     * Function Calling；token 记账优先使用厂商返回的真实用量，缺失时回退估算。</p>
-     *
-     * @param messages 多轮消息历史
-     * @param toolSpecs 工具规格，可为 null 表示无工具
-     * @param modelId 模型编号，空值表示默认模型
-     * @return 模型响应（含 AiMessage 与 token 用量）；配额不足或调用失败时返回 null
-     */
-    public ChatResponse callMessages(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
-            String modelId) {
-        return callMessages(messages, toolSpecs, modelId, ToolChoice.AUTO);
+    /** 通过原生消息与工具协议执行一轮模型请求。 */
+    public ChatResponse callMessages(List<ChatMessage> messages, List<ToolSpecification> tools, String modelId) {
+        return callMessages(messages, tools, modelId, ToolChoice.AUTO);
     }
 
-    /**
-     * 以指定工具选择约束调用模型。
-     *
-     * @param messages 多轮消息历史
-     * @param toolSpecs 工具规格
-     * @param modelId 模型编号
-     * @param toolChoice 模型工具选择约束
-     * @return 模型响应
-     */
-    public ChatResponse callMessages(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
+    /** 保留首轮工具选择约束，同步调用与普通聊天共享治理。 */
+    public ChatResponse callMessages(List<ChatMessage> messages, List<ToolSpecification> tools,
             String modelId, ToolChoice toolChoice) {
-        TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quotaResult.allowed()) {
-            return ChatResponse.builder().aiMessage(AiMessage.from(quotaResult.message())).build();
-        }
-        GovernedContext governedContext = contextGovernor.govern(messages, toolSpecs, modelId);
-        String modelKey = modelClientRegistry.modelKey(modelId);
-        long startTime = System.currentTimeMillis();
-        AgentRunControl runControl = beginAgentModelCall();
-        try {
-            ChatModel model = modelClientRegistry.getChatModel(modelId);
-            ChatRequest request = buildChatRequest(governedContext.messages(), toolSpecs, toolChoice);
-            ChatResponse response = retryExecutor.execute(() -> model.chat(request), modelKey);
-            recordMessagesUsage(governedContext.messages(), response, modelId, modelKey, startTime, runControl);
-            return response;
-        } catch (Exception e) {
-            LOGGER.error("Message-based model call failed | modelId={}", modelKey, e);
-            structuredLogger.logLlmCall(null, modelKey, 0L, 0L,
-                    System.currentTimeMillis() - startTime, false, e.getMessage());
-            return null;
-        }
+        return callRequest(request(messages, tools, toolChoice), modelId, null, true);
     }
 
-    /**
-     * 以多轮消息和工具规格流式调用模型，文本 token 实时转发，工具调用在完成回调中返回。
-     *
-     * @param messages 多轮消息历史
-     * @param toolSpecs 工具规格，可为 null 表示无工具
-     * @param modelId 模型编号，空值表示默认模型
-     * @param tokenConsumer 文本 token 消费者
-     * @return 模型响应；配额不足或调用失败时返回 null
-     */
-    public ChatResponse callMessagesStreaming(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
+    /** 流式返回文本，完整响应保留工具请求与厂商 TokenUsage。 */
+    public ChatResponse callMessagesStreaming(List<ChatMessage> messages, List<ToolSpecification> tools,
             String modelId, Consumer<String> tokenConsumer) {
-        TokenQuotaGuard.QuotaCheckResult quotaResult = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quotaResult.allowed()) {
-            tokenConsumer.accept(quotaResult.message());
-            return ChatResponse.builder().aiMessage(AiMessage.from(quotaResult.message())).build();
-        }
-        GovernedContext governedContext = contextGovernor.govern(messages, toolSpecs, modelId);
-        String modelKey = modelClientRegistry.modelKey(modelId);
-        long startTime = System.currentTimeMillis();
-        AgentRunControl runControl = beginAgentModelCall();
-        try {
-            StreamingChatModel model = modelClientRegistry.getStreamingChatModel(modelId);
-            CompletableFuture<ChatResponse> completion = new CompletableFuture<>();
-            StreamingChatResponseHandler handler = new StreamingChatResponseHandler() {
-                @Override
-                public void onPartialResponse(String token) {
-                    tokenConsumer.accept(token);
-                }
-
-                @Override
-                public void onCompleteResponse(ChatResponse response) {
-                    completion.complete(response);
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    completion.completeExceptionally(error);
-                }
-            };
-            model.chat(buildChatRequest(governedContext.messages(), toolSpecs), handler);
-            // 上限兜底，防止厂商流中断且不回调 onError 时调用线程永久挂起
-            ChatResponse response = completion.get(STREAMING_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            recordMessagesUsage(governedContext.messages(), response, modelId, modelKey, startTime, runControl);
-            return response;
-        } catch (Exception e) {
-            LOGGER.error("Message-based streaming call failed | modelId={}", modelKey, e);
-            structuredLogger.logLlmCall(null, modelKey, 0L, 0L,
-                    System.currentTimeMillis() - startTime, false, e.getMessage());
-            return null;
-        }
+        return callStreamingRequest(request(messages, tools, ToolChoice.AUTO), modelId, tokenConsumer);
     }
 
-    private boolean hasTools(List<ToolSpecification> toolSpecs) {
-        return toolSpecs != null && !toolSpecs.isEmpty();
-    }
-
-    private ChatRequest buildChatRequest(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
-        return buildChatRequest(messages, toolSpecs, ToolChoice.AUTO);
-    }
-
-    private ChatRequest buildChatRequest(List<ChatMessage> messages, List<ToolSpecification> toolSpecs,
-            ToolChoice toolChoice) {
+    private ChatRequest request(List<ChatMessage> messages, List<ToolSpecification> tools, ToolChoice choice) {
         ChatRequest.Builder builder = ChatRequest.builder().messages(messages);
-        if (hasTools(toolSpecs)) {
-            builder.toolSpecifications(toolSpecs);
-            builder.toolChoice(toolChoice == null ? ToolChoice.AUTO : toolChoice);
+        if (tools != null && !tools.isEmpty()) {
+            builder.toolSpecifications(tools).toolChoice(choice == null ? ToolChoice.AUTO : choice);
         }
         return builder.build();
     }
 
+    private ChatResponse callRequest(ChatRequest source, String modelId, String skillId, boolean governRun) {
+        checkQuota();
+        var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId);
+        // 原生复制 API 保留 responseFormat、toolChoice 及厂商参数，只替换准入后的消息。
+        ChatRequest request = source.toBuilder().messages(governed.messages()).build();
+        AgentRunControl control = currentControl(governRun);
+        String modelKey = modelClientRegistry.modelKey(modelId);
+        long started = System.currentTimeMillis();
+        try {
+            ChatModel model = modelClientRegistry.getChatModel(modelId);
+            ChatResponse response = callExecutor.call(() -> retryExecutor.execute(() -> {
+                if (control != null) {
+                    control.beforeModelCall();
+                }
+                return model.chat(request);
+            }, modelKey), control);
+            validateResponse(response);
+            recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, skillId, control, started);
+            return response;
+        } catch (Exception exception) {
+            throw failure(exception, modelKey, started, control);
+        }
+    }
+
+    private ChatResponse callStreamingRequest(ChatRequest source, String modelId, Consumer<String> consumer) {
+        CompletableFuture<ChatResponse> future = callStreamingRequestAsync(source, modelId, consumer);
+        try {
+            return future.get();
+        } catch (InterruptedException exception) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new ModelInvocationException("模型调用已中断", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = unwrap(exception);
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new ModelInvocationException("模型流执行失败", cause);
+        }
+    }
+
+    private CompletableFuture<ChatResponse> callStreamingRequestAsync(ChatRequest source, String modelId,
+            Consumer<String> consumer) {
+        try {
+            Objects.requireNonNull(consumer, "流式输出消费者不能为空");
+            checkQuota();
+            var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId);
+            ChatRequest request = source.toBuilder().messages(governed.messages()).build();
+            AgentRunControl control = currentControl(true);
+            String modelKey = modelClientRegistry.modelKey(modelId);
+            long started = System.currentTimeMillis();
+            TaskContextSnapshot snapshot = TaskContextSnapshot.capture();
+            ModelResponseStream stream = streamRuntime.open(
+                    token -> snapshot.call(() -> { consumer.accept(token); return null; }),
+                    control);
+            var responseStage = retryExecutor.executeStream(() -> {
+                try {
+                    if (control != null) {
+                        control.beforeModelCall();
+                    }
+                    modelClientRegistry.getStreamingChatModel(modelId).chat(request, stream);
+                } catch (Exception exception) {
+                    stream.onError(exception);
+                }
+                return stream.completion();
+            }, modelKey);
+            CompletableFuture<ChatResponse> result = new CompletableFuture<>();
+            // 调用方取消等待句柄时，仍必须对实际流执行记账与释放，不能取消完成处理本身。
+            responseStage.whenCompleteAsync((response, error) -> {
+                try {
+                    if (error != null) {
+                        stream.onError(unwrap(error));
+                        recordPartialUsage(stream.partialText(), governed.evidence().estimatedTokensAfter(), modelId, control);
+                        throw failure(unwrap(error), modelKey, started, control);
+                    }
+                    validateResponse(response);
+                    recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, null, control, started);
+                    result.complete(response);
+                } catch (Throwable failure) {
+                    result.completeExceptionally(failure);
+                } finally {
+                    stream.close();
+                }
+            }, streamRuntime.callbacks(snapshot));
+            result.whenComplete((response, error) -> {
+                if (result.isCancelled()) {
+                    stream.onError(new java.util.concurrent.CancellationException("模型流被取消"));
+                }
+            });
+            return result;
+        } catch (Exception exception) {
+            return CompletableFuture.failedFuture(exception);
+        }
+    }
+
+    private Throwable unwrap(Throwable error) {
+        while ((error instanceof ExecutionException || error instanceof CompletionException) && error.getCause() != null) {
+            error = error.getCause();
+        }
+        return error;
+    }
+
+    private void checkQuota() {
+        var quota = tokenQuotaGuard.checkCurrentUserQuota();
+        if (!quota.allowed()) {
+            throw new ModelInvocationException(quota.message());
+        }
+    }
+
+    private void recordPartialUsage(String partialText, long input, String modelId, AgentRunControl control) {
+        if (partialText.isEmpty()) {
+            return;
+        }
+        long output = tokenMonitor.estimateTokens(partialText, modelId);
+        tokenUsageRecorder.record(modelId, null, input, output, input + output, null);
+        if (control != null) {
+            control.afterModelCall(input + output, true);
+        }
+    }
+
+    private AgentRunControl currentControl(boolean governRun) {
+        return governRun ? AgentRunScope.current().map(AgentRunContext::control).orElse(null) : null;
+    }
+
+    private void validateResponse(ChatResponse response) {
+        if (response == null || response.aiMessage() == null
+                || (!response.aiMessage().hasToolExecutionRequests()
+                && (response.aiMessage().text() == null || response.aiMessage().text().isBlank()))) {
+            throw new ModelInvocationException("模型未返回有效回答");
+        }
+    }
+
     private String responseText(ChatResponse response) {
-        if (response == null || response.aiMessage() == null || response.aiMessage().text() == null) {
-            return "";
+        if (response.aiMessage().hasToolExecutionRequests()) {
+            throw new ModelInvocationException("当前文本任务收到了未预期的工具调用");
         }
         return response.aiMessage().text();
     }
 
-    private long realInputTokens(ChatResponse response, long estimatedInputTokens) {
-        TokenUsage usage = response == null ? null : response.tokenUsage();
-        return usage != null && usage.inputTokenCount() != null ? usage.inputTokenCount() : estimatedInputTokens;
-    }
-
-    private long realOutputTokens(ChatResponse response, String responseText) {
-        TokenUsage usage = response == null ? null : response.tokenUsage();
-        return usage != null && usage.outputTokenCount() != null
-                ? usage.outputTokenCount()
-                : tokenMonitor.estimateTokens(responseText);
-    }
-
-    /**
-     * 记录消息级调用的 token 用量：优先采用厂商返回的真实值，缺失时回退本地估算。
-     */
-    private void recordMessagesUsage(List<ChatMessage> messages, ChatResponse response,
-            String modelId, String modelKey, long startTime, AgentRunControl runControl) {
+    private void recordUsage(ChatResponse response, long estimatedInput, String modelId, String skillId,
+            AgentRunControl control, long started) {
         TokenUsage usage = response.tokenUsage();
-        long inputTokens = usage != null && usage.inputTokenCount() != null
-                ? usage.inputTokenCount()
-                : estimateMessagesTokens(messages);
-        String responseText = response.aiMessage() != null && response.aiMessage().text() != null
-                ? response.aiMessage().text()
-                : "";
-        long outputTokens = usage != null && usage.outputTokenCount() != null
-                ? usage.outputTokenCount()
-                : tokenMonitor.estimateTokens(responseText);
-        long totalTokens = inputTokens + outputTokens;
-        settleAgentModelCall(runControl, response, totalTokens);
-        boolean isDefault = modelClientRegistry.isDefaultModel(modelId);
-        tokenUsageRecorder.record(isDefault ? null : modelId, null, inputTokens, outputTokens, totalTokens, null);
-        structuredLogger.logLlmCall(null, resolveLogModelId(modelId, isDefault), inputTokens, outputTokens,
-                System.currentTimeMillis() - startTime, true, null);
+        long input = usage != null && usage.inputTokenCount() != null ? usage.inputTokenCount() : estimatedInput;
+        String text = response.aiMessage().text() == null ? "" : response.aiMessage().text();
+        String toolArguments = response.aiMessage().hasToolExecutionRequests()
+                ? response.aiMessage().toolExecutionRequests().toString() : "";
+        long output = usage != null && usage.outputTokenCount() != null ? usage.outputTokenCount()
+                : tokenMonitor.estimateTokens(text + toolArguments, modelId);
+        long total = usage != null && usage.totalTokenCount() != null ? usage.totalTokenCount() : input + output;
+        tokenUsageRecorder.record(modelId, skillId, input, output, total, null);
+        if (control != null) {
+            boolean estimated = usage == null || usage.inputTokenCount() == null || usage.outputTokenCount() == null;
+            control.afterModelCall(total, estimated);
+            AgentRunScope.current().ifPresent(context -> context.eventSink().emit(
+                    AgentEvent.of(context, AgentEventType.BUDGET_UPDATED, Map.of("usage", context.snapshot()))));
+            control.ensureActive();
+        }
+        structuredLogger.logLlmCall(null, modelClientRegistry.modelKey(modelId), input, output,
+                System.currentTimeMillis() - started, true, null);
     }
 
-    private AgentRunControl beginAgentModelCall() {
-        AgentRunContext context = AgentRunScope.current().orElse(null);
-        if (context == null) {
-            return null;
+    private RuntimeException failure(Throwable exception, String modelKey, long started, AgentRunControl control) {
+        Throwable cause = unwrap(exception);
+        if (cause instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
         }
-        context.control().beforeModelCall();
-        return context.control();
-    }
-
-    private void settleAgentModelCall(AgentRunControl control, ChatResponse response, long totalTokens) {
-        if (control == null) {
-            return;
+        structuredLogger.logLlmCall(null, modelKey, 0L, 0L,
+                System.currentTimeMillis() - started, false, cause.getClass().getSimpleName());
+        if (cause instanceof AgentRunTerminatedException terminated) {
+            return terminated;
         }
-        TokenUsage usage = response == null ? null : response.tokenUsage();
-        boolean estimated = usage == null
-                || usage.inputTokenCount() == null
-                || usage.outputTokenCount() == null;
-        control.afterModelCall(totalTokens, estimated);
-        AgentRunContext context = AgentRunScope.current().orElse(null);
-        if (context != null && context.eventSink().isStreaming()) {
-            context.eventSink().emit(AgentEvent.of(context, AgentEventType.BUDGET_UPDATED,
-                    Map.of("usage", context.snapshot())));
+        if (cause instanceof ContextLimitException limit) {
+            return limit;
         }
-    }
-
-    private long estimateMessagesTokens(List<ChatMessage> messages) {
-        long total = 0;
-        for (ChatMessage message : messages) {
-            total += tokenMonitor.estimateTokens(extractMessageText(message));
+        if (control != null) {
+            control.ensureActive();
         }
-        return total;
-    }
-
-    /**
-     * 提取各类消息中的文本内容，避免使用已废弃的通用 {@code ChatMessage.text()}。
-     *
-     * @param message 对话消息
-     * @return 可用于 token 估算的文本，非文本消息返回空字符串
-     */
-    private String extractMessageText(ChatMessage message) {
-        if (message instanceof UserMessage userMessage) {
-            return userMessage.contents().stream()
-                    .filter(TextContent.class::isInstance)
-                    .map(TextContent.class::cast)
-                    .map(TextContent::text)
-                    .collect(Collectors.joining("\n"));
+        if (cause instanceof ModelInvocationException invocation) {
+            return invocation;
         }
-        if (message instanceof SystemMessage systemMessage) {
-            return systemMessage.text();
-        }
-        if (message instanceof AiMessage aiMessage) {
-            return aiMessage.text() == null ? "" : aiMessage.text();
-        }
-        if (message instanceof ToolExecutionResultMessage toolResultMessage) {
-            return toolResultMessage.text();
-        }
-        return "";
-    }
-
-    /**
-     * 通过 LangChain4j 流式客户端调用模型，将 token 实时转发给消费者并阻塞至生成完成。
-     *
-     * @param messages 已通过上下文治理的消息
-     * @param modelId 模型编号
-     * @param tokenConsumer token 片段消费者
-     * @return 完整响应文本
-     * @throws Exception 流式调用失败或超时
-     */
-    private String streamWithLangChain(List<ChatMessage> messages, String modelId,
-            Consumer<String> tokenConsumer)
-            throws Exception {
-        StreamingChatModel model = modelClientRegistry.getStreamingChatModel(modelId);
-        CompletableFuture<String> completion = new CompletableFuture<>();
-        StringBuilder buffer = new StringBuilder();
-        model.chat(ChatRequest.builder().messages(messages).build(), new StreamingChatResponseHandler() {
-            @Override
-            public void onPartialResponse(String token) {
-                buffer.append(token);
-                tokenConsumer.accept(token);
-            }
-
-            @Override
-            public void onCompleteResponse(ChatResponse response) {
-                completion.complete(buffer.toString());
-            }
-
-            @Override
-            public void onError(Throwable error) {
-                completion.completeExceptionally(error);
-            }
-        });
-        // 上限兜底，防止厂商流中断且不回调 onError 时调用线程永久挂起
-        return completion.get(STREAMING_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    }
-
-    private String resolveLogModelId(String modelId, boolean isDefault) {
-        return isDefault ? DEFAULT_MODEL_KEY : modelId;
-    }
-
-    private String formatModelException(Exception exception) {
-        String message = exception.getMessage();
-        if (message != null && message.startsWith(ERROR_CIRCUIT_PREFIX)) {
-            return message;
-        }
-        return ERROR_MODEL_CALL_PREFIX + message;
+        LOGGER.warn("模型请求失败 | model={} | errorType={}", modelKey, cause.getClass().getSimpleName());
+        String message = cause instanceof TimeoutException ? "模型响应超时，请稍后重试"
+                : cause instanceof InterruptedException ? "模型调用已中断" : "模型调用失败，请检查模型配置或稍后重试";
+        return new ModelInvocationException(message, cause);
     }
 }

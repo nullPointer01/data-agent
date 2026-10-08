@@ -15,8 +15,15 @@
     <maven-checkstyle-plugin.version>3.3.1</maven-checkstyle-plugin.version>
     <maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
     <exec-maven-plugin.version>3.2.0</exec-maven-plugin.version>
-    <langchain4j.version>1.19.0</langchain4j.version>
-    <langchain4j-milvus.version>1.19.0-beta29</langchain4j-milvus.version>
+    <langchain4j.version>1.20.2</langchain4j.version>
+    <langchain4j-milvus.version>1.20.2-beta30</langchain4j-milvus.version>
+    <langchain4j-reactor.version>1.20.2-beta30</langchain4j-reactor.version>
+    <langchain4j-agentic.version>1.20.2-beta30</langchain4j-agentic.version>
+    <langchain4j-mcp.version>1.20.2-beta30</langchain4j-mcp.version>
+    <langchain4j-parsers.version>1.20.2-beta30</langchain4j-parsers.version>
+    <poi.version>5.5.1</poi.version>
+    <json-schema-validator.version>1.5.9</json-schema-validator.version>
+    <resilience4j.version>2.4.0</resilience4j.version>
     <frontend.skip>false</frontend.skip>
   </properties>
 
@@ -28,6 +35,17 @@
   </parent>
   
   <dependencies>
+        <!-- 通用重试与熔断交给框架，业务层保留错误分类、预算和指标。 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -75,9 +93,9 @@
             <version>8.0.33</version>
             <scope>runtime</scope>
         </dependency>
-        <!-- LangChain4j 主模块：ChatMemory、PromptTemplate、ToolExecutor 等核心能力。
-             不用 spring-boot-starter：其自动配置读 langchain4j.open-ai.chat-model.* 前缀与本项目
-             yml 不匹配从未生效，模型 bean 由 LangChain4jConfig 手动构建（可控关闭内置重试等定制） -->
+        <!-- LangChain4j 主模块：AiServices、消息注解、ChatMemory 和工具协议。
+             模型按租户数据库配置动态创建，普通聊天通过受治理的模型适配器接入 AiServices。
+             不使用 starter 自动创建另一套固定客户端，避免绕过统一预算和重试。 -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>
@@ -87,6 +105,29 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai</artifactId>
             <version>${langchain4j.version}</version>
+        </dependency>
+        <!-- 官方 AiServices Flux 适配；Spring MVC 也支持 Flux SSE，无需混装 WebFlux starter。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-reactor</artifactId>
+            <version>${langchain4j-reactor.version}</version>
+        </dependency>
+        <!-- 实验性 Agent 编排模块：用于专家委派的顺序工作流；根 Run 治理仍由 Harness 负责。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-agentic</artifactId>
+            <version>${langchain4j-agentic.version}</version>
+        </dependency>
+        <!-- 标准 MCP 客户端负责协议；远端工具仍接入项目的统一工具治理管道。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-mcp</artifactId>
+            <version>${langchain4j-mcp.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${json-schema-validator.version}</version>
         </dependency>
         <dependency>
             <groupId>co.elastic.clients</groupId>
@@ -106,17 +147,23 @@
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>
-            <version>5.2.5</version>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
-            <version>5.2.5</version>
+            <version>${poi.version}</version>
+        </dependency>
+        <!-- 官方解析器提取通用正文；Excel 表格输出仍使用业务适配。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-document-parser-apache-pdfbox</artifactId>
+            <version>${langchain4j-parsers.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.pdfbox</groupId>
-            <artifactId>pdfbox</artifactId>
-            <version>2.0.29</version>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-document-parser-apache-poi</artifactId>
+            <version>${langchain4j-parsers.version}</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
