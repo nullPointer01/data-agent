@@ -3,6 +3,7 @@ package com.ai.agent.runtime.planning;
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityDescriptor;
 import com.ai.agent.tool.AgentTools;
+import com.ai.skill.SkillCatalog;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -56,10 +57,10 @@ public class AgentToolCandidateSelector {
             }
         }
         if (!skills.isEmpty()) {
-            result.add(new SemanticRequestRouter.ToolCandidate(AgentTools.LIST_AVAILABLE_SKILLS_TOOL,
-                    "查看已绑定技能的稳定 ID 和用法；使用技能时需与 useSkill 一起选择", true, skills));
-            result.add(new SemanticRequestRouter.ToolCandidate(AgentTools.USE_SKILL_TOOL,
-                    "根据任务需要调用已绑定技能；先通过 listAvailableSkills 获取用法", false, skills));
+            result.add(new SemanticRequestRouter.ToolCandidate(SkillCatalog.ACTIVATE_TOOL,
+                    "按需加载已绑定技能的操作指引，由当前 Agent 继续处理任务，不会独立调用模型", true, skills));
+            result.add(new SemanticRequestRouter.ToolCandidate(SkillCatalog.READ_RESOURCE_TOOL,
+                    "读取技能指令引用的步骤资料；应先激活相应技能", true, skills));
         }
         if (!agents.isEmpty()) {
             result.add(new SemanticRequestRouter.ToolCandidate(AgentTools.DELEGATE_TO_AGENT_TOOL,
@@ -79,11 +80,12 @@ public class AgentToolCandidateSelector {
         Set<String> selected = new LinkedHashSet<>(decision.candidateTools());
         reconcileRetrieval(selected, allowed, SEARCH_MEMORY_TOOL, decision.semanticMemory());
         reconcileRetrieval(selected, allowed, SEARCH_KNOWLEDGE_TOOL, decision.knowledgeBase());
-        if (selected.contains(AgentTools.USE_SKILL_TOOL)) {
-            if (!allowed.contains(AgentTools.LIST_AVAILABLE_SKILLS_TOOL)) {
-                throw new IllegalArgumentException("Skill 缺少目录工具");
+        if (selected.contains(SkillCatalog.ACTIVATE_TOOL) || selected.contains(SkillCatalog.READ_RESOURCE_TOOL)) {
+            if (!allowed.containsAll(Set.of(SkillCatalog.ACTIVATE_TOOL, SkillCatalog.READ_RESOURCE_TOOL))) {
+                throw new IllegalArgumentException("Skill 缺少激活或资料读取工具");
             }
-            selected.add(AgentTools.LIST_AVAILABLE_SKILLS_TOOL);
+            selected.add(SkillCatalog.ACTIVATE_TOOL);
+            selected.add(SkillCatalog.READ_RESOURCE_TOOL);
         }
         if (selected.size() > MAX_CANDIDATES) {
             // 不截断依赖链，否则可能只剩执行工具而丢掉发现或检索工具。

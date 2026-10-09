@@ -140,7 +140,8 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
                 candidateTools 必须从 authorizedTools.name 原样选取，最多 5 个；无需工具时返回 []。
                 只根据工具描述和任务需要选择；对操作的解释、否定或引用不表示要求执行该操作。
                 文件内容已可用时可直接阅读；只有需要额外处理才选择工具。
-                使用技能时选择 listAvailableSkills 和 useSkill；委派时选择 delegateToAgent，
+                使用技能时选择 activate_skill 和 read_skill_resource；委派时选择 delegateToAgent，
+                Skill 是当前 Agent 的操作指引，不会替你调用其他工具；需要工具执行的任务也要选择相应业务工具，
                 并检查其 targets 描述确实适合任务；不因为任务多步骤就强制委派。
                 searchMemory/searchKnowledge 仅在对应上下文为 OPTIONAL 时选择，
                 OPTIONAL 也必须存在对应已授权工具；无工具时依证据需要选 REQUIRED 或 OFF。

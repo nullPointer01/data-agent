@@ -20,6 +20,7 @@
     <langchain4j-reactor.version>1.20.2-beta30</langchain4j-reactor.version>
     <langchain4j-agentic.version>1.20.2-beta30</langchain4j-agentic.version>
     <langchain4j-mcp.version>1.20.2-beta30</langchain4j-mcp.version>
+    <langchain4j-skills.version>1.20.2-beta30</langchain4j-skills.version>
     <langchain4j-parsers.version>1.20.2-beta30</langchain4j-parsers.version>
     <poi.version>5.5.1</poi.version>
     <json-schema-validator.version>1.5.9</json-schema-validator.version>
@@ -117,6 +118,12 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-agentic</artifactId>
             <version>${langchain4j-agentic.version}</version>
+        </dependency>
+        <!-- 官方 Skill 按需激活指令、读取资料；技能不再单独调用模型。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-skills</artifactId>
+            <version>${langchain4j-skills.version}</version>
         </dependency>
         <!-- 标准 MCP 客户端负责协议；远端工具仍接入项目的统一工具治理管道。 -->
         <dependency>

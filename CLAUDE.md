@@ -177,7 +177,7 @@ OpenAI-compatible 只表示当前项目复用 Chat 基线协议，不代表各�
 `AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver`
 选择显式 `agentId` 或当前用户默认 Agent，再创建唯一 `runId` 和 `AgentRunContext`，统一进入
 `Chat/ReAct/OrchestratedExecutionStrategy -> ConfiguredAgentExecutionService -> ConfigurableAgentExecutor`。
-斜杠命令、请求直接指定 Skill 和默认 Skill 回退都已删除；Skill 只能由 Agent 通过已绑定的 `useSkill` 工具调用。
+斜杠命令、请求直接指定 Skill 和默认 Skill 回退都已删除；已绑定 Skill 使用官方 `activate_skill/read_skill_resource` 按需加载指令和资料，由当前 Agent 继续执行。
 
 `ConfiguredAgentExecutionService` 仅包内可见，只接受已经固化的 `AgentRunRoute`；`ConfigurableAgentExecutor`
 必须运行在 `AgentRunScope` 内并接收完整 `RequestExecutionPlan`，不再自行推断模式或创建 compatibility 路线。
@@ -204,7 +204,7 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 - `AgentToolDefinition`
 - `AgentFileToolService`
 - `AgentKnowledgeToolService`
-- `AgentSkillToolService`
+- `SkillCatalog`（官方 Skills 的数据库/授权适配，不在 AgentTools 复制一套技能工具）
 - `AgentDataSourceToolService`
 - `AgentConversationToolService`
 - `AgentChartToolService`
@@ -230,14 +230,17 @@ ReAct 相关代码在 `com.ai.agent.react`。工具不直接塞在 ReAct 主类�
 
 ## Skill 系统
 
-Skill 配置存储在 `skill_config`。运行时由 `DataInitializer` 从数据库加载到 `SkillManager`。
+Skill 配置存储在 `skill_config`，由 `SkillCatalog` 转为官方 `Skill/SkillResource/Skills`（1.20.2-beta30）。无启动缓存，每次工具读取重验当前绑定、租户、启用和配置。
 
 重要约定：
 
-- Skill 仅按 `skillId` 注册和精确执行，不做关键词/向量自动匹配，不做默认回退。
+- 官方 `Skill.name` 使用持久化 `skillId`，显示名放在 description；重名/改名不影响绑定。系统消息只放官方 XML 目录，完整正文按需激活。
 - Agent 只能调用 Profile `capabilityBindings` 已绑定且当前可用的 Skill。
 - 管理员可手工创建、生成、更新、回滚、启停和删除 Skill；对话、评分和文件上传不会自动生成 Skill。
-- `DynamicSkill` 支持 prompt template、steps 和可选外部 HTTP API 配置。
+- `prompt_template` 映射操作指令，旧 `{{query}}/{{data}}` 只做兼容文字转换；`steps` 映射只读资源 `references/steps.md`，不是执行工作流。
+- 官方 ToolProvider 生成规格/执行器，再接入统一 Pipeline；AiServices 接收的是受治理 ToolProvider。激活不单独调用模型，不隐式请求 HTTP，也不授予新工具。
+- 旧 API/Headers 配置只保留迁移识别与清空，存在旧配置的 Skill 不可用；外部能力移到 Tool/MCP 后在编辑页清空旧 API。响应不返回旧 Headers。
+- 自定义 Skill 接口、DynamicSkill、SkillManager、AgentSkillToolService 及旧技能专用 McpContext/McpContextManager 已删除。不配置 skill-scoped ToolProvider；审批现场用安全工具结果文本保留指令，不依赖 activated_skill 元数据扩大权限。
 
 ## 文件、知识库和 RAG
 

@@ -80,7 +80,9 @@ public class McpToolCatalog implements AutoCloseable {
     /** 首次访问有界发现 Schema，失败冷却后可重试；已固化规格不会随远端热变更悄悄变化。 */
     public Optional<RegisteredTool> find(String name) {
         Binding binding = bindings.get(name);
-        if (closed || binding == null) return Optional.empty();
+        if (closed || binding == null) {
+            return Optional.empty();
+        }
         ServerState state = binding.server;
         if (state.pinned == null) {
             try { state.connection(); }

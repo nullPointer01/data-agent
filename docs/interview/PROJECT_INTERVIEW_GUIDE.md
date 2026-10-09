@@ -94,7 +94,7 @@ Agent 可调用的工具集中在 `AgentTools`，再由 `AgentToolInvoker` 注�
 
 当前工具包括：
 
-- 技能：`listAvailableSkills`、`useSkill`
+- 技能：官方 `activate_skill`、`read_skill_resource`（由 Skills ToolProvider 提供规格/执行器，经过项目治理，不在 AgentTools 重复声明）
 - 文件：`listFiles`、`getFileContent`、`analyzeFileData`
 - 知识和记忆：`searchKnowledge`、`searchMemory`、`getMemoryStats`
 - 数据源：`listDataSources`、`getDatabaseSchema`、`executeSQL`、`previewDataSource`

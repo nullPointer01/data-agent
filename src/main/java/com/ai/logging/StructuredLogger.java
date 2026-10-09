@@ -82,36 +82,6 @@ public class StructuredLogger {
     }
 
     /**
-     * 记录模型调用。
-     *
-     * @param sessionId 会话编号
-     * @param modelId 模型编号
-     * @param inputTokens 输入 token 估算
-     * @param outputTokens 输出 token 估算
-     * @param latencyMs 调用耗时
-     * @param success 是否成功
-     * @param error 错误信息
-     */
-    public void logLlmCall(String sessionId,
-            String modelId,
-            long inputTokens,
-            long outputTokens,
-            long latencyMs,
-            boolean success,
-            String error) {
-        Map<String, Object> payload = basePayload(TYPE_LLM_CALL);
-        payload.put("sessionId", sessionId);
-        payload.put("modelId", modelId);
-        payload.put("inputTokens", inputTokens);
-        payload.put("outputTokens", outputTokens);
-        payload.put("totalTokens", inputTokens + outputTokens);
-        payload.put("latencyMs", latencyMs);
-        payload.put("success", success);
-        payload.put("error", truncate(error));
-        write(payload);
-    }
-
-    /**
      * 记录通用事件。
      *
      * @param type 事件类型

@@ -1,13 +1,11 @@
 package com.ai.service;
 
-import com.ai.config.CacheNames;
 import com.ai.model.SkillConfig;
 import com.ai.model.SkillPromptHistory;
 import com.ai.repository.SkillConfigRepository;
 import com.ai.repository.SkillPromptHistoryRepository;
 import com.ai.security.SecurityContextHelper;
-import com.ai.skill.DynamicSkill;
-import com.ai.skill.SkillManager;
+import com.ai.skill.SkillCatalog;
 import com.ai.skill.dto.SkillHistoryListResponse;
 import com.ai.skill.dto.SkillHistoryResponse;
 import com.ai.skill.dto.SkillListResponse;
@@ -16,8 +14,6 @@ import com.ai.skill.dto.SkillRequest;
 import com.ai.skill.dto.SkillResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -39,33 +35,23 @@ public class SkillServiceImpl implements SkillService {
     private static final String DEFAULT_SKILL_VERSION = "1.0";
     private static final String DEFAULT_API_METHOD = "POST";
     private static final String DEFAULT_SKILL_SOURCE = "manual";
-    private static final String EMPTY_VALUE = "";
-    private static final String CONFIG_KEY_API_URL = "apiUrl";
-    private static final String CONFIG_KEY_API_METHOD = "apiMethod";
-    private static final String CONFIG_KEY_API_HEADERS = "apiHeaders";
-    private static final String CONFIG_KEY_PROMPT_TEMPLATE = "promptTemplate";
-    private static final String CONFIG_KEY_STEPS = "steps";
     private static final String MESSAGE_NOT_FOUND_OR_DENIED = "Skill不存在或无权限";
     private static final String DEFAULT_UPDATE_REMARK = "手动更新";
     private static final String ROLLBACK_REMARK = "回滚前自动保存";
 
     private final SkillConfigRepository skillConfigRepository;
     private final SkillPromptHistoryRepository skillPromptHistoryRepository;
-    private final SkillManager skillManager;
     private final SecurityContextHelper securityContextHelper;
 
     public SkillServiceImpl(SkillConfigRepository skillConfigRepository,
             SkillPromptHistoryRepository skillPromptHistoryRepository,
-            SkillManager skillManager,
             SecurityContextHelper securityContextHelper) {
         this.skillConfigRepository = skillConfigRepository;
         this.skillPromptHistoryRepository = skillPromptHistoryRepository;
-        this.skillManager = skillManager;
         this.securityContextHelper = securityContextHelper;
     }
 
     @Override
-    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse createSkill(SkillRequest request) {
         validateCreateRequest(request);
@@ -75,15 +61,14 @@ public class SkillServiceImpl implements SkillService {
         config.setTenantId(securityContextHelper.getCurrentTenantId());
         config.setCreatedBy(securityContextHelper.getCurrentUserId());
 
+        validateInstructions(config);
         skillConfigRepository.save(config);
-        registerToSkillManager(config);
 
         LOGGER.info("技能已创建: {}, 租户: {}", config.getName(), config.getTenantId());
         return SkillMutationResponse.created(config.getSkillId(), config.getName());
     }
 
     @Override
-    @Cacheable(value = CacheNames.SKILLS, key = "@securityContextHelper.currentTenantId")
     @Transactional(readOnly = true)
     public SkillListResponse listSkills() {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -97,7 +82,6 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
-    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse updateSkill(String skillId, SkillRequest request) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -108,8 +92,8 @@ public class SkillServiceImpl implements SkillService {
 
         int nextVersion = saveHistory(config, tenantId, defaultRemark(request.remark()));
         applyUpdateRequest(config, request);
+        validateInstructions(config);
         skillConfigRepository.save(config);
-        registerToSkillManager(config);
 
         LOGGER.info("技能已更新: {}, 已保存历史版本: {}", skillId, nextVersion);
         return SkillMutationResponse.updated(nextVersion);
@@ -131,7 +115,6 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
-    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse rollbackSkill(String skillId, int version) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -153,14 +136,13 @@ public class SkillServiceImpl implements SkillService {
         SkillPromptHistory target = targetHistory.get();
         config.setPromptTemplate(target.getPromptTemplate());
         config.setSteps(target.getSteps());
+        validateInstructions(config);
         skillConfigRepository.save(config);
-        registerToSkillManager(config);
 
         return SkillMutationResponse.rolledBack(version);
     }
 
     @Override
-    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse deleteSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -171,13 +153,11 @@ public class SkillServiceImpl implements SkillService {
 
         SkillConfig config = existingOptional.get();
         skillConfigRepository.delete(config);
-        skillManager.unregisterSkill(config.getSkillId(), config.getName());
         LOGGER.info("技能已删除: {}", skillId);
         return SkillMutationResponse.deleted();
     }
 
     @Override
-    @CacheEvict(value = CacheNames.SKILLS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse toggleSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
@@ -188,50 +168,24 @@ public class SkillServiceImpl implements SkillService {
 
         SkillConfig config = existingOptional.get();
         config.setEnabled(!config.isEnabled());
+        validateInstructions(config);
         skillConfigRepository.save(config);
 
-        if (config.isEnabled()) {
-            registerToSkillManager(config);
-        } else {
-            skillManager.unregisterSkill(config.getSkillId(), config.getName());
-        }
-
         return SkillMutationResponse.toggled(skillId, config.isEnabled());
-    }
-
-    /**
-     * 将持久化 Skill 配置转换为运行时对象，并按稳定 ID 注册给 Agent 工具调用。
-     *
-     * @param config 已保存的 Skill 配置
-     */
-    public void registerToSkillManager(SkillConfig config) {
-        DynamicSkill dynamicSkill = new DynamicSkill(
-                config.getName(),
-                config.getDescription(),
-                java.util.Map.of(
-                        CONFIG_KEY_API_URL, nullToEmpty(config.getApiUrl()),
-                        CONFIG_KEY_API_METHOD, config.getApiMethod() != null ? config.getApiMethod()
-                                : DEFAULT_API_METHOD,
-                        CONFIG_KEY_API_HEADERS, nullToEmpty(config.getApiHeaders()),
-                        CONFIG_KEY_PROMPT_TEMPLATE, nullToEmpty(config.getPromptTemplate()),
-                        CONFIG_KEY_STEPS, nullToEmpty(config.getSteps())));
-        skillManager.registerSkill(config.getSkillId(), dynamicSkill);
     }
 
     private void applyCreateRequest(SkillConfig config, SkillRequest request) {
         config.setName(request.name().trim());
         config.setDescription(request.description());
         config.setVersion(StringUtils.hasText(request.version()) ? request.version().trim() : DEFAULT_SKILL_VERSION);
-        config.setApiUrl(request.apiUrl());
-        config.setApiMethod(StringUtils.hasText(request.apiMethod()) ? request.apiMethod().trim()
-                : DEFAULT_API_METHOD);
-        config.setApiHeaders(request.apiHeaders());
+        validateLegacyApiRequest(request);
         config.setPromptTemplate(request.promptTemplate());
         config.setSteps(request.steps());
         config.setSource(StringUtils.hasText(request.source()) ? request.source().trim() : DEFAULT_SKILL_SOURCE);
     }
 
     private void applyUpdateRequest(SkillConfig config, SkillRequest request) {
+        validateLegacyApiRequest(request);
         if (StringUtils.hasText(request.name())) {
             config.setName(request.name().trim());
         }
@@ -246,12 +200,9 @@ public class SkillServiceImpl implements SkillService {
         }
         if (request.apiUrl() != null) {
             config.setApiUrl(request.apiUrl());
-        }
-        if (request.apiMethod() != null) {
-            config.setApiMethod(request.apiMethod());
-        }
-        if (request.apiHeaders() != null) {
-            config.setApiHeaders(request.apiHeaders());
+            // 明确清空旧 API 时一起移除旧凭据；不把请求凭据放入 Skill 指令或资源。
+            config.setApiMethod(DEFAULT_API_METHOD);
+            config.setApiHeaders(null);
         }
         if (request.enabled() != null) {
             config.setEnabled(request.enabled());
@@ -289,7 +240,18 @@ public class SkillServiceImpl implements SkillService {
         return StringUtils.hasText(remark) ? remark.trim() : DEFAULT_UPDATE_REMARK;
     }
 
-    private String nullToEmpty(String value) {
-        return value == null ? EMPTY_VALUE : value;
+    private void validateLegacyApiRequest(SkillRequest request) {
+        if (StringUtils.hasText(request.apiUrl()) || StringUtils.hasText(request.apiHeaders())) {
+            throw new IllegalArgumentException("Skill 只维护操作指引，外部 API 请迁移到 Tool/MCP；旧 API 字段仅支持清空");
+        }
+    }
+
+    private void validateInstructions(SkillConfig config) {
+        if (config.isEnabled()) {
+            String reason = SkillCatalog.configurationIssue(config);
+            if (!reason.isEmpty()) {
+                throw new IllegalArgumentException(reason);
+            }
+        }
     }
 }

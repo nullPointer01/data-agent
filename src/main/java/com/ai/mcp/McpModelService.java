@@ -10,7 +10,6 @@ import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.event.ModelConfigChangeEvent;
 import com.ai.event.ModelConfigChangeEvent.ChangeType;
-import com.ai.logging.StructuredLogger;
 import com.ai.config.TaskContextSnapshot;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
@@ -57,29 +56,25 @@ import reactor.core.publisher.FluxSink;
 public class McpModelService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(McpModelService.class);
-    private final McpContextManager contextManager;
     private final TokenMonitor tokenMonitor;
     private final ModelRetryExecutor retryExecutor;
     private final TokenUsageRecorder tokenUsageRecorder;
     private final ModelClientRegistry modelClientRegistry;
     private final TokenQuotaGuard tokenQuotaGuard;
-    private final StructuredLogger structuredLogger;
     private final AgentContextGovernor contextGovernor;
     private final ModelStreamRuntime streamRuntime;
     private final ModelCallExecutor callExecutor;
 
-    public McpModelService(McpContextManager contextManager, TokenMonitor tokenMonitor,
+    public McpModelService(TokenMonitor tokenMonitor,
             ModelRetryExecutor retryExecutor, TokenUsageRecorder tokenUsageRecorder,
             ModelClientRegistry modelClientRegistry, TokenQuotaGuard tokenQuotaGuard,
-            StructuredLogger structuredLogger, AgentContextGovernor contextGovernor, ModelStreamRuntime streamRuntime,
+            AgentContextGovernor contextGovernor, ModelStreamRuntime streamRuntime,
             ModelCallExecutor callExecutor) {
-        this.contextManager = contextManager;
         this.tokenMonitor = tokenMonitor;
         this.retryExecutor = retryExecutor;
         this.tokenUsageRecorder = tokenUsageRecorder;
         this.modelClientRegistry = modelClientRegistry;
         this.tokenQuotaGuard = tokenQuotaGuard;
-        this.structuredLogger = structuredLogger;
         this.contextGovernor = contextGovernor;
         this.streamRuntime = streamRuntime;
         this.callExecutor = callExecutor;
@@ -99,7 +94,7 @@ public class McpModelService {
         return new ChatModel() {
             @Override
             public ChatResponse doChat(ChatRequest request) {
-                return callRequest(request, modelId, null, true);
+                return callRequest(request, modelId, true);
             }
         };
     }
@@ -119,7 +114,7 @@ public class McpModelService {
 
             @Override
             public ChatResponse doChat(ChatRequest request) {
-                return callRequest(request, modelId, null, governRun);
+                return callRequest(request, modelId, governRun);
             }
         };
     }
@@ -173,23 +168,6 @@ public class McpModelService {
         };
     }
 
-    /** 在 Skill 临时窗口中执行一轮，窗口由 Skill 生命周期管理。 */
-    public String callModelWithContext(String contextId, String prompt, String modelId, String skillId) {
-        McpContext context = contextManager.getContext(contextId);
-        if (context == null) {
-            throw new IllegalArgumentException("模型上下文不存在: " + contextId);
-        }
-        // 当前输入必须进入准入检查，不能先被短期窗口自动淘汰。
-        var messages = new java.util.ArrayList<>(context.historyMessages());
-        messages.add(UserMessage.from(prompt));
-        ChatResponse response = callRequest(ChatRequest.builder().messages(messages).build(),
-                modelId, skillId, true);
-        String text = responseText(response);
-        contextManager.addConversationTurn(contextId, "user", prompt);
-        contextManager.addConversationTurn(contextId, "assistant", text);
-        return text;
-    }
-
     /** 使用默认模型执行文本任务。 */
     public String callModel(String prompt) {
         return callModel(prompt, null);
@@ -210,7 +188,7 @@ public class McpModelService {
         if (format != null) {
             request.responseFormat(format);
         }
-        return responseText(callRequest(request.build(), modelId, null, governRun));
+        return responseText(callRequest(request.build(), modelId, governRun));
     }
 
     /** 通过原生消息与工具协议执行一轮模型请求。 */
@@ -221,7 +199,7 @@ public class McpModelService {
     /** 保留首轮工具选择约束，同步调用与普通聊天共享治理。 */
     public ChatResponse callMessages(List<ChatMessage> messages, List<ToolSpecification> tools,
             String modelId, ToolChoice toolChoice) {
-        return callRequest(request(messages, tools, toolChoice), modelId, null, true);
+        return callRequest(request(messages, tools, toolChoice), modelId, true);
     }
 
     /** 流式返回文本，完整响应保留工具请求与厂商 TokenUsage。 */
@@ -238,14 +216,13 @@ public class McpModelService {
         return builder.build();
     }
 
-    private ChatResponse callRequest(ChatRequest source, String modelId, String skillId, boolean governRun) {
+    private ChatResponse callRequest(ChatRequest source, String modelId, boolean governRun) {
         checkQuota();
         var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId);
         // 原生复制 API 保留 responseFormat、toolChoice 及厂商参数，只替换准入后的消息。
         ChatRequest request = source.toBuilder().messages(governed.messages()).build();
         AgentRunControl control = currentControl(governRun);
         String modelKey = modelClientRegistry.modelKey(modelId);
-        long started = System.currentTimeMillis();
         try {
             ChatModel model = modelClientRegistry.getChatModel(modelId);
             ChatResponse response = callExecutor.call(() -> retryExecutor.execute(() -> {
@@ -255,10 +232,10 @@ public class McpModelService {
                 return model.chat(request);
             }, modelKey), control);
             validateResponse(response);
-            recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, skillId, control, started);
+            recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, control);
             return response;
         } catch (Exception exception) {
-            throw failure(exception, modelKey, started, control);
+            throw failure(exception, modelKey, control);
         }
     }
 
@@ -288,10 +265,12 @@ public class McpModelService {
             ChatRequest request = source.toBuilder().messages(governed.messages()).build();
             AgentRunControl control = currentControl(true);
             String modelKey = modelClientRegistry.modelKey(modelId);
-            long started = System.currentTimeMillis();
             TaskContextSnapshot snapshot = TaskContextSnapshot.capture();
             ModelResponseStream stream = streamRuntime.open(
-                    token -> snapshot.call(() -> { consumer.accept(token); return null; }),
+                    token -> snapshot.call(() -> {
+                        consumer.accept(token);
+                        return null;
+                    }),
                     control);
             var responseStage = retryExecutor.executeStream(() -> {
                 try {
@@ -311,10 +290,10 @@ public class McpModelService {
                     if (error != null) {
                         stream.onError(unwrap(error));
                         recordPartialUsage(stream.partialText(), governed.evidence().estimatedTokensAfter(), modelId, control);
-                        throw failure(unwrap(error), modelKey, started, control);
+                        throw failure(unwrap(error), modelKey, control);
                     }
                     validateResponse(response);
-                    recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, null, control, started);
+                    recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, control);
                     result.complete(response);
                 } catch (Throwable failure) {
                     result.completeExceptionally(failure);
@@ -377,8 +356,8 @@ public class McpModelService {
         return response.aiMessage().text();
     }
 
-    private void recordUsage(ChatResponse response, long estimatedInput, String modelId, String skillId,
-            AgentRunControl control, long started) {
+    private void recordUsage(ChatResponse response, long estimatedInput, String modelId,
+            AgentRunControl control) {
         TokenUsage usage = response.tokenUsage();
         long input = usage != null && usage.inputTokenCount() != null ? usage.inputTokenCount() : estimatedInput;
         String text = response.aiMessage().text() == null ? "" : response.aiMessage().text();
@@ -387,7 +366,7 @@ public class McpModelService {
         long output = usage != null && usage.outputTokenCount() != null ? usage.outputTokenCount()
                 : tokenMonitor.estimateTokens(text + toolArguments, modelId);
         long total = usage != null && usage.totalTokenCount() != null ? usage.totalTokenCount() : input + output;
-        tokenUsageRecorder.record(modelId, skillId, input, output, total, null);
+        tokenUsageRecorder.record(modelId, null, input, output, total, null);
         if (control != null) {
             boolean estimated = usage == null || usage.inputTokenCount() == null || usage.outputTokenCount() == null;
             control.afterModelCall(total, estimated);
@@ -395,17 +374,13 @@ public class McpModelService {
                     AgentEvent.of(context, AgentEventType.BUDGET_UPDATED, Map.of("usage", context.snapshot()))));
             control.ensureActive();
         }
-        structuredLogger.logLlmCall(null, modelClientRegistry.modelKey(modelId), input, output,
-                System.currentTimeMillis() - started, true, null);
     }
 
-    private RuntimeException failure(Throwable exception, String modelKey, long started, AgentRunControl control) {
+    private RuntimeException failure(Throwable exception, String modelKey, AgentRunControl control) {
         Throwable cause = unwrap(exception);
         if (cause instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }
-        structuredLogger.logLlmCall(null, modelKey, 0L, 0L,
-                System.currentTimeMillis() - started, false, cause.getClass().getSimpleName());
         if (cause instanceof AgentRunTerminatedException terminated) {
             return terminated;
         }

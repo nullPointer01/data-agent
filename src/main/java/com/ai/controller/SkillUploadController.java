@@ -38,7 +38,7 @@ public class SkillUploadController {
         this.skillGenerator = skillGenerator;
     }
 
-    /** 创建 Skill 配置并注册到运行时。 */
+    /** 创建 Skill 指令配置；官方 Skills 在运行时按已授权绑定读取数据库。 */
     @PostMapping("/create")
     public SkillMutationResponse createSkill(@RequestBody SkillRequest request) {
         LOGGER.info("Create skill request: {}", request.name());
@@ -82,13 +82,13 @@ public class SkillUploadController {
         return skillService.listSkills();
     }
 
-    /** 删除 Skill 配置、历史版本及运行时注册。 */
+    /** 删除 Skill 配置；历史记录保留审计，运行时不再能够激活已删除技能。 */
     @DeleteMapping("/delete/{skillId}")
     public SkillMutationResponse deleteSkill(@PathVariable String skillId) {
         return skillService.deleteSkill(skillId);
     }
 
-    /** 切换 Skill 启用状态，并同步运行时注册表。 */
+    /** 切换 Skill 启用状态；读取时重验状态，无需同步进程内缓存。 */
     @PutMapping("/toggle/{skillId}")
     public SkillMutationResponse toggleSkill(@PathVariable String skillId) {
         return skillService.toggleSkill(skillId);

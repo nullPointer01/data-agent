@@ -85,8 +85,6 @@ public class RedisConfig implements CachingConfigurer {
         RedisCacheConfiguration modelConfig = defaultConfig.entryTtl(Duration.ofHours(2));
         // RBAC 角色/权限几乎不变
         RedisCacheConfiguration rbacConfig = defaultConfig.entryTtl(Duration.ofHours(4));
-        // 技能列表中等频率变更
-        RedisCacheConfiguration skillConfig = defaultConfig.entryTtl(Duration.ofHours(1));
 
         return RedisCacheManager.builder(factory)
                 .cacheDefaults(defaultConfig)
@@ -94,8 +92,7 @@ public class RedisConfig implements CachingConfigurer {
                         CacheNames.MODELS, modelConfig,
                         CacheNames.MODEL_DETAIL, modelConfig,
                         CacheNames.ROLES, rbacConfig,
-                        CacheNames.PERMISSIONS, rbacConfig,
-                        CacheNames.SKILLS, skillConfig))
+                        CacheNames.PERMISSIONS, rbacConfig))
                 .transactionAware()
                 .build();
     }

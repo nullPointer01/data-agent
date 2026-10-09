@@ -16,6 +16,7 @@ import com.ai.agent.tool.AgentToolInvoker;
 import com.ai.agent.tool.AgentTools;
 import com.ai.agent.tool.governance.AgentToolInvocationContextFactory;
 import com.ai.config.TaskContextSnapshot;
+import com.ai.logging.StructuredLogger;
 import com.ai.mcp.McpModelService;
 import com.ai.mcp.ModelInvocationException;
 import com.ai.model.AgentProfile;
@@ -65,11 +66,12 @@ public class AgenticSupervisorService {
     private final AgentChatService chat;
     private final ReActStreamEventWriter events;
     private final ObjectMapper json;
+    private final StructuredLogger logger;
 
     public AgenticSupervisorService(AgentOrchestrationProperties properties, McpModelService models,
             AgentCapabilityService capabilities, AgentToolInvoker tools,
             AgentToolInvocationContextFactory contexts, AgentChatToolService toolChat,
-            AgentChatService chat, ReActStreamEventWriter events, ObjectMapper json) {
+            AgentChatService chat, ReActStreamEventWriter events, ObjectMapper json, StructuredLogger logger) {
         this.properties = properties;
         this.models = models;
         this.capabilities = capabilities;
@@ -79,6 +81,7 @@ public class AgenticSupervisorService {
         this.chat = chat;
         this.events = events;
         this.json = json;
+        this.logger = logger;
     }
 
     /** 原路由没有授权专家委派时，不因配置开关而扩大能力。 */
@@ -107,6 +110,7 @@ public class AgenticSupervisorService {
         }
         var invocation = contexts.profile(profile.getAgentId(), specs);
         List<Object> agents = new ArrayList<>();
+        Map<String, String> executors = new LinkedHashMap<>();
         List<Map<String, String>> evidence = new ArrayList<>();
         List<AnalysisResponse.ThinkingStep> steps = new ArrayList<>();
         capabilities.runtimeDirectory(profile).capabilities().stream()
@@ -114,7 +118,9 @@ public class AgenticSupervisorService {
                 .filter(d -> snapshot.allowsSubAgent(d.type().sourceId(d.identity())))
                 .forEach(d -> {
                     String id = d.type().sourceId(d.identity());
-                    agents.add(worker("expert_" + agents.size(), bounded(d.name()) + "：" + bounded(d.description()),
+                    String name = "expert_" + agents.size();
+                    executors.put(name, id);
+                    agents.add(worker(name, bounded(d.name()) + "：" + bounded(d.description()),
                             task -> {
                                 var request = ToolExecutionRequest.builder().id(UUID.randomUUID().toString())
                                         .name(AgentTools.DELEGATE_TO_AGENT_TOOL)
@@ -127,11 +133,14 @@ public class AgenticSupervisorService {
                                 return result.toModelObservation();
                             }, id, evidence, steps));
                 });
-        if (agents.isEmpty()) throw new IllegalStateException("当前没有可用的已绑定专家");
+        if (agents.isEmpty()) {
+            throw new IllegalStateException("当前没有可用的已绑定专家");
+        }
 
         // 父助手仍可处理自己的普通工具和 Skill；委派权只交给 Supervisor，避免两个管理者抢决策。
         var localSpecs = specs.stream().filter(s -> !AgentTools.isDelegationAdapter(s.name())).toList();
         var localInvocation = contexts.profile(profile.getAgentId(), localSpecs);
+        executors.put("local_assistant", profile.getAgentId());
         agents.add(worker("local_assistant", "处理当前上下文中的一般任务；可用工具："
                         + localSpecs.stream().map(ToolSpecification::name).toList(), task -> {
                     var input = withEvidence(messages, "Supervisor 分配的本次子任务（沿用原问题约束）：\n" + task);
@@ -145,6 +154,7 @@ public class AgenticSupervisorService {
                 }, profile.getAgentId(), evidence, steps));
 
         var supervisor = AgenticServices.supervisorBuilder()
+                .listener(new AgentLifecycleListener(logger, "SUPERVISOR", executors))
                 .chatModel(decisionModel(modelId))
                 .chatMemoryProvider(memoryId -> {
                     // 保留真实历史角色，交给现有 Token 治理按完整轮次裁剪；不把历史塞成不可裁剪的巨大 user 消息。
@@ -169,7 +179,9 @@ public class AgenticSupervisorService {
             throw unwrap(failure);
         }
         run.control().ensureActive();
-        if (evidence.isEmpty()) throw new ModelInvocationException("Supervisor 未执行任何任务，不能标记为完成");
+        if (evidence.isEmpty()) {
+            throw new ModelInvocationException("Supervisor 未执行任何任务，不能标记为完成");
+        }
         var afterPlanning = run.snapshot();
         if (initialChoice == AgentToolChoice.REQUIRED && afterPlanning.toolCalls() == before.toolCalls()) {
             throw new ModelInvocationException("Supervisor 未完成本次计划要求的工具调用");
@@ -207,11 +219,10 @@ public class AgenticSupervisorService {
                 .subAgents(new ExecutionStep(task -> {
                     var run = AgentRunScope.requireCurrent();
                     run.control().ensureActive();
-                    run.eventSink().emit(AgentEvent.of(run, AgentEventType.THINKING_START,
-                            Map.of("iteration", run.snapshot().iterations(), "engine", "SUPERVISOR",
-                                    "stage", "executor", "agentId", id)));
                     String result = action.apply(task);
-                    if (result == null || result.isBlank()) throw new ModelInvocationException("执行节点返回空结果");
+                    if (result == null || result.isBlank()) {
+                        throw new ModelInvocationException("执行节点返回空结果");
+                    }
                     evidence.add(Map.of("agentId", id, "result", result));
                     steps.add(new AnalysisResponse.ThinkingStep(run.snapshot().iterations(), "supervisor", "完成执行节点：" + name));
                     return result;
@@ -242,15 +253,23 @@ public class AgenticSupervisorService {
     private void validateDecision(ChatResponse response) {
         try {
             if (response == null || response.aiMessage() == null || response.aiMessage().hasToolExecutionRequests()
-                    || response.aiMessage().text() == null) throw new IllegalArgumentException();
+                    || response.aiMessage().text() == null) {
+                throw new IllegalArgumentException();
+            }
             var decision = json.readTree(response.aiMessage().text());
-            if (decision == null || !decision.path("agentName").isTextual()) throw new IllegalArgumentException();
-            if ("done".equalsIgnoreCase(decision.path("agentName").asText())) return;
+            if (decision == null || !decision.path("agentName").isTextual()) {
+                throw new IllegalArgumentException();
+            }
+            if ("done".equalsIgnoreCase(decision.path("agentName").asText())) {
+                return;
+            }
             var args = decision.path("arguments");
             var task = args.path("task");
             // AgenticScope 会保留上一步变量；每次强制提供 task，防止缺参时误用上一步任务。
             if (!args.isObject() || args.size() != 1 || !task.isTextual()
-                    || task.asText().isBlank() || task.asText().length() > 12_000) throw new IllegalArgumentException();
+                    || task.asText().isBlank() || task.asText().length() > 12_000) {
+                throw new IllegalArgumentException();
+            }
         } catch (JsonProcessingException | IllegalArgumentException failure) {
             throw new ModelInvocationException("Supervisor 决策格式无效或缺少本轮 task，未执行该节点");
         }
@@ -273,7 +292,9 @@ public class AgenticSupervisorService {
     private RuntimeException unwrap(AgentInvocationException failure) {
         Throwable cause = failure;
         while ((cause instanceof AgentInvocationException || cause instanceof InvocationTargetException)
-                && cause.getCause() != null) cause = cause.getCause();
+                && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
         return cause instanceof RuntimeException runtime ? runtime : failure;
     }
 

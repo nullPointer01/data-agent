@@ -2,6 +2,7 @@ package com.ai.agent.tool.governance;
 
 import com.ai.agent.capability.AgentDelegationGuard;
 import com.ai.agent.runtime.AgentRunTerminatedException;
+import dev.langchain4j.exception.ToolArgumentsException;
 import org.springframework.stereotype.Component;
 
 import java.net.ConnectException;
@@ -31,6 +32,9 @@ public class AgentToolFailureClassifier {
         if (runTermination != null) {
             return new AgentToolFailure(AgentToolExecutionStatus.RUN_TERMINATED, false, "Agent Run 已终止");
         }
+        if (findCause(cause, SecurityException.class) != null) {
+            return new AgentToolFailure(AgentToolExecutionStatus.UNAUTHORIZED, false, "当前执行未获准访问该工具资源");
+        }
         AgentDelegationGuard.DelegationRejectedException delegationRejection =
                 (AgentDelegationGuard.DelegationRejectedException) findCause(
                         cause, AgentDelegationGuard.DelegationRejectedException.class);
@@ -48,7 +52,8 @@ public class AgentToolFailureClassifier {
         if (findCause(cause, ConnectException.class) != null || findCause(cause, SocketException.class) != null) {
             return new AgentToolFailure(AgentToolExecutionStatus.EXECUTION_FAILED, true, "工具连接暂时不可用");
         }
-        if (findCause(cause, IllegalArgumentException.class) != null) {
+        if (findCause(cause, IllegalArgumentException.class) != null
+                || findCause(cause, ToolArgumentsException.class) != null) {
             return new AgentToolFailure(AgentToolExecutionStatus.INVALID_ARGUMENTS, false, "工具参数不符合业务约束");
         }
         if (cause instanceof HttpRetryException retryException) {

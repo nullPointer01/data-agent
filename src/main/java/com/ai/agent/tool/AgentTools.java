@@ -1,5 +1,6 @@
 package com.ai.agent.tool;
 
+import com.ai.skill.SkillCatalog;
 import com.ai.agent.tool.governance.AgentToolPolicy;
 import com.ai.agent.tool.governance.AgentToolRiskLevel;
 import dev.langchain4j.agent.tool.P;
@@ -19,12 +20,10 @@ import java.util.Set;
 @Component
 public class AgentTools {
 
-    public static final String LIST_AVAILABLE_SKILLS_TOOL = "listAvailableSkills";
-    public static final String USE_SKILL_TOOL = "useSkill";
     public static final String DELEGATE_TO_AGENT_TOOL = "delegateToAgent";
     private static final Set<String> CAPABILITY_ADAPTER_TOOLS = Set.of(
-            LIST_AVAILABLE_SKILLS_TOOL,
-            USE_SKILL_TOOL,
+            SkillCatalog.ACTIVATE_TOOL,
+            SkillCatalog.READ_RESOURCE_TOOL,
             DELEGATE_TO_AGENT_TOOL);
 
     /**
@@ -42,7 +41,6 @@ public class AgentTools {
         return DELEGATE_TO_AGENT_TOOL.equals(toolName);
     }
 
-    private final AgentSkillToolService agentSkillToolService;
     private final AgentDelegationToolService agentDelegationToolService;
     private final AgentFileToolService agentFileToolService;
     private final AgentKnowledgeToolService agentKnowledgeToolService;
@@ -52,8 +50,7 @@ public class AgentTools {
     private final AgentChartToolService agentChartToolService;
     private final AgentSandboxToolService agentSandboxToolService;
 
-    public AgentTools(AgentSkillToolService agentSkillToolService,
-            AgentDelegationToolService agentDelegationToolService,
+    public AgentTools(AgentDelegationToolService agentDelegationToolService,
             AgentFileToolService agentFileToolService,
             AgentKnowledgeToolService agentKnowledgeToolService,
             AgentConversationToolService agentConversationToolService,
@@ -61,7 +58,6 @@ public class AgentTools {
             AgentUtilityToolService agentUtilityToolService,
             AgentChartToolService agentChartToolService,
             AgentSandboxToolService agentSandboxToolService) {
-        this.agentSkillToolService = agentSkillToolService;
         this.agentDelegationToolService = agentDelegationToolService;
         this.agentFileToolService = agentFileToolService;
         this.agentKnowledgeToolService = agentKnowledgeToolService;
@@ -72,21 +68,7 @@ public class AgentTools {
         this.agentSandboxToolService = agentSandboxToolService;
     }
 
-    // ==================== [正式功能] Skill 与子 Agent 委派 ====================
-
-    @Tool("列出当前 Agent 已绑定且本次运行可用的 Skill，返回稳定ID、名称和描述")
-    @AgentToolPolicy(risk = AgentToolRiskLevel.LOW, readOnly = true, idempotent = true, retryable = true,
-            timeoutMs = 10000, maxAttempts = 2, requiredPermission = "app:use", maxResultLength = 8000)
-    public String listAvailableSkills() {
-        return agentSkillToolService.listAvailableSkills();
-    }
-
-    @Tool("使用当前 Agent 已绑定的指定 Skill 分析问题；skillId 必须来自 listAvailableSkills")
-    @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = true, idempotent = false, retryable = false,
-            timeoutMs = 60000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 16000)
-    public String useSkill(@P("Skill稳定ID") String skillId, @P("要分析的问题") String query) {
-        return agentSkillToolService.useSkill(skillId, query);
-    }
+    // ==================== [正式功能] 子 Agent 委派；Skill 工具由官方 Skills 提供 ====================
 
     @Tool("将明确任务委派给当前 Agent 已绑定的子 Agent；agentId 必须来自当前系统提示中的稳定ID")
     @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = false, idempotent = false, retryable = false,

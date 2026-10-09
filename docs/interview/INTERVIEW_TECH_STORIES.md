@@ -298,7 +298,7 @@
 - 线上出问题怎么排查？
 
 **你的素材**
-- 可观测：`agent_execution_trace` 执行轨迹、结构化日志（`StructuredLogger.logLlmCall` 记 token/耗时/成败）、Actuator + Prometheus。
+- 可观测：`agent_execution_trace` 执行轨迹、官方 `ChatModelListener` 记录每次 SDK 请求的厂商 Token/耗时/结果，`AgentListener` 记录节点生命周期，Actuator + Prometheus；正式成本和任务成败以 Token 记录及 Run 为准。
 - 评测：RAG Benchmark 和版本化 Agent Eval 数据集，报告保留样本级 Run/Trace 证据。
 
 **诚实 + 方向（加分）**

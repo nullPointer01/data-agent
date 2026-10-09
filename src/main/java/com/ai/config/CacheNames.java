@@ -11,7 +11,6 @@ public final class CacheNames {
     public static final String MODEL_DETAIL = "model_detail";
     public static final String ROLES = "roles";
     public static final String PERMISSIONS = "permissions";
-    public static final String SKILLS = "skills";
 
     private CacheNames() {
     }

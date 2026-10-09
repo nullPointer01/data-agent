@@ -6,6 +6,7 @@ import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.runtime.PersonalAgentExecutionModeResolver;
 import com.ai.agent.runtime.planning.RequestExecutionPlan;
 import com.ai.memory.dto.MemoryContext;
+import com.ai.logging.StructuredLogger;
 import com.ai.model.AgentProfile;
 import com.ai.model.AnalysisResponse;
 import dev.langchain4j.agentic.Agent;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.Map;
 
 /**
  * 专家委派的框架顺序工作流：规划 → 执行。父 Agent 仍通过 Tool Calling 选择绑定专家。
@@ -28,8 +30,9 @@ public class AgenticDelegationWorkflow {
     private final Delegation workflow;
 
     public AgenticDelegationWorkflow(ObjectProvider<PersonalAgentExecutionModeResolver> planner,
-                                     ObjectProvider<ConfigurableAgentExecutor> executor) {
+                                     ObjectProvider<ConfigurableAgentExecutor> executor, StructuredLogger logger) {
         workflow = AgenticServices.sequenceBuilder(Delegation.class)
+                .listener(new AgentLifecycleListener(logger, "DELEGATION", Map.of()))
                 .subAgents(new PlanningStep(planner), new ExecutionStep(executor))
                 .outputKey("response")
                 .build();

@@ -23,6 +23,7 @@ import com.ai.model.AnalysisRequest;
 import com.ai.model.AnalysisResponse;
 import com.ai.rag.RagRetrievalService;
 import com.ai.rag.dto.RagContextResponse;
+import com.ai.skill.SkillCatalog;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -81,6 +82,7 @@ public class ConfigurableAgentExecutor {
     private final RagRetrievalService ragRetrievalService;
     private final AgentCapabilityService capabilityService;
     private final AgenticSupervisorService supervisor;
+    private final SkillCatalog skills;
 
     public ConfigurableAgentExecutor(AgentChatService chatService,
             AgentToolInvoker toolInvoker,
@@ -90,7 +92,7 @@ public class ConfigurableAgentExecutor {
             AgentToolInvocationContextFactory toolInvocationContextFactory,
             RagRetrievalService ragRetrievalService,
             AgentCapabilityService capabilityService,
-            AgenticSupervisorService supervisor) {
+            AgenticSupervisorService supervisor, SkillCatalog skills) {
         this.chatService = chatService;
         this.toolInvoker = toolInvoker;
         this.toolChat = toolChat;
@@ -100,6 +102,7 @@ public class ConfigurableAgentExecutor {
         this.ragRetrievalService = ragRetrievalService;
         this.capabilityService = capabilityService;
         this.supervisor = supervisor;
+        this.skills = skills;
     }
 
     /**
@@ -333,16 +336,11 @@ public class ConfigurableAgentExecutor {
     private String boundSkillInstructions(RequestExecutionPlan requestPlan) {
         AgentCapabilityBindingSnapshot snapshot = AgentCapabilityScope.current()
                 .orElseThrow(() -> new IllegalStateException("Agent 能力作用域未建立"));
-        boolean selected = requestPlan.candidateTools().contains(AgentTools.LIST_AVAILABLE_SKILLS_TOOL)
-                || requestPlan.candidateTools().contains(AgentTools.USE_SKILL_TOOL);
+        boolean selected = requestPlan.candidateTools().contains(SkillCatalog.ACTIVATE_TOOL);
         if (!selected || snapshot.skillIds().isEmpty()) {
             return "";
         }
-        String stableIds = String.join(", ", snapshot.skillIds());
-        return "\n\n## 已绑定 Skills\n"
-                + "当前 Agent 可使用的 Skill 稳定 ID: " + stableIds + "。\n"
-                + "需要 Skill 时，先调用 listAvailableSkills 确认能力，再调用 useSkill；"
-                + "skillId 必须使用列表中的精确稳定 ID，不得猜测或改写。";
+        return skills.instructions();
     }
 
     private String boundSubAgentInstructions(AgentProfile profile, RequestExecutionPlan requestPlan) {

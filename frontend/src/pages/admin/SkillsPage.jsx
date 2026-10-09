@@ -36,7 +36,7 @@ export function SkillsPage({ api, toast }) {
         api={api}
         toast={toast}
         title="技能管理"
-        desc="维护技能 Prompt、执行步骤、版本历史和外部 API 配置"
+        desc="维护可复用的 Agent 操作指引与步骤资料，按需激活；外部动作请配置 Tool/MCP"
         listUrl="/api/v1/skills/list"
         listKey="skills"
         idKey="skillId"
@@ -47,14 +47,18 @@ export function SkillsPage({ api, toast }) {
         fields={[
           ['name', '名称'],
           ['description', '描述'],
-          ['promptTemplate', 'Prompt', 'textarea'],
-          ['apiUrl', '外部 API'],
-          ['apiMethod', 'API Method', 'select', [{ value: 'POST', label: 'POST' }, { value: 'GET', label: 'GET' }]],
-          ['apiHeaders', 'API Headers', 'textarea'],
-          ['steps', '步骤', 'textarea'],
+          ['promptTemplate', '技能指令（Markdown，最多 12000 字符）', 'textarea'],
+          ['steps', '步骤资料（按需读取，最多 12000 字符）', 'textarea'],
+          ['apiUrl', '旧 API 地址（仅供迁移识别；迁入 Tool/MCP 后清空）'],
           ['enabled', '启用', 'checkbox']
         ]}
         visibleFields={['name', 'description', 'source']}
+        tableColumns={[
+          { key: 'name', title: '名称' },
+          { key: 'description', title: '用途', render: (item) => truncate(item.description, 100) },
+          { key: 'configurationIssue', title: '运行配置', render: (item) => item.configurationIssue || '配置有效' }
+        ]}
+        toggleBlockedReason={(item) => item.enabled === false ? item.configurationIssue : ''}
         headerExtra={<button className="btn" onClick={() => setGenerateModal(true)}><Sparkles size={16} />生成技能</button>}
         extraRowAction={(item) => <button className="btn" onClick={() => openHistory(item)}><History size={16} />历史</button>}
       />

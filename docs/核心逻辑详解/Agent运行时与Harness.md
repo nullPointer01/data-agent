@@ -70,10 +70,10 @@ AgentProfile + 当前用户权限 + 固定模式约束
 ```
 
 `AgentToolCandidateSelector` 不再维护逐工具触发词；新增 Tool 的描述来自现有 `@Tool` 和 Capability Registry，
-绑定成功后就能进入 Router 目录，无需在规划器里补业务分支。Skill 经 `listAvailableSkills/useSkill` 使用；
+绑定成功后就能进入 Router 目录，无需在规划器里补业务分支。Skill 经官方 `activate_skill/read_skill_resource` 按需加载指令和资料；
 子 Agent 经 `delegateToAgent` 使用，Router 和主 Agent 都能看到已绑定专家的名称与用途。
 
-Router 只选输入目录中的精确工具名，最多 5 个。Skill 执行候选会补齐目录工具；OPTIONAL 检索会补齐对应已授权工具。
+Router 只选输入目录中的精确工具名，最多 5 个。Skill 候选会补齐激活与资料读取工具，需要执行动作还须选择业务工具；OPTIONAL 检索会补齐对应已授权工具。
 补齐后超过上限则保守降级，不截断依赖链。无效 JSON、重复字段、未知字段、非数字/越界置信度、超长字段、
 未知或重复工具名均拒绝。模型自报置信度仅作为准入阈值，不能解释成测量得到的准确率。
 
@@ -249,7 +249,7 @@ tenant + owner + required permissions
 risk metadata + lifecycle + availability
 ```
 
-统一身份使用 `tool:<name>`、`skill:<skillId>` 和 `agent:<agentId>`。Tool 的风险与权限来自 `@AgentToolPolicy`；Skill 的稳定身份、版本和归属来自 `skill_config`，运行时可用性由 `SkillManager` 按稳定 `skillId` 精确确认；sub Agent 的版本使用 `AgentProfile.updatedAt` 修订标识，风险从当前有效工具集合保守推导。
+统一身份使用 `tool:<name>`、`skill:<skillId>` 和 `agent:<agentId>`。Tool 的风险与权限来自 `@AgentToolPolicy`；Skill 的稳定身份、版本和归属来自 `skill_config`，由 `SkillCatalog` 按绑定/租户/启用状态实时映射官方 Skills；sub Agent 的版本使用 `AgentProfile.updatedAt` 修订标识，风险从当前有效工具集合保守推导。
 
 `GET /api/v1/my/capabilities` 会重新读取持久化用户权限，只返回当前租户可见、当前用户有权限了解的能力。停用但仍可见的能力保留安全原因，供设置页禁选或移除旧绑定。Profile 保存时服务端再次校验三类身份、可用性、自引用和已知引用环，不能依赖前端隐藏防伪造。目录中已经消失的历史绑定只在设置页显示安全占位，允许移除但不能重新选择。
 

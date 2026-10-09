@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ai.mcp.McpModelService;
 import com.ai.model.SkillConfig;
 import com.ai.repository.SkillConfigRepository;
+import com.ai.skill.SkillCatalog;
 import com.ai.security.SecurityContextHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,8 +34,7 @@ public class SkillGenerator {
     private static final String KEY_STEPS = "steps";
     private static final String SOURCE_DATA = "data";
     private static final String DEFAULT_VERSION = "1.0";
-    private static final String DEFAULT_API_METHOD = "POST";
-    private static final String DEFAULT_PROMPT_TEMPLATE = "简洁回答: {{query}}";
+    private static final String DEFAULT_PROMPT_TEMPLATE = "根据当前用户问题和已提供的数据简洁回答；缺少数据时请用户补充。";
     private static final String DEFAULT_SKILL_NAME = "自动生成Skill";
     private static final String EMPTY_VALUE = "";
     private static final String MARKDOWN_FENCE = "```";
@@ -43,18 +43,15 @@ public class SkillGenerator {
 
     private final McpModelService mcpModelService;
     private final SkillConfigRepository skillConfigRepository;
-    private final SkillServiceImpl skillService;
     private final SecurityContextHelper securityContextHelper;
     private final ObjectMapper objectMapper;
 
     public SkillGenerator(McpModelService mcpModelService,
                           SkillConfigRepository skillConfigRepository,
-                          SkillServiceImpl skillService,
                           SecurityContextHelper securityContextHelper,
                           ObjectMapper objectMapper) {
         this.mcpModelService = mcpModelService;
         this.skillConfigRepository = skillConfigRepository;
-        this.skillService = skillService;
         this.securityContextHelper = securityContextHelper;
         this.objectMapper = objectMapper;
     }
@@ -93,16 +90,17 @@ public class SkillGenerator {
                 {
                   "name": "Skill名称(简洁，2-6字，体现数据领域)",
                   "description": "Skill描述(说明能做什么分析，50字以内)",
-                  "promptTemplate": "提示词模板(用{{query}}代表用户问题，用{{data}}代表数据。必须包含:1.有数据时分析数据 2.无数据时提示用户上传 3.绝不编造数据 4.简洁专业)",
-                  "steps": "[\\"步骤1:理解用户问题\\",\\"步骤2:分析相关数据\\",\\"步骤3:生成结论\\"]"
+                  "promptTemplate": "给当前 Agent 的可复用 Markdown 操作指引；有数据时分析，缺数据请用户补充，绝不编造结果，简洁专业",
+                  "steps": ["理解当前用户问题", "分析已提供的数据", "生成有依据的结论"]
                 }
 
                 要求:
                 1. name要体现数据领域(如"销售分析"、"财务审计"、"用户画像")
-                2. promptTemplate必须包含{{query}}，可选包含{{data}}
+                2. promptTemplate是当前 Agent 激活后遵循的指令，不使用模板占位符，不创建新的 Agent 或模型调用
                 3. promptTemplate要约束输出长度和格式，减少token消耗
-                4. steps是JSON数组字符串，描述分析工作流的3-5个步骤
-                5. 只输出JSON，不要输出markdown代码块标记
+                4. steps是JSON数组，描述3-5个操作步骤，运行时作为参考资源按需读取，不是可执行工作流
+                5. 需要执行动作时只能建议调用已经授权的工具，不得生成HTTP API地址、凭据或假定工具已经可用
+                6. 只输出JSON，不要输出markdown代码块标记
                 """.formatted(
                 dataDescription != null ? dataDescription : "未提供描述",
                 truncatedData != null ? truncatedData : "无数据");
@@ -127,14 +125,15 @@ public class SkillGenerator {
 
             Object stepsObj = parsed.get(KEY_STEPS);
             if (stepsObj != null) {
-                config.setSteps(objectMapper.writeValueAsString(stepsObj));
+                config.setSteps(stepsObj instanceof String text ? text : objectMapper.writeValueAsString(stepsObj));
             } else {
                 config.setSteps(EMPTY_VALUE);
             }
             config.setVersion(DEFAULT_VERSION);
-            config.setApiUrl(EMPTY_VALUE);
-            config.setApiMethod(DEFAULT_API_METHOD);
             config.setEnabled(true);
+            if (!SkillCatalog.configurationIssue(config).isEmpty()) {
+                return null;
+            }
 
             return config;
         } catch (Exception e) {
@@ -149,7 +148,6 @@ public class SkillGenerator {
         config.setTenantId(securityContextHelper.getCurrentTenantId());
         config.setCreatedBy(securityContextHelper.getCurrentUserId());
         skillConfigRepository.save(config);
-        skillService.registerToSkillManager(config);
     }
 
     private Map<String, Object> generatedResponse(SkillConfig config, String message) {

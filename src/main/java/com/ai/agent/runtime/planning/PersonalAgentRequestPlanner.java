@@ -7,6 +7,7 @@ import com.ai.agent.capability.AgentCapabilityService;
 import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.tool.AgentTools;
+import com.ai.skill.SkillCatalog;
 import com.ai.model.AgentProfile;
 import org.springframework.stereotype.Component;
 
@@ -127,7 +128,7 @@ public class PersonalAgentRequestPlanner {
         } else {
             answer.append("\n当前可用能力：\n");
             catalog.stream()
-                    .filter(tool -> !tool.name().equals(AgentTools.LIST_AVAILABLE_SKILLS_TOOL))
+                    .filter(tool -> !tool.name().equals(SkillCatalog.READ_RESOURCE_TOOL))
                     .forEach(tool -> {
                         answer.append("- ").append(tool.description()).append('\n');
                         tool.targets().forEach(target -> answer.append("  ")

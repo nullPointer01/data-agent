@@ -562,11 +562,11 @@ CIRCUIT_OPEN_MS = 60_000ms，60 秒内拒绝所有请求
 
 **熔断后恢复**：60 秒后下次请求检查 `circuitOpenUntil.get(modelKey)`，如果时间已过则自动放行，成功后 `recordSuccess` 清除计数器
 
-#### ⑥ 技能系统（SkillManager）
+#### ⑥ 技能系统（官方 Skills + SkillCatalog）
 
-- 运行时用 `ConcurrentHashMap` 按持久化 `skillId` 注册与精确查找，注册/替换和读取均为线程安全操作
+- SkillCatalog 按当前 Agent 绑定和租户读取数据库，转为官方 Skill/Skills；不维护启动缓存
 - 不建立 Skill 向量索引，不做关键词、名称或默认 Skill 回退
-- 只有当 Agent Profile 显式绑定 `skill:<skillId>` 时，模型才能通过 `listAvailableSkills/useSkill` 调用
+- 只有当 Agent Profile 显式绑定 `skill:<skillId>` 时，模型才能通过官方 `activate_skill/read_skill_resource` 读取指令和资料；当前 Agent 继续推理，业务工具另经白名单和审批
 
 ---
 

@@ -93,7 +93,7 @@ public class AgentChatService {
                         : tools.streamingModel(modelService.streamingChatModel(modelId)))
                 .chatMemory(memory);
         if (tools != null) {
-            builder.tools(tools.tools())
+            builder.toolProvider(tools.toolProvider())
                     // 响应式工具循环默认使用框架公共执行池；指定直接执行器使本批入口串行。
                     // 真正的工具方法仍在 Pipeline 的有界池运行，不引入额外无界线程池。
                     .executeToolsConcurrently(Runnable::run)

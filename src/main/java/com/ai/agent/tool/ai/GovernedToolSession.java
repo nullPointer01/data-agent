@@ -33,6 +33,8 @@ import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.service.tool.ToolExecutor;
+import dev.langchain4j.service.tool.ToolProvider;
+import dev.langchain4j.service.tool.ToolProviderResult;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -90,8 +92,8 @@ public final class GovernedToolSession {
         }
     }
 
-    /** 注册框架执行器，反射调用仍只能由既有 Pipeline 发起。 */
-    public Map<ToolSpecification, ToolExecutor> tools() {
+    /** 用框架 ToolProvider 统一提供本轮工具；Skills/MCP/本地工具实际执行均由 Pipeline 发起。 */
+    public ToolProvider toolProvider() {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
         specifications.forEach(spec -> tools.put(spec, new ToolExecutor() {
             @Override
@@ -111,7 +113,7 @@ public final class GovernedToolSession {
                 }
             }
         }));
-        return tools;
+        return request -> ToolProviderResult.builder().addAll(tools).build();
     }
 
     /** 包装已具备模型预算/重试治理的模型，每个框架推理轮再申请一次迭代预算。 */

@@ -67,15 +67,26 @@ export function ResourcePage({
     const id = editing?.[idKey];
     const payload = sanitizeForm(form);
     if (id && updateUrl) {
-      await api.put(updateUrl(id), { ...payload, [idKey]: id });
+      const response = await api.put(updateUrl(id), { ...payload, [idKey]: id });
+      if (!mutationSucceeded(response)) return;
       toast(`${title}已更新`, 'success');
     } else {
-      await api.post(createUrl, payload);
+      const response = await api.post(createUrl, payload);
+      if (!mutationSucceeded(response)) return;
       toast(`${title}已创建`, 'success');
     }
     setEditing(null);
     setForm({});
     load();
+  };
+
+  // 后端校验失败时保留表单并展示原因，避免旧 API 迁移等被拒绝的操作仍提示成功。
+  const mutationSucceeded = (response) => {
+    if (response?.success === false || Number(response?.status) >= 400 || response?.error) {
+      toast(response?.message || '操作失败，请检查配置', 'error');
+      return false;
+    }
+    return true;
   };
 
   const resourceColumns = tableColumns || fields
@@ -93,7 +104,7 @@ export function ResourcePage({
         return (
           <div className="toolbar">
             {extraRowAction?.(item)}
-            {toggleUrl && <span title={toggleReason || '启用或停用'}><button className="btn" disabled={Boolean(toggleReason)} onClick={async () => { await api.put(toggleUrl(item[idKey]), {}); toast('状态已更新', 'success'); load(); }}>{toggleLabel?.(item) || '启停'}</button></span>}
+            {toggleUrl && <span title={toggleReason || '启用或停用'}><button className="btn" disabled={Boolean(toggleReason)} onClick={async () => { const response = await api.put(toggleUrl(item[idKey]), {}); if (mutationSucceeded(response)) { toast('状态已更新', 'success'); load(); } }}>{toggleLabel?.(item) || '启停'}</button></span>}
             {updateUrl && <button className="btn" onClick={() => { setEditing(item); setForm(item); }}>编辑</button>}
             {deleteUrl && <span title={deleteReason || '删除'}><button className="btn danger" disabled={Boolean(deleteReason)} aria-label={`删除 ${item.name || item[idKey]}`} onClick={() => setConfirm({ message: `确认删除 ${item.name || item[idKey]}？`, onConfirm: async () => { await api.delete(deleteUrl(item[idKey])); setConfirm(null); toast('已删除', 'success'); load(); } })}><Trash2 size={16} /></button></span>}
           </div>

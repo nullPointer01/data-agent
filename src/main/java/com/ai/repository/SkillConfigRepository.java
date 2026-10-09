@@ -30,10 +30,4 @@ public interface SkillConfigRepository extends JpaRepository<SkillConfig, String
      */
     Optional<SkillConfig> findBySkillIdAndTenantId(String skillId, String tenantId);
 
-    /**
-     * 查询所有已启用的技能。
-     *
-     * @return 已启用技能配置列表
-     */
-    List<SkillConfig> findByEnabledTrue();
 }

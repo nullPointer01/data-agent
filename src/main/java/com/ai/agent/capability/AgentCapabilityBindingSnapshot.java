@@ -2,6 +2,7 @@ package com.ai.agent.capability;
 
 import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.tool.AgentTools;
+import com.ai.skill.SkillCatalog;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -62,8 +63,8 @@ public record AgentCapabilityBindingSnapshot(
             return Set.of();
         }
         if (!skillIds.isEmpty()) {
-            names.add(AgentTools.LIST_AVAILABLE_SKILLS_TOOL);
-            names.add(AgentTools.USE_SKILL_TOOL);
+            names.add(SkillCatalog.ACTIVATE_TOOL);
+            names.add(SkillCatalog.READ_RESOURCE_TOOL);
         }
         if (mode == AgentExecutionMode.ORCHESTRATED && !subAgentIds.isEmpty()) {
             names.add(AgentTools.DELEGATE_TO_AGENT_TOOL);

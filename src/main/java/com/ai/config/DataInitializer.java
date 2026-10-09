@@ -1,7 +1,5 @@
 package com.ai.config;
 
-import com.ai.model.SkillConfig;
-import com.ai.repository.SkillConfigRepository;
 import com.ai.security.rbac.RolePermissionService;
 import com.ai.security.SecurityConstants;
 import com.ai.security.rbac.SysPermission;
@@ -9,8 +7,6 @@ import com.ai.security.rbac.SysPermissionRepository;
 import com.ai.security.rbac.SysRole;
 import com.ai.security.rbac.SysRoleRepository;
 import com.ai.security.SysUserRepository;
-import com.ai.skill.DynamicSkill;
-import com.ai.skill.SkillManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,8 +18,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -47,9 +41,7 @@ public class DataInitializer {
     private String bootstrapAdminUsers;
 
     @Bean
-    public CommandLineRunner initData(SkillConfigRepository skillConfigRepository,
-            SkillManager skillManager,
-            JdbcTemplate jdbcTemplate,
+    public CommandLineRunner initData(JdbcTemplate jdbcTemplate,
             SysUserRepository sysUserRepository,
             SysRoleRepository roleRepository,
             SysPermissionRepository permissionRepository,
@@ -58,7 +50,6 @@ public class DataInitializer {
             repairUserTokenQuotaSchema(jdbcTemplate);
             initDefaultRbac(roleRepository, permissionRepository, rolePermissionService);
             bootstrapAdminUsers(sysUserRepository, rolePermissionService);
-            loadExistingSkills(skillConfigRepository, skillManager);
         };
     }
 
@@ -164,34 +155,4 @@ public class DataInitializer {
         }
     }
 
-    /**
-     * 将数据库中已启用的 Skill 按稳定 ID 加载到运行时注册表。
-     *
-     * @param repository Skill 配置仓储
-     * @param skillManager Skill 运行时注册表
-     */
-    private void loadExistingSkills(SkillConfigRepository repository, SkillManager skillManager) {
-        List<SkillConfig> skills = repository.findByEnabledTrue();
-        for (SkillConfig config : skills) {
-            registerSkillToManager(config, skillManager);
-        }
-        LOGGER.info("已加载 {} 个启用技能到 SkillManager", skills.size());
-    }
-
-    private void registerSkillToManager(SkillConfig config, SkillManager skillManager) {
-        DynamicSkill skill = buildDynamicSkill(config);
-        skillManager.registerSkillWithoutVectorRefresh(config.getSkillId(), skill);
-    }
-
-    private DynamicSkill buildDynamicSkill(SkillConfig config) {
-        return new DynamicSkill(
-                config.getName(),
-                config.getDescription(),
-                Map.of(
-                        "apiUrl", config.getApiUrl() != null ? config.getApiUrl() : "",
-                        "apiMethod", config.getApiMethod() != null ? config.getApiMethod() : "POST",
-                        "apiHeaders", config.getApiHeaders() != null ? config.getApiHeaders() : "",
-                        "promptTemplate", config.getPromptTemplate() != null ? config.getPromptTemplate() : "",
-                        "steps", config.getSteps() != null ? config.getSteps() : ""));
-    }
 }

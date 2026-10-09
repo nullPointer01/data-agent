@@ -9,7 +9,7 @@ import com.ai.model.AgentProfile;
 import com.ai.model.SkillConfig;
 import com.ai.repository.AgentProfileRepository;
 import com.ai.repository.SkillConfigRepository;
-import com.ai.skill.SkillManager;
+import com.ai.skill.SkillCatalog;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.internal.JsonSchemaElementJsonUtils;
 import org.springframework.stereotype.Component;
@@ -43,7 +43,6 @@ public class AgentCapabilityRegistry {
     private final AgentCapabilityConfigurationCodec configurationCodec;
     private final SkillConfigRepository skillRepository;
     private final AgentProfileRepository agentRepository;
-    private final SkillManager skillManager;
     private final AgentCapabilityValidator validator;
     private final AgentToolGovernanceProperties toolGovernanceProperties;
 
@@ -51,14 +50,12 @@ public class AgentCapabilityRegistry {
             AgentCapabilityConfigurationCodec configurationCodec,
             SkillConfigRepository skillRepository,
             AgentProfileRepository agentRepository,
-            SkillManager skillManager,
             AgentCapabilityValidator validator,
             AgentToolGovernanceProperties toolGovernanceProperties) {
         this.toolRegistry = toolRegistry;
         this.configurationCodec = configurationCodec;
         this.skillRepository = skillRepository;
         this.agentRepository = agentRepository;
-        this.skillManager = skillManager;
         this.validator = validator;
         this.toolGovernanceProperties = toolGovernanceProperties;
     }
@@ -156,41 +153,34 @@ public class AgentCapabilityRegistry {
 
     private AgentCapabilityDescriptor skillDescriptor(SkillConfig skill) {
         boolean enabled = skill.isEnabled();
-        boolean loaded = enabled && skillManager.findSkillById(skill.getSkillId()) != null;
-        boolean catalogAdapterEnabled = toolAllowedByRuntimePolicy(AgentTools.LIST_AVAILABLE_SKILLS_TOOL);
-        boolean executionAdapterEnabled = toolAllowedByRuntimePolicy(AgentTools.USE_SKILL_TOOL);
-        boolean externalAccess = hasText(skill.getApiUrl());
-        AgentCapabilityDescriptor.Availability availability = !enabled
-                ? AgentCapabilityDescriptor.Availability.unavailable("CAPABILITY_DISABLED", "Skill 已停用")
-                : !loaded
+        boolean adaptersEnabled = toolAllowedByRuntimePolicy(SkillCatalog.ACTIVATE_TOOL)
+                && toolAllowedByRuntimePolicy(SkillCatalog.READ_RESOURCE_TOOL);
+        String unavailableReason = enabled ? SkillCatalog.configurationIssue(skill) : "Skill 已停用";
+        AgentCapabilityDescriptor.Availability availability = !unavailableReason.isEmpty()
+                ? AgentCapabilityDescriptor.Availability.unavailable("SKILL_CONFIGURATION_UNAVAILABLE", unavailableReason)
+                : !adaptersEnabled
                         ? AgentCapabilityDescriptor.Availability.unavailable(
-                                "RUNTIME_NOT_LOADED", "Skill 配置已启用但未加载到运行时")
-                        : !executionAdapterEnabled
-                                ? AgentCapabilityDescriptor.Availability.unavailable(
-                                        "SKILL_ADAPTER_DISABLED", "Skill 执行适配器被运行策略关闭")
-                                : !catalogAdapterEnabled
-                                        ? AgentCapabilityDescriptor.Availability.unavailable(
-                                                "SKILL_CATALOG_DISABLED", "Skill 目录适配器被运行策略关闭")
-                                        : AgentCapabilityDescriptor.Availability.ready();
+                                "SKILL_ADAPTER_DISABLED", "Skill 激活或资料工具被运行策略关闭")
+                        : AgentCapabilityDescriptor.Availability.ready();
         return new AgentCapabilityDescriptor(
                 AgentCapabilityType.SKILL.identity(skill.getSkillId()),
                 AgentCapabilityType.SKILL,
                 valueOrDefault(skill.getVersion(), "1.0"),
                 skill.getName(),
                 skill.getDescription(),
-                standardTaskInput(),
-                Map.of("type", "string", "contract", "skill-result"),
+                Map.of("type", "object", "properties", Map.of("skill_name", Map.of("type", "string")),
+                        "required", List.of("skill_name")),
+                Map.of("type", "string", "contract", "skill-instructions"),
                 resolveOwner(skill.getCreatedBy(), skill.getTenantId()),
                 skill.getTenantId(),
                 Set.of(USE_PERMISSION),
                 new AgentCapabilityDescriptor.RiskMetadata(
-                        externalAccess ? AgentCapabilityDescriptor.RiskLevel.MEDIUM
-                                : AgentCapabilityDescriptor.RiskLevel.LOW,
-                        !externalAccess,
-                        !externalAccess,
+                        AgentCapabilityDescriptor.RiskLevel.LOW,
+                        true,
+                        true,
                         false,
-                        externalAccess,
-                        "PLATFORM_SKILL_POLICY"),
+                        false,
+                        "OFFICIAL_SKILLS_READ_ONLY"),
                 enabled ? AgentCapabilityDescriptor.LifecycleState.ACTIVE
                         : AgentCapabilityDescriptor.LifecycleState.DISABLED,
                 availability);

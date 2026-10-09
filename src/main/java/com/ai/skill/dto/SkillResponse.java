@@ -1,6 +1,7 @@
 package com.ai.skill.dto;
 
 import com.ai.model.SkillConfig;
+import com.ai.skill.SkillCatalog;
 
 import java.time.LocalDateTime;
 
@@ -15,8 +16,7 @@ public record SkillResponse(
         String description,
         String version,
         String apiUrl,
-        String apiMethod,
-        String apiHeaders,
+        String configurationIssue,
         String promptTemplate,
         String steps,
         String source,
@@ -32,9 +32,8 @@ public record SkillResponse(
                 config.getName(),
                 config.getDescription(),
                 config.getVersion(),
-                config.getApiUrl(),
-                config.getApiMethod(),
-                config.getApiHeaders(),
+                config.getApiUrl() == null ? "" : config.getApiUrl(),
+                SkillCatalog.configurationIssue(config),
                 config.getPromptTemplate(),
                 config.getSteps(),
                 config.getSource(),

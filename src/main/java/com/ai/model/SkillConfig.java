@@ -33,6 +33,7 @@ public class SkillConfig {
     @Column(length = 16)
     private String version = "1.0";
 
+    // 仅保留旧配置以便显式迁移与清空；官方 Skill 不执行 HTTP，也不向模型暴露这些凭据。
     @Column(name = "api_url", length = 256)
     private String apiUrl;
 
@@ -42,9 +43,11 @@ public class SkillConfig {
     @Column(name = "api_headers", columnDefinition = "TEXT")
     private String apiHeaders;
 
+    // 官方 Skill.content：激活后由当前 Agent 遵循的 Markdown 指令，不再独立调用模型。
     @Column(name = "prompt_template", columnDefinition = "TEXT")
     private String promptTemplate;
 
+    // 官方 SkillResource：references/steps.md；只读参考资料，不是可执行流程定义。
     @Column(name = "steps", columnDefinition = "TEXT")
     private String steps;
 

@@ -1,5 +1,6 @@
 package com.ai.mcp;
 
+import com.ai.logging.StructuredLogger;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -7,6 +8,7 @@ import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
  * OpenAI-compatible LangChain4j 客户端的无状态构建工厂。
@@ -17,10 +19,16 @@ import java.time.Duration;
 public class ModelClientFactory {
 
     private static final String KEY_NOT_REQUIRED = "not-required";
+    private final ModelCallListener listener;
+
+    public ModelClientFactory(StructuredLogger logger) {
+        listener = new ModelCallListener(logger);
+    }
 
     public ChatModel createChatModel(ResolvedModelEndpoint endpoint, Double temperature,
             Integer maxTokens, Duration timeout) {
         var builder = OpenAiChatModel.builder()
+                .listeners(List.of(listener))
                 .apiKey(clientApiKey(endpoint))
                 .modelName(endpoint.modelName())
                 .baseUrl(endpoint.baseUrl())
@@ -40,6 +48,7 @@ public class ModelClientFactory {
     public StreamingChatModel createStreamingChatModel(ResolvedModelEndpoint endpoint, Double temperature,
             Integer maxTokens, Duration timeout) {
         var builder = OpenAiStreamingChatModel.builder()
+                .listeners(List.of(listener))
                 .apiKey(clientApiKey(endpoint))
                 .modelName(endpoint.modelName())
                 .baseUrl(endpoint.baseUrl())

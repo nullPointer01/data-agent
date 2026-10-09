@@ -3,6 +3,7 @@ package com.ai.agent.tool.governance;
 import com.ai.agent.durable.AgentDurableRuntimeProperties;
 import com.ai.agent.tool.AgentTools;
 import com.ai.integration.mcp.McpToolCatalog;
+import com.ai.skill.SkillCatalog;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -40,7 +42,7 @@ public class AgentToolRegistry {
 
     public AgentToolRegistry(AgentTools agentTools,
             AgentToolGovernanceProperties properties,
-            AgentDurableRuntimeProperties durableProperties, McpToolCatalog mcpTools) {
+            AgentDurableRuntimeProperties durableProperties, McpToolCatalog mcpTools, SkillCatalog skills) {
         this.mcpTools = mcpTools;
         Map<String, RegisteredTool> registered = new LinkedHashMap<>();
         List<Method> methods = Arrays.stream(AgentTools.class.getDeclaredMethods())
@@ -64,6 +66,15 @@ public class AgentToolRegistry {
                 throw new IllegalStateException("Agent 工具名称重复: " + specification.name());
             }
         }
+        // 复用官方工具规格和执行器，但注册为只读治理工具，禁止绕过 Pipeline 直接提供原始执行器。
+        skills.managementTools().forEach((specification, executor) -> {
+            AgentToolDescriptor descriptor = new AgentToolDescriptor(specification.name(), AgentToolRiskLevel.LOW,
+                    true, true, false, Duration.ofSeconds(10), 1, "app:use", false, "", 16000);
+            if (registered.putIfAbsent(specification.name(),
+                    new RegisteredTool(specification, executor, descriptor)) != null) {
+                throw new IllegalStateException("Skill 工具名称重复: " + specification.name());
+            }
+        });
         this.tools = Map.copyOf(registered);
         if (mcpTools.configuredToolNames().stream().anyMatch(tools::containsKey)) {
             throw new IllegalArgumentException("MCP 工具不能覆盖本地工具");
