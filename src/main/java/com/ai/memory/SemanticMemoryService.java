@@ -3,6 +3,9 @@ package com.ai.memory;
 import com.ai.memory.dto.MemoryCaptureRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
+import com.ai.repository.ConversationSessionRepository;
+import com.ai.repository.ConversationMessageRepository;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,11 +27,21 @@ public class SemanticMemoryService {
 
     private final LongTermMemory longTermMemory;
     private final UserProfileMemoryRefreshService profileRefreshService;
+    private final MemoryWriteGuard writeGuard;
+    private final MemoryExtractionTaskMapper tasks;
+    private final ConversationSessionRepository sessions;
+    private final ConversationMessageRepository messages;
 
     public SemanticMemoryService(LongTermMemory longTermMemory,
-            UserProfileMemoryRefreshService profileRefreshService) {
+            UserProfileMemoryRefreshService profileRefreshService, MemoryWriteGuard writeGuard,
+            MemoryExtractionTaskMapper tasks, ConversationSessionRepository sessions,
+            ConversationMessageRepository messages) {
         this.longTermMemory = longTermMemory;
         this.profileRefreshService = profileRefreshService;
+        this.writeGuard = writeGuard;
+        this.tasks = tasks;
+        this.sessions = sessions;
+        this.messages = messages;
     }
 
     /**
@@ -40,11 +53,55 @@ public class SemanticMemoryService {
      * @param candidates 语义候选
      * @return 实际处理数量
      */
+    @Transactional(rollbackFor = Exception.class)
     public int upsertAll(String tenantId, String userId, String sessionId,
             List<SemanticMemoryCandidate> candidates) {
         if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(userId) || candidates == null) {
             return 0;
         }
+        if (deduplicate(candidates).isEmpty()) return 0;
+        writeGuard.advance(tenantId, userId);
+        return writeCandidates(tenantId, userId, sessionId, candidates);
+    }
+
+    /** 显式提取期间发生用户删除或纠错时，陈旧保存结果也不能覆盖最新操作。 */
+    @Transactional(rollbackFor = Exception.class)
+    public int upsertAllIfRevision(String tenantId, String userId, String sessionId,
+            List<SemanticMemoryCandidate> candidates, long expectedRevision) {
+        if (StringUtils.hasText(sessionId) && sessions.findOwnedForUpdate(sessionId, userId, tenantId)
+                .filter(session -> "ACTIVE".equals(session.getStatus())).isEmpty()) {
+            throw new IllegalStateException("来源会话已不可用，记忆未保存");
+        }
+        if (writeGuard.lock(tenantId, userId).revision() != expectedRevision) {
+            throw new IllegalStateException("记忆已发生变更，请按最新情况重新提交保存");
+        }
+        return upsertAll(tenantId, userId, sessionId, candidates);
+    }
+
+    /** 模型调用结束后才进入短事务，失效来源、旧修订和乱序任务不能写回。 */
+    @Transactional(rollbackFor = Exception.class)
+    public int applyBackground(MemoryExtractionTask task, List<SemanticMemoryCandidate> candidates) {
+        // 与删除使用相同的锁顺序：会话 -> 提取任务 -> 用户记忆修订。
+        if (sessions.findOwnedForUpdate(task.sessionId(), task.userId(), task.tenantId())
+                .filter(session -> "ACTIVE".equals(session.getStatus()) || "ARCHIVED".equals(session.getStatus())).isEmpty()) {
+            return 0;
+        }
+        if (tasks.lockOwned(task) == null) throw new IllegalStateException("记忆提取租约已失效");
+        var state = writeGuard.lock(task.tenantId(), task.userId());
+        if (state.revision() != task.revision() || state.lastSourceMessageId() >= task.sourceMessageId()
+                || messages.findById(task.sourceMessageId())
+                    .filter(message -> task.sessionId().equals(message.getSessionId()) && "user".equals(message.getRole())).isEmpty()) {
+            return 0;
+        }
+        // 显式保存只能通过绑定的工具确认，不能借后台模型误判绕过能力授权。
+        int count = writeCandidates(task.tenantId(), task.userId(), task.sessionId(), candidates.stream()
+                .filter(candidate -> candidate != null && !candidate.explicit()).toList());
+        writeGuard.processed(task.tenantId(), task.userId(), task.sourceMessageId());
+        return count;
+    }
+
+    private int writeCandidates(String tenantId, String userId, String sessionId,
+            List<SemanticMemoryCandidate> candidates) {
         int affected = 0;
         for (SemanticMemoryCandidate candidate : deduplicate(candidates)) {
             if (!isValid(candidate)) {

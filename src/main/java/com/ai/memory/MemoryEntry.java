@@ -1,15 +1,6 @@
 package com.ai.memory;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+import java.util.UUID;
 
 import java.time.LocalDateTime;
 
@@ -18,97 +9,68 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "memory_entry")
 public class MemoryEntry {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "memory_id", length = 64)
     private String memoryId;
 
-    @Column(name = "tenant_id", length = 64, nullable = false)
     private String tenantId;
 
-    @Column(name = "user_id", length = 64, nullable = false)
     private String userId;
 
-    @Column(name = "session_id", length = 64)
     private String sessionId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 32, nullable = false)
     private MemoryTier tier;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 32, nullable = false)
     private MemoryType type;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 32, nullable = false)
     private MemorySource source;
 
-    @Column(columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "compressed_content", columnDefinition = "TEXT")
     private String compressedContent;
 
-    @Column(name = "source_content_length")
     private Long sourceContentLength = 0L;
 
-    @Column(name = "stored_content_length")
     private Long storedContentLength = 0L;
 
-    @Column(name = "metadata_json", columnDefinition = "TEXT")
     private String metadataJson;
 
-    @Column(name = "semantic_key", length = 160)
     private String semanticKey;
 
-    @Column(name = "confidence")
     private double confidence;
 
-    @Column(name = "key_entities_json", columnDefinition = "TEXT")
     private String keyEntitiesJson;
 
-    @Column(name = "topic_tags_json", columnDefinition = "TEXT")
     private String topicTagsJson;
 
-    @Column(name = "vector_id", length = 128)
+    /** 逻辑索引标识，不代表 Milvus 已就绪；实际处理进度由持久索引任务记录。 */
     private String vectorId;
 
-    @Column(name = "relevance_score")
     private double relevanceScore;
 
-    @Column(name = "access_count")
     private int accessCount;
 
-    @Column(name = "decay_weight")
     private double decayWeight;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "last_accessed_at")
     private LocalDateTime lastAccessedAt;
 
-    @Column(name = "expires_at")
     private LocalDateTime expiresAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
+        if (memoryId == null) {
+            memoryId = UUID.randomUUID().toString();
+        }
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
         lastAccessedAt = now;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 

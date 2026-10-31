@@ -8,7 +8,7 @@ package com.ai.agent.durable;
 public final class AgentCheckpointVersion {
 
     public static final int LEGACY_V1 = 1;
-    public static final int CURRENT = 2;
+    public static final int CURRENT = 4;
 
     private AgentCheckpointVersion() {
     }

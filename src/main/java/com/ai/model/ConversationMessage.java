@@ -1,13 +1,5 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
 
 /**
@@ -15,39 +7,27 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "conversation_message")
 public class ConversationMessage {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "session_id", length = 64, nullable = false)
     private String sessionId;
 
-    @Column(length = 16, nullable = false)
     private String role;
 
-    @Column(columnDefinition = "MEDIUMTEXT")
     private String content;
 
     private long tokens = 0;
 
-    @Column(name = "skill_used", length = 64)
     private String skillUsed;
 
-    @Column(name = "model_used", length = 64)
     private String modelUsed;
 
-    @Column(name = "run_id", length = 64)
     private String runId;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         createdAt = LocalDateTime.now();
     }
 

@@ -10,18 +10,20 @@ import com.ai.agent.outcome.AgentTaskContract;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunRoute;
 import com.ai.agent.runtime.AgentRunSnapshot;
-import com.ai.agent.dto.AgentExecutionTraceListResponse;
+import com.ai.api.CursorPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.RecordCursor;
 import com.ai.agent.dto.AgentExecutionTraceResponse;
 import com.ai.logging.StructuredLogger;
 import com.ai.model.AgentExecutionTrace;
 import com.ai.model.AnalysisResponse;
 import com.ai.repository.AgentExecutionTraceRepository;
+import com.ai.conversation.ConversationAccessGuard;
 import com.ai.security.SecurityContextHelper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,9 +41,6 @@ import java.util.Map;
 @Service
 public class AgentExecutionTraceService {
 
-    private static final int DEFAULT_PAGE = 0;
-    private static final int MIN_LIMIT = 1;
-    private static final int MAX_LIMIT = 200;
     private static final int MAX_TEXT_LENGTH = 1024;
     private static final String EMPTY_JSON_OBJECT = "{}";
     private static final String EMPTY_JSON_ARRAY = "[]";
@@ -69,19 +68,21 @@ public class AgentExecutionTraceService {
     private final MeterRegistry meterRegistry;
     private final StructuredLogger structuredLogger;
     private final AgentContextGovernor contextGovernor;
+    private final ConversationAccessGuard conversationAccess;
 
     public AgentExecutionTraceService(AgentExecutionTraceRepository traceRepository,
             SecurityContextHelper securityContextHelper,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
             StructuredLogger structuredLogger,
-            AgentContextGovernor contextGovernor) {
+            AgentContextGovernor contextGovernor, ConversationAccessGuard conversationAccess) {
         this.traceRepository = traceRepository;
         this.securityContextHelper = securityContextHelper;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.structuredLogger = structuredLogger;
         this.contextGovernor = contextGovernor;
+        this.conversationAccess = conversationAccess;
     }
 
     /**
@@ -94,6 +95,9 @@ public class AgentExecutionTraceService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public String recordRun(AgentRunContext context, AgentRunRoute route, AnalysisResponse response) {
+        if (!conversationAccess.allowContentWrite(context.sessionId(), context.tenantId(), context.userId())) {
+            return context.runId();
+        }
         AgentRunSnapshot snapshot = context.snapshot();
 
         AgentExecutionTrace trace = new AgentExecutionTrace();
@@ -185,7 +189,7 @@ public class AgentExecutionTraceService {
         AgentExecutionTrace trace = traceRepository
                 .findByTraceIdAndTenantId(runId, tenantId)
                 .orElse(null);
-        if (trace == null) {
+        if (trace == null || !conversationAccess.allowContentWrite(trace.getSessionId(), trace.getTenantId(), trace.getUserId())) {
             return;
         }
         Map<String, Object> shared = readJsonObject(trace.getSharedContextJson());
@@ -206,7 +210,7 @@ public class AgentExecutionTraceService {
         AgentExecutionTrace trace = traceRepository
                 .findByTraceIdAndTenantId(runId, tenantId)
                 .orElse(null);
-        if (trace == null) {
+        if (trace == null || !conversationAccess.allowContentWrite(trace.getSessionId(), trace.getTenantId(), trace.getUserId())) {
             return;
         }
         Map<String, Object> shared = readJsonObject(trace.getSharedContextJson());
@@ -359,6 +363,12 @@ public class AgentExecutionTraceService {
         safe.put("decision", evidence.decision().name());
         safe.put("reason", evidence.reason().name());
         safe.put("strategy", evidence.strategy());
+        if (evidence.summary() != null) {
+            var summary = evidence.summary();
+            safe.put("summary", Map.of("outcome", summary.outcome().name(),
+                    "summaryCount", summary.summaryCount(), "coveredMessageCount", summary.coveredMessageCount(),
+                    "summaryTokens", summary.summaryTokens()));
+        }
         safe.put("estimatedTokensBefore", evidence.estimatedTokensBefore());
         safe.put("estimatedTokensAfter", evidence.estimatedTokensAfter());
         safe.put("originalMessageCount", evidence.originalMessageCount());
@@ -453,20 +463,22 @@ public class AgentExecutionTraceService {
     /**
      * 查询当前租户的执行轨迹列表。
      *
-     * @param limit 返回条数
+     * @param size 每页数量
      * @param userId 可选用户编号
+     * @param query 可选搜索内容
+     * @param after 上一页返回的游标
      * @return 执行轨迹列表
      */
     @Transactional(readOnly = true)
-    public AgentExecutionTraceListResponse listCurrentTenant(int limit, String userId) {
+    public CursorPageResponse<AgentExecutionTraceResponse> listCurrentTenant(
+            int size, String userId, String query, String after) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        PageRequest page = PageRequest.of(DEFAULT_PAGE, Math.max(MIN_LIMIT, Math.min(limit, MAX_LIMIT)));
-        List<AgentExecutionTrace> traces = StringUtils.hasText(userId)
-                ? traceRepository.findByTenantIdAndUserIdOrderByCreatedAtDesc(tenantId, userId, page)
-                : traceRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, page);
-        return new AgentExecutionTraceListResponse(true, traces.stream()
-                .map(AgentExecutionTraceResponse::from)
-                .toList());
+        int pageSize = ListPaging.size(size);
+        var entries = traceRepository.findCursorPage(tenantId, userId,
+                ListPaging.keyword(query), RecordCursor.decode(after), pageSize + 1);
+        return CursorPageResponse.fromFetched(entries, pageSize,
+                entry -> new RecordCursor(entry.getCreatedAt(), entry.getTraceId()))
+                .map(AgentExecutionTraceResponse::from);
     }
 
     /**

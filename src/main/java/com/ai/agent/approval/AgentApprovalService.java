@@ -1,6 +1,7 @@
 package com.ai.agent.approval;
 
-import com.ai.agent.approval.dto.AgentApprovalListResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
 import com.ai.agent.approval.dto.AgentApprovalResponse;
 import com.ai.agent.durable.AgentDurableRunStore;
 import com.ai.agent.durable.AgentDurableRuntimeProperties;
@@ -15,6 +16,9 @@ import com.ai.security.SecurityContextHelper;
 import com.ai.security.SysUser;
 import com.ai.security.SysUserRepository;
 import com.ai.security.rbac.RolePermissionService;
+import com.ai.conversation.ConversationAccessGuard;
+import com.ai.background.BackgroundTaskConfiguration;
+import com.ai.background.TaskSignalPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +40,6 @@ import java.util.Set;
 public class AgentApprovalService {
 
     private static final String NOT_FOUND_OR_DENIED = "审批不存在或无权限";
-    private static final int MAX_LIST_LIMIT = 100;
 
     private final AgentToolApprovalRepository approvalRepository;
     private final AgentDurableRunStore runStore;
@@ -47,6 +50,9 @@ public class AgentApprovalService {
     private final SecurityContextHelper securityContextHelper;
     private final AgentApprovalTelemetry telemetry;
     private final AgentConversationRecorder conversationRecorder;
+    private final ConversationAccessGuard conversationAccess;
+    private final ApprovalEventPublisher approvalEvents;
+    private final TaskSignalPublisher taskSignals;
 
     public AgentApprovalService(AgentToolApprovalRepository approvalRepository,
             AgentDurableRunStore runStore,
@@ -56,7 +62,8 @@ public class AgentApprovalService {
             RolePermissionService rolePermissionService,
             SecurityContextHelper securityContextHelper,
             AgentApprovalTelemetry telemetry,
-            AgentConversationRecorder conversationRecorder) {
+            AgentConversationRecorder conversationRecorder, ConversationAccessGuard conversationAccess,
+            ApprovalEventPublisher approvalEvents, TaskSignalPublisher taskSignals) {
         this.approvalRepository = approvalRepository;
         this.runStore = runStore;
         this.properties = properties;
@@ -66,21 +73,20 @@ public class AgentApprovalService {
         this.securityContextHelper = securityContextHelper;
         this.telemetry = telemetry;
         this.conversationRecorder = conversationRecorder;
+        this.conversationAccess = conversationAccess;
+        this.approvalEvents = approvalEvents;
+        this.taskSignals = taskSignals;
     }
 
     @Transactional(readOnly = true)
-    public AgentApprovalListResponse list(AgentApprovalDecisionStatus status, int limit) {
+    public ListPageResponse<AgentApprovalResponse> list(AgentApprovalDecisionStatus status, int page, int size) {
         SysUser reviewer = requireReviewer();
-        PageRequest page = PageRequest.of(0, Math.max(1, Math.min(limit, MAX_LIST_LIMIT)));
-        List<AgentToolApprovalEntity> approvals = status == null
-                ? approvalRepository.findByTenantIdOrderByRequestedAtDesc(reviewer.getTenantId(), page)
-                : approvalRepository.findByTenantIdAndDecisionStatusOrderByRequestedAtDesc(
-                        reviewer.getTenantId(), status, page);
-        Map<String, UserIdentity> userIdentities = loadUserIdentities(reviewer.getTenantId(), approvals);
-        List<AgentApprovalResponse> items = approvals.stream()
-                .map(approval -> toResponse(approval, userIdentities))
-                .toList();
-        return new AgentApprovalListResponse(items, items.size());
+        ListPaging.page(page, size);
+        var approvals = ListPageResponse.fetch(page, size,
+                approvalRepository.countList(reviewer.getTenantId(), status),
+                pageable -> approvalRepository.findListPage(reviewer.getTenantId(), status, pageable));
+        Map<String, UserIdentity> identities = loadUserIdentities(reviewer.getTenantId(), approvals.items());
+        return approvals.map(approval -> toResponse(approval, identities));
     }
 
     @Transactional(readOnly = true)
@@ -99,6 +105,11 @@ public class AgentApprovalService {
         validateDecision(reviewer, approval);
         if (approval.getDecisionStatus() != AgentApprovalDecisionStatus.PENDING) {
             return toResponse(approval);
+        }
+        var run = runStore.find(approval.getRunId())
+                .orElseThrow(() -> new IllegalArgumentException("关联运行不存在"));
+        if (!conversationAccess.allowContentWrite(run.getSessionId(), run.getTenantId(), run.getUserId())) {
+            throw new IllegalArgumentException("所属会话已删除，审批不能继续");
         }
         Instant now = Instant.now();
         if (!now.isBefore(approval.getExpiresAt())) {
@@ -122,6 +133,10 @@ public class AgentApprovalService {
                 approval.getVersion());
         if (changed != 1) {
             return toResponse(findTenantApproval(approvalId, reviewer.getTenantId()));
+        }
+        if (decision == AgentApprovalDecision.APPROVE) {
+            approvalEvents.changed(run);
+            taskSignals.afterCommit(BackgroundTaskConfiguration.RESUME_QUEUE, approvalId);
         }
         if (decision == AgentApprovalDecision.REJECT) {
             boolean rejected = runStore.transition(
@@ -170,6 +185,10 @@ public class AgentApprovalService {
     }
 
     private boolean expireOne(AgentToolApprovalEntity approval, Instant now) {
+        var run = runStore.find(approval.getRunId()).orElse(null);
+        if (run == null || !conversationAccess.allowContentWrite(run.getSessionId(), run.getTenantId(), run.getUserId())) {
+            return false;
+        }
         int changed = approvalRepository.expire(approval.getApprovalId(), now, approval.getVersion());
         if (changed != 1) {
             return false;
@@ -183,6 +202,9 @@ public class AgentApprovalService {
                         "工具动作审批已过期"));
         if (transitioned) {
             updateConversation(approval.getRunId(), "审批已过期，工具操作未执行。");
+        } else {
+            // 审批记录已变化时也刷新管理页，不能依赖 Run 必须发生第二次转换。
+            approvalEvents.changed(run);
         }
         telemetry.record(
                 "EXPIRE",
@@ -295,10 +317,9 @@ public class AgentApprovalService {
             return Map.of();
         }
         Map<String, UserIdentity> identities = new LinkedHashMap<>();
-        userRepository.findAllById(userIds).stream()
-                .filter(user -> Objects.equals(tenantId, user.getTenantId()))
-                .forEach(user -> identities.put(user.getId(),
-                        new UserIdentity(user.getUsername(), user.getNickname())));
+        userRepository.findIdentitiesByIds(userIds, tenantId)
+                .forEach(user -> identities.put(user.userId(),
+                        new UserIdentity(user.username(), user.nickname())));
         return Map.copyOf(identities);
     }
 

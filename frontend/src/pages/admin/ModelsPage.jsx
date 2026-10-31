@@ -1,3 +1,4 @@
+import { useDebouncedValue, useServerList } from '../../hooks/useServerList.js';
 import { Edit3, Plus, Power, RefreshCw, Star, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ModelEditorModal } from '../../components/models/ModelEditorModal.jsx';
@@ -6,15 +7,14 @@ import {
   ConfirmDialog,
   DataTable,
   EmptyState,
+  ListLoadError,
   PageHeader,
   ToolbarSearch
 } from '../../components/ui.jsx';
 
 /** 模型接入管理页：维护供应商配置、默认模型和真实连接探测。 */
 export function ModelsPage({ api, toast }) {
-  const [models, setModels] = useState([]);
   const [providers, setProviders] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -23,32 +23,18 @@ export function ModelsPage({ api, toast }) {
     () => Object.fromEntries(providers.map((provider) => [provider.key, provider])),
     [providers]
   );
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) return models;
-    return models.filter((model) => {
-      const providerLabel = providerMap[model.provider]?.label || model.provider;
-      return `${model.name} ${providerLabel} ${model.modelName} ${model.baseUrl}`.toLowerCase().includes(keyword);
-    });
-  }, [models, providerMap, query]);
-
-  const load = async () => {
-    setLoading(true);
+  const keyword = useDebouncedValue(query);
+  const { items: models, response, loading, error, refresh, pagination } = useServerList({
+    api, url: '/api/v1/models/list', mode: 'offset', filters: { query: keyword }
+  });
+  const loadProviders = async () => {
     try {
-      const [catalogResponse, modelsResponse] = await Promise.all([
-        api.get('/api/v1/models/providers'),
-        api.get('/api/v1/models/list')
-      ]);
-      setProviders(catalogResponse.providers || []);
-      setModels(modelsResponse.models || []);
-    } catch (error) {
-      toast(error.message || '模型配置加载失败', 'error');
-    } finally {
-      setLoading(false);
-    }
+      const catalog = await api.get('/api/v1/models/providers');
+      setProviders(catalog.providers || []);
+    } catch (failure) { toast(failure.message || '厂商目录加载失败', 'error'); }
   };
-
-  useEffect(() => { load(); }, []);
+  const load = () => Promise.all([refresh(), loadProviders()]);
+  useEffect(() => { loadProviders(); }, [api]);
 
   const toggle = async (model) => {
     const response = await api.put(`/api/v1/models/toggle/${model.modelId}`, {});
@@ -121,7 +107,7 @@ export function ModelsPage({ api, toast }) {
         title="模型管理"
         desc="统一管理 GPT、国产模型和 OpenAI-compatible 端点"
         actions={<>
-          <ToolbarSearch value={query} onChange={setQuery} placeholder="搜索名称、厂商或模型" />
+          <ToolbarSearch value={query} onChange={setQuery} placeholder="搜索名称、厂商代码或模型" />
           <button className="icon-button bordered model-header-icon" title="刷新" onClick={load}><RefreshCw size={17} /></button>
           <button className="btn primary" onClick={() => setEditing({})} disabled={!providers.length}>
             <Plus size={16} />新增模型
@@ -130,15 +116,17 @@ export function ModelsPage({ api, toast }) {
       />
 
       <div className="model-summary" aria-label="模型配置概览">
-        <div><span>配置总数</span><strong>{models.length}</strong></div>
-        <div><span>已启用</span><strong>{models.filter((model) => model.enabled).length}</strong></div>
+        <div><span>匹配配置数</span><strong>{response?.total || 0}</strong></div>
+        <div><span>本页启用</span><strong>{models.filter((model) => model.enabled).length}</strong></div>
         <div><span>厂商目录</span><strong>{providers.length}</strong></div>
-        <div><span>筛选结果</span><strong>{filtered.length}</strong></div>
+        <div><span>本页条数</span><strong>{models.length}</strong></div>
       </div>
 
+      <ListLoadError error={error} onRetry={refresh} />
       <DataTable
+        serverPagination={pagination}
         columns={columns}
-        rows={filtered}
+        rows={models}
         rowKey="modelId"
         loading={loading}
         empty={<EmptyState

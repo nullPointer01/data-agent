@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.conversation.ConversationLifecycleMapper">
+    <select id="list" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE tenant_id=#{tenantId} AND user_id=#{userId} AND status=#{status}
+        <if test="cursor != null">
+            AND (last_access_at &lt; #{cursor.time} OR (last_access_at=#{cursor.time} AND session_id &lt; #{cursor.id}))
+        </if>
+        ORDER BY last_access_at DESC, session_id DESC LIMIT #{limit}
+    </select>
+    <!-- 调用方先持有会话行锁，归档/删除不能被晚到的回答覆盖。 -->
+    <update id="changeState">
+        UPDATE conversation_session SET status=#{status}, updated_at=CURRENT_TIMESTAMP(6),
+            archived_at=CASE WHEN #{status}='ARCHIVED' THEN CURRENT_TIMESTAMP(6) ELSE NULL END,
+            deleted_at=CASE WHEN #{status}='DELETED' THEN COALESCE(deleted_at,CURRENT_TIMESTAMP(6)) ELSE NULL END
+        WHERE session_id=#{sessionId}
+    </update>
+    <select id="hasPendingRun" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_run_state WHERE session_id=#{sessionId}
+            AND status IN ('CREATED','RUNNING','WAITING_APPROVAL','RESUMING'))
+    </select>
+    <update id="cancelRuns">
+        UPDATE agent_run_state SET status='CANCELLED', termination_reason='CANCELLED',
+            error_summary='所属会话已删除', lease_owner=NULL, lease_until=NULL,
+            completed_at=CURRENT_TIMESTAMP(6), updated_at=CURRENT_TIMESTAMP(6), version=version+1
+        WHERE session_id=#{sessionId} AND status IN ('CREATED','RUNNING','WAITING_APPROVAL','RESUMING')
+    </update>
+    <update id="cancelApprovals">
+        UPDATE agent_tool_approval SET
+            decision_status=CASE WHEN decision_status='PENDING' THEN 'CANCELLED' ELSE decision_status END,
+            execution_status='CANCELLED', execution_completed_at=CURRENT_TIMESTAMP(6),
+            updated_at=CURRENT_TIMESTAMP(6), version=version+1
+        WHERE run_id IN (SELECT run_id FROM agent_run_state WHERE session_id=#{sessionId})
+            AND execution_status IN ('WAITING_DECISION','READY','RUNNING')
+    </update>
+    <update id="cancelExtraction">
+        UPDATE memory_extraction_task SET status='CANCELLED', payload=NULL, lease_owner=NULL, lease_until=NULL,
+            last_error='source-session-deleted', updated_at=CURRENT_TIMESTAMP(6)
+        WHERE session_id=#{sessionId} AND (status IN ('PENDING','RETRY','RUNNING') OR payload IS NOT NULL)
+    </update>
+    <select id="expired" resultType="string">
+        SELECT session_id FROM conversation_session WHERE status='DELETED'
+            AND deleted_at &lt; TIMESTAMPADD(DAY, -#{retentionDays}, CURRENT_TIMESTAMP(6))
+        ORDER BY deleted_at, session_id LIMIT #{limit}
+    </select>
+    <select id="lockExpired" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE session_id=#{sessionId} AND status='DELETED'
+            AND deleted_at &lt; TIMESTAMPADD(DAY, -#{retentionDays}, CURRENT_TIMESTAMP(6)) FOR UPDATE
+    </select>
+    <!-- 每条 DELETE 都有上限；超长会话留待下一轮继续处理，不以级联删除制造大事务。 -->
+    <delete id="purgeMessages">DELETE FROM conversation_message WHERE session_id=#{sessionId} LIMIT #{limit}</delete>
+    <delete id="purgeTasks">DELETE FROM memory_extraction_task WHERE session_id=#{sessionId} LIMIT #{limit}</delete>
+    <delete id="purgeApprovals">
+        DELETE FROM agent_tool_approval WHERE run_id IN
+            (SELECT run_id FROM agent_run_state WHERE session_id=#{sessionId}) LIMIT #{limit}
+    </delete>
+    <delete id="purgeRuns">
+        DELETE FROM agent_run_state WHERE session_id=#{sessionId}
+            AND NOT EXISTS (SELECT 1 FROM agent_run_submission s WHERE s.run_id=agent_run_state.run_id)
+            AND NOT EXISTS (SELECT 1 FROM agent_run_event e WHERE e.run_id=agent_run_state.run_id)
+            AND NOT EXISTS (SELECT 1 FROM agent_tool_approval a WHERE a.run_id=agent_run_state.run_id) LIMIT #{limit}
+    </delete>
+    <delete id="purgeRunEvents">
+        DELETE FROM agent_run_event WHERE run_id IN (SELECT run_id FROM agent_run_state WHERE session_id=#{sessionId}) LIMIT #{limit}
+    </delete>
+    <delete id="purgeRunSubmissions">
+        DELETE FROM agent_run_submission WHERE run_id IN (SELECT run_id FROM agent_run_state WHERE session_id=#{sessionId})
+            AND NOT EXISTS(SELECT 1 FROM agent_run_event e WHERE e.run_id=agent_run_submission.run_id) LIMIT #{limit}
+    </delete>
+    <delete id="purgeTraces">DELETE FROM agent_execution_trace WHERE session_id=#{sessionId} LIMIT #{limit}</delete>
+    <delete id="purgeSummaries">
+        DELETE FROM memory_entry WHERE session_id=#{sessionId} AND tier='SHORT_TERM' LIMIT #{limit}
+    </delete>
+    <delete id="purgeSessionIfEmpty">
+        DELETE FROM conversation_session WHERE session_id=#{sessionId} AND status='DELETED'
+            AND NOT EXISTS (SELECT 1 FROM conversation_message WHERE session_id=#{sessionId})
+            AND NOT EXISTS (SELECT 1 FROM memory_extraction_task WHERE session_id=#{sessionId})
+            AND NOT EXISTS (SELECT 1 FROM agent_run_state WHERE session_id=#{sessionId})
+            AND NOT EXISTS (SELECT 1 FROM agent_execution_trace WHERE session_id=#{sessionId})
+            AND NOT EXISTS (SELECT 1 FROM memory_entry WHERE session_id=#{sessionId} AND tier='SHORT_TERM')
+    </delete>
+</mapper>

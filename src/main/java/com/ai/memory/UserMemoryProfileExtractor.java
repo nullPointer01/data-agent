@@ -36,7 +36,7 @@ public class UserMemoryProfileExtractor {
 
     private boolean isProfileEvidence(MemoryEntry memory) {
         return memory != null
-                && StringUtils.hasText(memory.getSemanticKey())
+                && SemanticMemoryKey.isProfileKey(memory.getSemanticKey())
                 && (MemoryType.PREFERENCE.equals(memory.getType()) || MemoryType.ENTITY.equals(memory.getType()));
     }
 

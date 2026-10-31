@@ -1,68 +1,34 @@
 package com.ai.agent.runtime;
 
 import com.ai.agent.durable.AgentDurableRunService;
-import com.ai.agent.durable.dto.AgentDurableRunResponse;
 import com.ai.agent.runtime.dto.AgentRunCancellationResponse;
 import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Service;
 
-/**
- * 按当前认证用户取消本 JVM 内的活跃 Agent Run。
- *
- * @author data-agent
- */
+/** 主库先登记取消，再协作停止本机控制器；其他实例通过租约围栏停止后续调用。 */
 @Service
 public class AgentRunCancellationService {
+    private final AgentRunRegistry registry;
+    private final SecurityContextHelper identity;
+    private final AgentDurableRunService durable;
 
-    private static final String NOT_FOUND_MESSAGE = "运行不存在或已结束";
-
-    private final AgentRunRegistry runRegistry;
-    private final SecurityContextHelper securityContextHelper;
-    private final AgentDurableRunService durableRunService;
-
-    public AgentRunCancellationService(AgentRunRegistry runRegistry,
-            SecurityContextHelper securityContextHelper,
-            AgentDurableRunService durableRunService) {
-        this.runRegistry = runRegistry;
-        this.securityContextHelper = securityContextHelper;
-        this.durableRunService = durableRunService;
+    public AgentRunCancellationService(AgentRunRegistry registry, SecurityContextHelper identity,
+            AgentDurableRunService durable) {
+        this.registry = registry; this.identity = identity; this.durable = durable;
     }
 
-    /**
-     * 取消当前租户用户拥有的活跃 Run。
-     *
-     * @param runId 运行编号
-     * @return 不泄露跨租户状态的取消结果
-     */
-    public AgentRunCancellationResponse cancelOwned(String runId) {
-        return runRegistry.cancelOwned(
-                        runId,
-                        securityContextHelper.getCurrentTenantId(),
-                        securityContextHelper.getCurrentUserId(),
-                        "用户停止生成")
-                .map(snapshot -> new AgentRunCancellationResponse(
-                        true,
-                        runId,
-                        snapshot.status().name(),
-                        snapshot.terminationReason().name(),
-                        snapshot.status() == AgentRunStatus.CANCELLED
-                                ? "已请求取消运行"
-                                : "运行已经结束"))
-                .orElseGet(() -> cancelDurableWaiting(runId));
-    }
-
-    private AgentRunCancellationResponse cancelDurableWaiting(String runId) {
+    public AgentRunCancellationResponse cancelOwned(String id) {
         try {
-            AgentDurableRunResponse response = durableRunService.cancelWaitingOwned(runId);
-            boolean cancelled = AgentRunStatus.CANCELLED.name().equals(response.status());
-            return new AgentRunCancellationResponse(
-                    cancelled,
-                    runId,
-                    response.status(),
-                    response.terminationReason(),
-                    cancelled ? "已取消等待审批的运行" : "运行已经结束");
-        } catch (IllegalArgumentException e) {
-            return new AgentRunCancellationResponse(false, runId, "", "", NOT_FOUND_MESSAGE);
+            var state = durable.cancelOwned(id);
+            boolean cancelled = AgentRunStatus.CANCELLED.name().equals(state.status());
+            if (cancelled) registry.cancelOwned(id, identity.getCurrentTenantId(), identity.getCurrentUserId(), "用户停止生成");
+            return new AgentRunCancellationResponse(cancelled, id, state.status(), state.terminationReason(),
+                    cancelled ? "已请求取消运行" : "运行已经结束");
+        } catch (IllegalArgumentException missing) {
+            return registry.cancelOwned(id, identity.getCurrentTenantId(), identity.getCurrentUserId(), "用户停止生成")
+                    .map(snapshot -> new AgentRunCancellationResponse(true, id, snapshot.status().name(),
+                            snapshot.terminationReason().name(), "已请求取消运行"))
+                    .orElseGet(() -> new AgentRunCancellationResponse(false, id, "", "", "运行不存在或已结束"));
         }
     }
 }

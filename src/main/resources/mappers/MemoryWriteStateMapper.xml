@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.memory.MemoryWriteStateMapper">
+    <insert id="ensure">
+        INSERT IGNORE INTO memory_write_state(tenant_id,user_id) VALUES(#{tenant},#{user})
+    </insert>
+    <select id="lock" resultType="com.ai.memory.MemoryWriteStateMapper$State">
+        SELECT revision,last_source_message_id FROM memory_write_state
+        WHERE tenant_id=#{tenant} AND user_id=#{user} FOR UPDATE
+    </select>
+    <select id="find" resultType="com.ai.memory.MemoryWriteStateMapper$State">
+        SELECT revision,last_source_message_id FROM memory_write_state WHERE tenant_id=#{tenant} AND user_id=#{user}
+    </select>
+    <update id="advance">
+        UPDATE memory_write_state SET revision=revision+1 WHERE tenant_id=#{tenant} AND user_id=#{user}
+    </update>
+    <update id="processed">
+        UPDATE memory_write_state SET last_source_message_id=GREATEST(last_source_message_id,#{source})
+        WHERE tenant_id=#{tenant} AND user_id=#{user}
+    </update>
+</mapper>

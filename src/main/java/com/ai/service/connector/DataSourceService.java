@@ -1,6 +1,8 @@
 package com.ai.service.connector;
 
-import com.ai.datasource.dto.DataSourceListResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.CatalogListFilter;
 import com.ai.datasource.dto.DataSourceMutationResponse;
 import com.ai.datasource.dto.DataSourceRequest;
 import com.ai.datasource.dto.DataSourceResponse;
@@ -34,12 +36,13 @@ public class DataSourceService {
         this.securityContextHelper = securityContextHelper;
     }
 
-    public DataSourceListResponse list() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        List<DataSourceResponse> datasources = repository.findByTenantId(tenantId).stream()
-                .map(DataSourceResponse::from)
-                .collect(Collectors.toList());
-        return new DataSourceListResponse(true, datasources);
+    @Transactional(readOnly = true)
+    public ListPageResponse<DataSourceResponse> list(int page, int size, String query) {
+        ListPaging.page(page, size);
+        var filter = new CatalogListFilter(securityContextHelper.getCurrentTenantId(), null,
+                false, false, null, query);
+        return ListPageResponse.fetch(page, size, repository.countList(filter),
+                pageable -> repository.findListPage(filter, pageable)).map(DataSourceResponse::from);
     }
 
     public String listEnabledForAgent() {

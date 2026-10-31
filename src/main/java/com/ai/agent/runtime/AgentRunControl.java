@@ -1,6 +1,7 @@
 package com.ai.agent.runtime;
 
 import com.ai.agent.durable.AgentRunBudgetCheckpoint;
+import com.ai.agent.context.TaskSummaryState;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -16,6 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * @author data-agent
  */
 public class AgentRunControl {
+    private final TaskSummaryState taskSummaries = new TaskSummaryState();
+
 
     private static final String DEFAULT_CANCEL_DETAIL = "运行已取消";
     private static final String DEFAULT_FAILURE_DETAIL = "运行失败";
@@ -32,6 +35,11 @@ public class AgentRunControl {
     private final AtomicInteger toolCalls = new AtomicInteger();
     private final AtomicLong tokens = new AtomicLong();
     private final AtomicBoolean tokenUsageEstimated = new AtomicBoolean();
+    private volatile Runnable executionFence = () -> { };
+    private final AtomicLong nextFenceCheck = new AtomicLong(System.nanoTime());
+
+    /** 模型/工具准入时复核后台租约，浏览器断连不影响执行。 */
+    public void setExecutionFence(Runnable fence) { this.executionFence = java.util.Objects.requireNonNull(fence); }
 
     public AgentRunControl(AgentRunLimits limits) {
         this(limits, Clock.systemUTC());
@@ -147,6 +155,7 @@ public class AgentRunControl {
      */
     public void beforeModelCall() {
         ensureActive();
+        checkExecutionFence(true);
         if (tokens.get() >= limits.maxTokens()) {
             terminate(AgentRunStatus.BUDGET_EXHAUSTED, AgentRunTerminationReason.TOKEN_LIMIT,
                     "已达到最大 Token 预算");
@@ -181,6 +190,7 @@ public class AgentRunControl {
      */
     public void beforeToolCall() {
         ensureActive();
+        checkExecutionFence(true);
         acquire(toolCalls, limits.maxToolCalls(), AgentRunTerminationReason.TOOL_CALL_LIMIT,
                 "已达到最大工具调用数");
     }
@@ -200,6 +210,29 @@ public class AgentRunControl {
             terminate(AgentRunStatus.TIMED_OUT, AgentRunTerminationReason.DEADLINE_EXCEEDED, "运行已超过截止时间");
             throw terminated();
         }
+        checkExecutionFence(false);
+    }
+
+    private void checkExecutionFence(boolean force) {
+        long now = System.nanoTime(), next = nextFenceCheck.get();
+        if (!force && (now - next < 0 || !nextFenceCheck.compareAndSet(next, now + 1_000_000_000L))) return;
+        try { executionFence.run(); }
+        catch (RuntimeException lost) {
+            terminate(AgentRunStatus.CANCELLED, AgentRunTerminationReason.LEASE_LOST, "运行已取消或执行租约失效");
+            throw terminated();
+        }
+    }
+
+    /** 主库结果提交时不能使用流式 token 阶段的一秒围栏缓存。 */
+    public void ensureActiveForWrite() { ensureActive(); checkExecutionFence(true); }
+    /** 审批挂起时内存状态已冻结，提交现场前仍需验证原执行租约。 */
+    public void verifyExecutionFence() { checkExecutionFence(true); }
+
+    /** 跨实例取消可能先赢得主库终态；终态事件和 Trace 必须服从已提交的权威结果。 */
+    public void adoptDurableTerminal(AgentRunStatus status, AgentRunTerminationReason reason, String detail) {
+        if (!status.isTerminal()) throw new IllegalArgumentException("只能采用持久终态");
+        lifecycle.updateAndGet(current -> new LifecycleState(status, reason, detail,
+                current.stoppedAt() == null ? clock.instant() : current.stoppedAt(), Duration.ZERO));
     }
 
     /**
@@ -286,6 +319,9 @@ public class AgentRunControl {
     public AgentRunLimits getLimits() {
         return limits;
     }
+
+    /** 父子调用共享摘要次数上限；缓存随活动控制器结束，恢复进程不会借用旧内存。 */
+    public TaskSummaryState taskSummaries() { return taskSummaries; }
 
     /**
      * 返回当前 Run 距离截止时间的非负剩余时长。

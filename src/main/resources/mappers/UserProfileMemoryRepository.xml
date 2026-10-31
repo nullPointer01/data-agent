@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.UserProfileMemoryRepository">
+    <!-- user_profile：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO user_profile (profile_id,
+            tenant_id,
+            user_id,
+            display_name,
+            role,
+            company,
+            industry,
+            communication_style,
+            preferred_format,
+            expertise_areas_json,
+            frequently_asked_topics_json,
+            data_sources_json,
+            confidence,
+            evidence_count,
+            last_active_at,
+            created_at,
+            updated_at)
+        VALUES (#{profileId},
+            #{tenantId},
+            #{userId},
+            #{displayName},
+            #{role},
+            #{company},
+            #{industry},
+            #{communicationStyle},
+            #{preferredFormat},
+            #{expertiseAreasJson},
+            #{frequentlyAskedTopicsJson},
+            #{dataSourcesJson},
+            #{confidence},
+            #{evidenceCount},
+            #{lastActiveAt},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE user_profile SET tenant_id = #{tenantId},
+            user_id = #{userId},
+            display_name = #{displayName},
+            role = #{role},
+            company = #{company},
+            industry = #{industry},
+            communication_style = #{communicationStyle},
+            preferred_format = #{preferredFormat},
+            expertise_areas_json = #{expertiseAreasJson},
+            frequently_asked_topics_json = #{frequentlyAskedTopicsJson},
+            data_sources_json = #{dataSourcesJson},
+            confidence = #{confidence},
+            evidence_count = #{evidenceCount},
+            last_active_at = #{lastActiveAt},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE profile_id = #{profileId}
+    </update>
+    <select id="findById" resultType="com.ai.memory.UserProfileMemory">
+        SELECT * FROM user_profile WHERE profile_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM user_profile WHERE profile_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.memory.UserProfileMemory">
+        SELECT * FROM user_profile
+    </select>
+    <select id="findAllById" resultType="com.ai.memory.UserProfileMemory">
+        SELECT * FROM user_profile WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                profile_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM user_profile WHERE profile_id = #{id}
+    </delete>
+    <select id="findByTenantIdAndUserId" resultType="com.ai.memory.UserProfileMemory">
+        SELECT * FROM user_profile WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+    </select>
+</mapper>

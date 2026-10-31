@@ -1,15 +1,5 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
-import jakarta.persistence.Temporal;
-import jakarta.persistence.TemporalType;
-
 import java.util.Date;
 import java.util.UUID;
 
@@ -18,49 +8,33 @@ import java.util.UUID;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "knowledge_entry")
 public class KnowledgeEntry {
 
-    @Id
-    @Column(length = 64)
     private String knowledgeId;
 
-    @Column(nullable = false, length = 200)
     private String name;
 
-    @Column(length = 500)
     private String description;
 
-    @Column(length = 50)
     private String sourceType;
 
-    @Column(length = 500)
     private String sourceFilename;
 
-    @Lob
-    @Column(columnDefinition = "TEXT")
     private String content;
 
     private int chunkCount;
 
     private long contentLength;
 
-    @Column(length = 100)
     private String tenantId;
 
-    @Column(length = 100)
     private String createdBy;
 
-    @Column(updatable = false)
-    @Temporal(TemporalType.TIMESTAMP)
     private Date createdAt;
 
-    @Temporal(TemporalType.TIMESTAMP)
     private Date updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         if (createdAt == null) {
             createdAt = new Date();
         }
@@ -69,8 +43,7 @@ public class KnowledgeEntry {
         }
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = new Date();
     }
 

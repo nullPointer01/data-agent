@@ -62,6 +62,9 @@ public final class GovernedToolSession {
     private final List<AnalysisResponse.ThinkingStep> steps;
     private final Consumer<String> emitter;
     private final AgentToolChoice initialChoice;
+    private final String modelId;
+    private final com.ai.skill.SkillCatalog skills;
+    private java.util.Set<String> visibleNames = java.util.Set.of();
     private final TaskContextSnapshot context = TaskContextSnapshot.capture();
     private final AgentRunContext run = AgentRunScope.requireCurrent();
     private final Map<ToolExecutionRequest, AgentToolAdmission> admitted = new LinkedHashMap<>();
@@ -73,7 +76,8 @@ public final class GovernedToolSession {
     public GovernedToolSession(AgentToolInvoker invoker, AgentApprovalSuspensionService approvals,
             ErrorRecoveryAdvisor recovery, ReActStreamEventWriter events, ReActWorkingMemoryService memory,
             AgentToolInvocationContext invocation, List<ToolSpecification> specifications,
-            List<AnalysisResponse.ThinkingStep> steps, Consumer<String> emitter, AgentToolChoice initialChoice) {
+            List<AnalysisResponse.ThinkingStep> steps, Consumer<String> emitter, AgentToolChoice initialChoice, String modelId,
+            com.ai.skill.SkillCatalog skills) {
         this.invoker = invoker;
         this.approvals = approvals;
         this.recovery = recovery;
@@ -84,6 +88,8 @@ public final class GovernedToolSession {
         this.steps = steps;
         this.emitter = emitter;
         this.initialChoice = initialChoice;
+        this.modelId = modelId;
+        this.skills = skills;
         if (initialChoice == AgentToolChoice.REQUIRED && specifications.isEmpty()) {
             throw new IllegalArgumentException("强制工具调用缺少可用工具规格");
         }
@@ -102,6 +108,11 @@ public final class GovernedToolSession {
             }
 
             @Override
+            public ToolExecutionResult executeWithContext(ToolExecutionRequest request, InvocationContext invocationContext) {
+                return GovernedToolSession.this.executeResult(request);
+            }
+
+            @Override
             public CompletableFuture<ToolExecutionResult> executeAsync(
                     ToolExecutionRequest request, InvocationContext invocationContext) {
                 // Pipeline 已在独立有界工具池执行并等待超时；当前适配保留这条治理路径。
@@ -113,7 +124,37 @@ public final class GovernedToolSession {
                 }
             }
         }));
-        return request -> ToolProviderResult.builder().addAll(tools).build();
+        return new ToolProvider() {
+            @Override public boolean isDynamic() { return invocation.initialToolNames().contains(com.ai.skill.SkillCatalog.ACTIVATE_TOOL); }
+            @Override public ToolProviderResult provideTools(dev.langchain4j.service.tool.ToolProviderRequest request) {
+                return context.call(() -> {
+                    Map<ToolSpecification, ToolExecutor> visible = new LinkedHashMap<>();
+                    tools.forEach((spec, executor) -> {
+                        if (invocation.initialToolNames().contains(spec.name())) visible.put(spec, executor);
+                    });
+                    if (isDynamic()) {
+                        var scoped = skills.scopedTools(request, names -> {
+                            Map<ToolSpecification, ToolExecutor> dependencies = new LinkedHashMap<>();
+                            tools.forEach((spec, executor) -> { if (names.contains(spec.name())) dependencies.put(spec, executor); });
+                            return ToolProviderResult.builder().addAll(dependencies).build();
+                        });
+                        // 官方只决定哪些技能已经激活；管理工具执行器仍使用统一 Pipeline 的包装。
+                        var names = scoped.aiServiceTools().stream().map(tool -> tool.name()).collect(java.util.stream.Collectors.toSet());
+                        tools.forEach((spec, executor) -> { if (names.contains(spec.name())) visible.put(spec, executor); });
+                    }
+                    return ToolProviderResult.builder().addAll(visible).build();
+                });
+            }
+        };
+    }
+
+    /** 审批原生续跑和普通 AiServices 使用同一个官方动态技能目录。 */
+    public List<ToolSpecification> visibleSpecifications(List<ChatMessage> messages) {
+        var request = dev.langchain4j.service.tool.ToolProviderRequest.builder()
+                .messages(messages).invocationContext(InvocationContext.builder().build())
+                .userMessage(dev.langchain4j.data.message.UserMessage.from("skill-runtime")).build();
+        return toolProvider().provideTools(request).aiServiceTools().stream()
+                .map(tool -> tool.toolSpecification()).toList();
     }
 
     /** 包装已具备模型预算/重试治理的模型，每个框架推理轮再申请一次迭代预算。 */
@@ -198,11 +239,13 @@ public final class GovernedToolSession {
         }
         boolean required = firstTurn && initialChoice == AgentToolChoice.REQUIRED;
         firstTurn = false;
+        var current = answerOnly ? List.<ToolSpecification>of() : visibleSpecifications(request.messages());
+        visibleNames = current.stream().map(ToolSpecification::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
         // 不让首轮 REQUIRED 延续到终答轮；恢复与子 Agent 继续消耗根 Run 原有预算。
         // ChatRequest.toBuilder 的空集合表示“不覆盖”，不能用它清空工具；替换参数对象才会生效。
         var parameters = ChatRequestParameters.builder().overrideWith(request.parameters())
-                .toolSpecifications(answerOnly ? List.of() : specifications)
-                .toolChoice(answerOnly || specifications.isEmpty() ? null
+                .toolSpecifications(current)
+                .toolChoice(answerOnly || current.isEmpty() ? null
                         : required ? ToolChoice.REQUIRED : ToolChoice.AUTO).build();
         return request.toBuilder().parameters(parameters).build();
     }
@@ -229,6 +272,7 @@ public final class GovernedToolSession {
         // 模型调用 ID 必须唯一，否则 Map 覆盖会破坏请求/结果配对与幂等键。
         var ids = new java.util.HashSet<String>();
         for (var tool : message.toolExecutionRequests()) {
+            if (!visibleNames.contains(tool.name())) throw new SecurityException("工具尚未通过本轮技能激活开放");
             if (tool.id() == null || tool.id().isBlank() || !ids.add(tool.id())) {
                 throw new ModelInvocationException("模型工具调用 ID 缺失或重复");
             }
@@ -241,7 +285,7 @@ public final class GovernedToolSession {
             var result = invoker.invokeStructured(entry.getValue(), invocation);
             List<ChatMessage> transcript = new ArrayList<>(request.messages());
             transcript.add(message);
-            var suspension = approvals.suspend(entry.getKey(), result, invocation, transcript);
+            var suspension = approvals.suspend(entry.getKey(), result, invocation, transcript, modelId);
             run.eventSink().emit(AgentEvent.of(run, AgentEventType.APPROVAL_REQUIRED, Map.of(
                     "approvalId", suspension.approvalId(), "toolCallId", suspension.toolCallId(),
                     "toolName", suspension.toolName(), "risk", result.approvalContext().risk().name(),
@@ -253,6 +297,11 @@ public final class GovernedToolSession {
 
     /** 消费预检结果一次；包括幻觉工具在内的请求也不能绕过服务端准入。 */
     public String execute(ToolExecutionRequest request) {
+        return executeResult(request).resultText();
+    }
+
+    /** 将官方激活属性与安全观察文本一起交还框架，失败结果不携带激活属性。 */
+    public ToolExecutionResult executeResult(ToolExecutionRequest request) {
         return context.call(() -> {
             run.control().ensureActive();
             if (toolFailure != null) {
@@ -279,9 +328,16 @@ public final class GovernedToolSession {
             var step = new AnalysisResponse.ThinkingStep(run.snapshot().iterations(), "tool_call", "调用工具");
             step.setToolName(request.name());
             String observation = recovery.appendAdvice(request.name(), result);
+            if (result.successful() && result.attributes().get(com.ai.skill.SkillCatalog.ACTIVATED_ATTRIBUTE) instanceof String id) {
+                var unavailable = skills.dependenciesFor(id).stream().filter(name -> !invocation.allows(name)).sorted().toList();
+                if (!unavailable.isEmpty()) observation += "\n本次未获授权的技能依赖：" + unavailable
+                        + "。不得假装执行，需用户补齐能力绑定或说明本次上下文限制。";
+            }
             step.setToolResult(observation.substring(0, Math.min(observation.length(), 300)));
             steps.add(step);
-            return "__MEMORY_INDEXED__".equals(observation) ? "记忆已保存，请继续回答用户的问题。" : observation;
+            String text = "__MEMORY_INDEXED__".equals(observation) ? "记忆已保存，请继续回答用户的问题。" : observation;
+            return ToolExecutionResult.builder().resultText(text)
+                    .attributes(result.successful() ? result.attributes() : Map.of()).build();
         });
     }
 }

@@ -1,12 +1,5 @@
 package com.ai.security.rbac;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
 
 /**
@@ -14,43 +7,30 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "sys_permission")
 public class SysPermission {
 
-    @Id
-    @Column(name = "permission_code", length = 64)
     private String permissionCode;
 
-    @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(name = "resource_type", length = 64)
     private String resourceType;
 
-    @Column(length = 128)
     private String action;
 
-    @Column(nullable = false)
     private boolean enabled = true;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = createdAt;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 

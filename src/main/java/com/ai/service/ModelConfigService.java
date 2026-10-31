@@ -1,5 +1,8 @@
 package com.ai.service;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.CatalogListFilter;
 import com.ai.config.CacheNames;
 import com.ai.event.ModelConfigChangeEvent;
 import com.ai.mcp.ModelHttpClient;
@@ -10,30 +13,23 @@ import com.ai.model.ModelConfig;
 import com.ai.modelconfig.dto.AvailableModelsRequest;
 import com.ai.modelconfig.dto.AvailableModelsResponse;
 import com.ai.modelconfig.dto.ModelConfigDetailResponse;
-import com.ai.modelconfig.dto.ModelConfigListResponse;
 import com.ai.modelconfig.dto.ModelConfigMutationResponse;
 import com.ai.modelconfig.dto.ModelConfigRequest;
 import com.ai.modelconfig.dto.ModelConfigResponse;
 import com.ai.modelconfig.dto.PersonalModelOptionResponse;
-import com.ai.modelconfig.dto.PersonalModelOptionsResponse;
 import com.ai.repository.ModelConfigRepository;
 import com.ai.security.SecurityContextHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * 租户维度的模型配置应用服务。
@@ -112,10 +108,7 @@ public class ModelConfigService {
         }
     }
 
-    @Caching(evict = {
-            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
-            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
-    })
+    @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse addModel(ModelConfigRequest request) {
         ModelConfig modelConfig = new ModelConfig();
@@ -129,10 +122,7 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.created(modelConfig.getModelId(), modelConfig.getName());
     }
 
-    @Caching(evict = {
-            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
-            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
-    })
+    @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse updateModel(String modelId, ModelConfigRequest request) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -158,10 +148,7 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.updated(modelId);
     }
 
-    @Caching(evict = {
-            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
-            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
-    })
+    @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse deleteModel(String modelId) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -175,10 +162,7 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.deleted();
     }
 
-    @Caching(evict = {
-            @CacheEvict(value = CacheNames.MODELS, allEntries = true),
-            @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
-    })
+    @CacheEvict(value = CacheNames.MODEL_DETAIL, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigMutationResponse toggleModel(String modelId) {
         ModelConfig existing = findMutableModelById(modelId);
@@ -192,17 +176,14 @@ public class ModelConfigService {
         return ModelConfigMutationResponse.toggled(modelId, existing.isEnabled());
     }
 
-    @Cacheable(value = CacheNames.MODELS, key = "@securityContextHelper.currentTenantId")
+    // 管理清单直接分页查库；不能复用仅按租户缓存的旧全量列表。
     @Transactional(readOnly = true)
-    public ModelConfigListResponse listModels() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        List<ModelConfig> models = new ArrayList<>(modelConfigRepository.findByTenantId(tenantId));
-        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
-            models.addAll(modelConfigRepository.findByTenantId(DEFAULT_TENANT_ID));
-        }
-        return new ModelConfigListResponse(true, models.stream()
-                .map(ModelConfigResponse::from)
-                .collect(Collectors.toList()));
+    public ListPageResponse<ModelConfigResponse> listModels(int page, int size, String query) {
+        ListPaging.page(page, size);
+        var filter = new CatalogListFilter(securityContextHelper.getCurrentTenantId(), null,
+                true, false, null, query);
+        return ListPageResponse.fetch(page, size, modelConfigRepository.countList(filter),
+                pageable -> modelConfigRepository.findListPage(filter, pageable)).map(ModelConfigResponse::from);
     }
 
     /**
@@ -211,19 +192,15 @@ public class ModelConfigService {
      * @return 当前租户及共享租户的模型选项
      */
     @Transactional(readOnly = true)
-    public PersonalModelOptionsResponse listPersonalModelOptions() {
+    public ListPageResponse<PersonalModelOptionResponse> listPersonalModelOptions(int page, int size, String query) {
+        ListPaging.page(page, size);
         String tenantId = securityContextHelper.getCurrentTenantId();
-        Map<String, ModelConfig> models = new LinkedHashMap<>();
-        if (StringUtils.hasText(tenantId)) {
-            addEnabledModels(models, tenantId);
-        }
-        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
-            addEnabledModels(models, DEFAULT_TENANT_ID);
-        }
-        List<PersonalModelOptionResponse> options = models.values().stream()
-                .map(PersonalModelOptionResponse::from)
-                .toList();
-        return new PersonalModelOptionsResponse(true, options);
+        if (!StringUtils.hasText(tenantId)) throw new SecurityException("模型选项需要当前租户身份");
+        String keyword = ListPaging.keyword(query);
+        // 直接查询最小投影，不读取或解密 API Key，也不通过连接地址匹配个人选项。
+        return ListPageResponse.fetch(page, size, modelConfigRepository.countPersonalOptions(tenantId, keyword),
+                pageable -> modelConfigRepository.findPersonalOptions(tenantId, keyword, pageable))
+                .map(PersonalModelOptionResponse::normalized);
     }
 
     @Cacheable(value = CacheNames.MODEL_DETAIL, key = "#modelId + ':' + @securityContextHelper.currentTenantId")
@@ -236,7 +213,7 @@ public class ModelConfigService {
         return ModelConfigDetailResponse.success(ModelConfigResponse.from(config));
     }
 
-    // 注意：实体含明文 apiKey（JPA 解密后），禁止上 Redis 缓存，避免密钥以明文落入缓存层
+    // 注意：实体含明文 apiKey（MyBatis TypeHandler 解密后），禁止上 Redis 缓存，避免密钥以明文落入缓存层
     @Transactional(readOnly = true)
     public ModelConfig getModel(String modelId) {
         return findModelById(modelId);
@@ -278,11 +255,6 @@ public class ModelConfigService {
     @Transactional(readOnly = true)
     public List<ModelConfig> getEnabledModels(String tenantId) {
         return modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId);
-    }
-
-    private void addEnabledModels(Map<String, ModelConfig> models, String tenantId) {
-        modelConfigRepository.findByTenantIdAndEnabledTrue(tenantId)
-                .forEach(model -> models.putIfAbsent(model.getModelId(), model));
     }
 
     private ModelConfig findModelById(String modelId) {

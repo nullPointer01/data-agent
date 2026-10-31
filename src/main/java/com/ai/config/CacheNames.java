@@ -7,10 +7,7 @@ package com.ai.config;
  */
 public final class CacheNames {
 
-    public static final String MODELS = "models";
     public static final String MODEL_DETAIL = "model_detail";
-    public static final String ROLES = "roles";
-    public static final String PERMISSIONS = "permissions";
 
     private CacheNames() {
     }

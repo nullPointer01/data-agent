@@ -52,8 +52,8 @@ public class FileMetadataLifecycleService {
         metadata.setProcessingStatus(FileProcessingStatus.QUEUED);
         metadata.setTenantId(securityContextHelper.getCurrentTenantId());
         metadata.setUploadedBy(securityContextHelper.getCurrentUserId());
-        FileMetadata saved = fileMetadataRepository.saveAndFlush(metadata);
-        tasks.enqueue(IndexTask.Kind.FILE, saved.getTenantId(), saved.getUploadedBy(), saved.getFileId(), null);
+        FileMetadata saved = fileMetadataRepository.save(metadata);
+        tasks.enqueue(IndexTask.Kind.FILE, saved.getTenantId(), saved.getUploadedBy(), saved.getFileId());
         return saved;
     }
 
@@ -151,7 +151,7 @@ public class FileMetadataLifecycleService {
     public void delete(FileMetadata metadata) {
         fileMetadataRepository.delete(metadata);
         // 失效的旧执行可能已写外部索引，推进版本让后台再做一次来源清理。
-        tasks.enqueue(IndexTask.Kind.FILE, metadata.getTenantId(), metadata.getUploadedBy(), metadata.getFileId(), null);
+        tasks.enqueue(IndexTask.Kind.FILE, metadata.getTenantId(), metadata.getUploadedBy(), metadata.getFileId());
     }
 
     private FileMetadata findRequired(String fileId, String tenant, String user) {

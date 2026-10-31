@@ -1,71 +1,70 @@
 package com.ai.repository;
 
 import com.ai.model.ConversationMessage;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 持久化对话消息仓储。
- *
- * @author data-agent
- */
-public interface ConversationMessageRepository extends JpaRepository<ConversationMessage, Long> {
+/** ConversationMessage 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface ConversationMessageRepository {
 
-    /**
-     * 查询一个会话中的所有消息。
-     *
-     * @param sessionId 会话 ID
-     * @return 消息列表
-     */
-    List<ConversationMessage> findBySessionIdOrderByCreatedAtAsc(String sessionId);
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default ConversationMessage save(ConversationMessage entity) {
+        boolean creating = entity.getId() == null || !existsById(entity.getId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+        }
+        return entity;
+    }
 
-    /**
-     * 按角色查询一个会话中的消息。
-     *
-     * @param sessionId 会话 ID
-     * @param role 消息角色
-     * @return 消息列表
-     */
-    List<ConversationMessage> findBySessionIdAndRoleOrderByCreatedAtAsc(String sessionId, String role);
+    int insert(ConversationMessage entity);
+    int update(ConversationMessage entity);
+    Optional<ConversationMessage> findById(@Param("id") Long id);
+    boolean existsById(@Param("id") Long id);
+    List<ConversationMessage> findAll();
+    List<ConversationMessage> findAllById(@Param("ids") Collection<Long> ids);
+    void deleteById(@Param("id") Long id);
 
-    /**
-     * 统计一个会话中的消息数。
-     *
-     * @param sessionId 会话 ID
-     * @return 消息数
-     */
-    long countBySessionId(String sessionId);
+    default void delete(ConversationMessage entity) {
+        deleteById(entity.getId());
+    }
 
-    /**
-     * 删除一个会话中的消息。
-     *
-     * @param sessionId 会话 ID
-     */
-    void deleteBySessionId(String sessionId);
+    @Transactional
+    default List<ConversationMessage> saveAll(Iterable<ConversationMessage> entities) {
+        List<ConversationMessage> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
 
-    /**
-     * 按倒序时间顺序查询最近的消息。
-     *
-     * @param sessionId 会话 ID
-     * @param pageable 分页请求
-     * @return 最近消息
-     */
-    @Query("SELECT m FROM ConversationMessage m WHERE m.sessionId = :sessionId ORDER BY m.createdAt DESC")
-    List<ConversationMessage> findRecentBySessionId(@Param("sessionId") String sessionId, Pageable pageable);
+    List<ConversationMessage> findBySessionIdOrderByCreatedAtAsc(@Param("sessionId") String sessionId);
 
-    /**
-     * 查询一个 Run 在会话中关联的助手消息。
-     *
-     * @param sessionId 会话 ID
-     * @param runId Agent Run ID
-     * @param role 消息角色
-     * @return 最早关联的消息
-     */
-    Optional<ConversationMessage> findFirstBySessionIdAndRunIdAndRoleOrderByCreatedAtAsc(
-            String sessionId, String runId, String role);
+    List<ConversationMessage> findBySessionIdAndRoleOrderByCreatedAtAsc(@Param("sessionId") String sessionId, @Param("role") String role);
+
+    long countBySessionId(@Param("sessionId") String sessionId);
+
+    void deleteBySessionId(@Param("sessionId") String sessionId);
+
+    List<ConversationMessage> findHistoryPage(@Param("sessionId") String sessionId,
+            @Param("beforeId") Long beforeId, @Param("limit") int limit);
+
+    List<ConversationMessage> findRecentBySessionId(@Param("sessionId") String sessionId, @Param("pageable") Pageable pageable);
+
+    Optional<ConversationMessage> findFirstBySessionIdAndRunIdAndRoleOrderByCreatedAtAsc(@Param("sessionId") String sessionId,
+            @Param("runId") String runId,
+            @Param("role") String role);
 }

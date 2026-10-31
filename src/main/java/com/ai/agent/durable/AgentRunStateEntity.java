@@ -3,17 +3,6 @@ package com.ai.agent.durable;
 import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.runtime.AgentRunTerminationReason;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 
 import java.time.Instant;
 
@@ -22,127 +11,79 @@ import java.time.Instant;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_run_state", indexes = {
-        @Index(name = "idx_agent_run_tenant_owner_created", columnList = "tenant_id,user_id,created_at"),
-        @Index(name = "idx_agent_run_status_lease", columnList = "status,lease_until"),
-        @Index(name = "idx_agent_run_approval", columnList = "approval_id")
-})
 public class AgentRunStateEntity {
 
-    @Id
-    @Column(name = "run_id", nullable = false, length = 64)
     private String runId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;
 
-    @Column(name = "user_id", nullable = false, length = 64)
     private String userId;
 
-    @Column(name = "session_id", length = 128)
     private String sessionId;
 
-    @Column(name = "agent_id", length = 128)
     private String agentId;
 
-    @Enumerated(EnumType.STRING)
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
-    @Column(nullable = false, length = 32)
     private AgentExecutionMode mode;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
     private AgentRunStatus status = AgentRunStatus.CREATED;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "termination_reason", nullable = false, length = 64)
     private AgentRunTerminationReason terminationReason = AgentRunTerminationReason.NONE;
 
-    @Version
-    @Column(nullable = false)
     private long version;
 
-    @Lob
-    @Column(name = "checkpoint_ciphertext", columnDefinition = "LONGTEXT")
     private String checkpointCiphertext;
 
-    @Column(name = "checkpoint_schema_version")
     private Integer checkpointSchemaVersion;
 
-    @Column(name = "timeout_ms", nullable = false)
     private long timeoutMs;
 
-    @Column(name = "max_iterations", nullable = false)
     private int maxIterations;
 
-    @Column(name = "max_model_calls", nullable = false)
     private int maxModelCalls;
 
-    @Column(name = "max_tool_calls", nullable = false)
     private int maxToolCalls;
 
-    @Column(name = "max_tokens", nullable = false)
     private long maxTokens;
 
-    @Column(name = "used_iterations", nullable = false)
     private int usedIterations;
 
-    @Column(name = "used_model_calls", nullable = false)
     private int usedModelCalls;
 
-    @Column(name = "used_tool_calls", nullable = false)
     private int usedToolCalls;
 
-    @Column(name = "used_tokens", nullable = false)
     private long usedTokens;
 
-    @Column(name = "token_usage_estimated", nullable = false)
     private boolean tokenUsageEstimated;
 
-    @Column(name = "remaining_active_timeout_ms", nullable = false)
     private long remainingActiveTimeoutMs;
 
-    @Column(name = "resume_attempts", nullable = false)
     private int resumeAttempts;
 
-    @Column(name = "lease_owner", length = 128)
     private String leaseOwner;
 
-    @Column(name = "lease_until")
     private Instant leaseUntil;
 
-    @Column(name = "approval_id", length = 64)
     private String approvalId;
 
-    @Column(name = "approval_expires_at")
     private Instant approvalExpiresAt;
 
-    @Lob
-    @Column(name = "result_summary", columnDefinition = "TEXT")
     private String resultSummary;
 
-    @Column(name = "error_summary", length = 1024)
     private String errorSummary;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @Column(name = "completed_at")
     private Instant completedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         Instant now = Instant.now();
         createdAt = createdAt == null ? now : createdAt;
         updatedAt = now;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = Instant.now();
     }
 
@@ -207,4 +148,5 @@ public class AgentRunStateEntity {
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getCompletedAt() { return completedAt; }
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
+    public void setVersion(long version) { this.version = version; }
 }

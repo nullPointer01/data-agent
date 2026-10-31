@@ -7,7 +7,6 @@ package com.ai.vector;
  */
 public final class VectorDocumentTypes {
 
-    public static final String CONVERSATION = "conversation";
     public static final String FILE = "file";
     public static final String KNOWLEDGE = "knowledge";
     public static final String MEMORY = "memory";

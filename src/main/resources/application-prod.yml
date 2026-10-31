@@ -1,12 +1,15 @@
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: data_agent
+    password: data_agent_local
+    virtual-host: /data-agent
   datasource:
     url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: zym190457
     driver-class-name: com.mysql.cj.jdbc.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
   data:
     redis:
       repositories:
@@ -31,10 +34,10 @@ app:
     key: local-development-encryption-key-32chars
   agent:
     context:
-      # 按预算裁剪完整历史轮次，不额外调用模型生成摘要。
+      # 与本地一致：超限才生成有原文证据的任务摘要。
       compaction:
         enabled: true
-        model-summary-enabled: false
+        model-summary-enabled: true
     durable:
       # 当前线上配置与本地验收环境一致，直接开启审批恢复和隔离沙箱工具。
       enabled: true

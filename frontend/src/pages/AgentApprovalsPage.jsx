@@ -1,5 +1,8 @@
+import { useServerList } from '../hooks/useServerList.js';
+import { useApprovalEvents } from '../hooks/useApprovalEvents.js';
+import { ApprovalConnectionNotice } from '../components/ApprovalConnectionNotice.jsx';
 import { Eye, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AgentApprovalDetail } from '../components/admin/AgentApprovalDetail.jsx';
 import { Badge, DataTable, EmptyState, Metric, PageHeader } from '../components/ui.jsx';
 import { formatTime, truncate } from '../utils/format.js';
@@ -27,48 +30,51 @@ function ApprovalUser({ item }) {
 
 /** 动作审批页：查看申请人和运行证据，并对待审高风险工具作出决策。 */
 export function AgentApprovalsPage({ api, toast }) {
-  const [items, setItems] = useState([]);
   const [status, setStatus] = useState('PENDING');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRevision, setDetailRevision] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await api.agentApprovals.list(status);
-      if (response.message && !Array.isArray(response.items)) throw new Error(response.message);
-      setItems(response.items || []);
-    } catch (requestError) {
-      setError(requestError.message || '审批列表加载失败');
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [api, status]);
+  const { items, loading, error, refresh: load, pagination, response } = useServerList({
+    api, url: '/api/v1/agent-approvals', mode: 'offset', filters: { status }
+  });
 
-  const openDetail = async (approvalId) => {
+  const openDetail = (approvalId) => {
     setSelectedId(approvalId);
     setDetail(null);
-    setDetailLoading(true);
-    try {
-      const response = await api.agentApprovals.detail(approvalId);
-      if (response.message && !response.approvalId) throw new Error(response.message);
-      setDetail(response);
-    } catch (requestError) {
-      toast(requestError.message || '审批详情加载失败', 'error');
-      setSelectedId('');
-    } finally {
-      setDetailLoading(false);
-    }
+    setDetailRevision((value) => value + 1);
   };
 
-  useEffect(() => { load(); }, [load]);
+  // 关闭/切换详情和新的状态通知会取消旧读取，避免晚到结果覆盖当前审批。
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    const controller = new AbortController();
+    setDetailLoading(true);
+    api.agentApprovals.detail(selectedId, { signal: controller.signal }).then((result) => {
+      if (!result.approvalId) throw new Error(result.message || '审批详情加载失败');
+      if (!controller.signal.aborted) setDetail(result);
+    }).catch((requestError) => {
+      if (!controller.signal.aborted) {
+        toast(requestError.message || '审批详情加载失败', 'error');
+        setSelectedId('');
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setDetailLoading(false);
+    });
+    return () => controller.abort();
+  }, [api, selectedId, detailRevision, toast]);
+
+  const approvalConnection = useApprovalEvents({
+    api, reviewer: true,
+    onChange: async (isDisposed) => {
+      await load();
+      if (!isDisposed()) setDetailRevision((value) => value + 1);
+    }
+  });
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
@@ -85,12 +91,13 @@ export function AgentApprovalsPage({ api, toast }) {
         ? await api.agentApprovals.approve(selectedId, comment)
         : await api.agentApprovals.reject(selectedId, comment);
       if (!response.approvalId) throw new Error(response.message || '审批状态提交失败');
-      setDetail(response);
+      // POST 返回后执行可能已经推进；重新读取当前状态，不能用迟到的 READY 响应覆盖新详情。
+      setDetailRevision((value) => value + 1);
       toast(action === 'approve' ? '动作已批准，等待恢复执行' : '动作已拒绝', 'success');
       await load();
     } catch (requestError) {
       toast(requestError.message || '审批状态可能已变化，正在刷新', 'error');
-      await openDetail(selectedId);
+      openDetail(selectedId);
       await load();
     } finally {
       setSubmitting(false);
@@ -114,16 +121,18 @@ export function AgentApprovalsPage({ api, toast }) {
           </div>
         )}
       />
+      <ApprovalConnectionNotice state={approvalConnection} onRefresh={load} />
       <div className="grid grid-4">
-        <Metric label="当前结果" value={items.length} hint={status || '全部状态'} />
-        <Metric label="待处理" value={pendingCount} hint="需要四眼审批" />
-        <Metric label="高风险" value={highRiskCount} hint="服务端策略判定" />
+        <Metric label="匹配总数" value={response?.total || 0} hint={status || '全部状态'} />
+        <Metric label="本页待处理" value={pendingCount} hint="需要四眼审批" />
+        <Metric label="本页高风险" value={highRiskCount} hint="服务端策略判定" />
         <Metric label="审批规则" value="四眼原则" hint="申请人与审批人不可相同" />
       </div>
 
       {error && <div className="alert danger approval-load-error" role="alert">{error}</div>}
       <div className="approval-table-section">
         <DataTable
+          serverPagination={pagination}
           loading={loading}
           empty={<EmptyState title="暂无审批动作" desc="当前状态下没有需要展示的 Agent 动作。" />}
           columns={[

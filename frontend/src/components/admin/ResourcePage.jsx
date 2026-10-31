@@ -1,7 +1,8 @@
+import { useDebouncedValue, useServerList } from '../../hooks/useServerList.js';
 import { Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CapabilityPicker } from '../CapabilityPicker.jsx';
-import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../ui.jsx';
+import { Badge, ConfirmDialog, DataTable, EmptyState, ListLoadError, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../ui.jsx';
 import { truncate } from '../../utils/format.js';
 
 /** 管理端通用资源页框架：复用列表、搜索、分页、编辑、启停和删除交互。 */
@@ -11,7 +12,6 @@ export function ResourcePage({
   title,
   desc,
   listUrl,
-  listKey,
   idKey,
   fields,
   createUrl,
@@ -24,44 +24,26 @@ export function ResourcePage({
   visibleFields,
   createDefaults,
   tableColumns,
-  searchText,
-  searchPlaceholder = '搜索当前列表',
-  filterPredicate,
+  searchPlaceholder = '搜索资源名称、描述',
+  listFilters = {},
   toggleLabel,
   toggleBlockedReason,
-  deleteBlockedReason
+  deleteBlockedReason,
+  onItemsLoaded
 }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [confirm, setConfirm] = useState(null);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      setItems((await api.get(listUrl))[listKey] || []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return items.filter((item) => {
-      if (filterPredicate && !filterPredicate(item)) {
-        return false;
-      }
-      if (!keyword) {
-        return true;
-      }
-      const searchable = searchText ? searchText(item) : JSON.stringify(item);
-      return String(searchable || '').toLowerCase().includes(keyword);
-    });
-  }, [filterPredicate, items, query, searchText]);
+  const keyword = useDebouncedValue(query);
+  const { items, response, loading, error, refresh, pagination } = useServerList({
+    api, url: listUrl, mode: 'offset', filters: { ...listFilters, query: keyword }
+  });
+  const load = () => refresh();
+  useEffect(() => {
+    if (response) onItemsLoaded?.(response.items);
+  }, [response, onItemsLoaded]);
 
   const save = async () => {
     const id = editing?.[idKey];
@@ -121,12 +103,13 @@ export function ResourcePage({
         actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder={searchPlaceholder} />{headerExtra}<button className="btn" onClick={load}><RefreshCw size={16} />刷新</button>{createUrl && <button className="btn primary" onClick={() => { setEditing({}); setForm(createDefaults || { enabled: true }); }}><Plus size={16} />新增</button>}</>}
       />
       <div className="grid grid-4">
-        <Metric label="总数" value={items.length} />
-        <Metric label="启用" value={items.filter((item) => item.enabled !== false).length} />
-        <Metric label="停用" value={items.filter((item) => item.enabled === false).length} />
-        <Metric label="筛选结果" value={filtered.length} />
+        <Metric label="匹配总数" value={response?.total || 0} />
+        <Metric label="本页启用" value={items.filter((item) => item.enabled !== false).length} />
+        <Metric label="本页停用" value={items.filter((item) => item.enabled === false).length} />
+        <Metric label="本页条数" value={items.length} />
       </div>
-      <DataTable columns={columns} rows={filtered} rowKey={idKey} loading={loading} empty={<EmptyState title="暂无资源" desc="新增资源后，这里会显示配置和状态。" />} />
+      <ListLoadError error={error} onRetry={load} />
+      <DataTable serverPagination={pagination} columns={columns} rows={items} rowKey={idKey} loading={loading} empty={<EmptyState title="暂无资源" desc="新增资源后，这里会显示配置和状态。" />} />
       {editing !== null && <ResourceModal title={editing[idKey] ? `编辑${title}` : `新增${title}`} fields={fields} form={form} setForm={setForm} templates={templates} onClose={() => setEditing(null)} onSave={save} />}
       {confirm && <ConfirmDialog title="删除确认" message={confirm.message} danger confirmText="删除" onCancel={() => setConfirm(null)} onConfirm={confirm.onConfirm} />}
     </>

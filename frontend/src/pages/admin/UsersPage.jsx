@@ -1,14 +1,20 @@
 import { RefreshCw, Save, UserPlus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../../components/ui.jsx';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { loadListOptions } from '../../api/listOptions.js';
+import { Badge, DataTable, EmptyState, Field, ListLoadError, Metric, Modal, PageHeader, ToolbarSearch } from '../../components/ui.jsx';
+import { useDebouncedValue, useServerList } from '../../hooks/useServerList.js';
 import { formatTime } from '../../utils/format.js';
 
 /** 用户治理页：管理账号、角色、启用状态、密码和 Token 配额。 */
 export function UsersPage({ api, toast }) {
-  const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [rolesReady, setRolesReady] = useState(false);
+  const [rolesError, setRolesError] = useState('');
+  const roleRequest = useRef(null);
   const [query, setQuery] = useState('');
+  const keyword = useDebouncedValue(query.trim());
+  const list = useServerList({ api, url: '/api/v1/admin/users', mode: 'offset', filters: { query: keyword } });
+  const users = list.items;
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
 
@@ -23,54 +29,49 @@ export function UsersPage({ api, toast }) {
     dailyTokenLimit: 0
   };
 
-  const loadUsers = async () => {
-    setLoadingUsers(true);
+  const loadRoles = useCallback(async () => {
+    roleRequest.current?.abort();
+    const controller = new AbortController();
+    roleRequest.current = controller;
+    setRolesReady(false);
+    setRolesError('');
     try {
-      setUsers((await api.get('/api/v1/admin/users')).data || []);
-    } finally {
-      setLoadingUsers(false);
+      const options = await loadListOptions(api, '/api/v1/admin/rbac/roles', {}, controller.signal);
+      if (controller.signal.aborted) return;
+      setRoles(options);
+      setRolesReady(true);
+    } catch (error) {
+      if (!controller.signal.aborted) setRolesError(error.message || '角色选项加载失败');
     }
-  };
-
-  const loadRoles = async () => {
-    const res = await api.get('/api/v1/admin/rbac/roles');
-    setRoles(res.roles || []);
-  };
+  }, [api]);
 
   const load = async () => {
-    await Promise.all([loadUsers(), loadRoles()]);
+    await Promise.all([list.refresh(), loadRoles()]);
   };
 
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return users;
-    }
-    return users.filter((user) => [user.username, user.nickname, user.email, user.tenantId]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(keyword));
-  }, [query, users]);
+  useEffect(() => { loadRoles(); return () => roleRequest.current?.abort(); }, [loadRoles]);
 
   const open = (user) => {
+    if (!rolesReady) { toast('角色选项尚未完整加载，请重试', 'error'); return; }
     setEditing(user || {});
     setForm(user ? { ...user, roles: user.roles || ['USER'], password: '' } : empty);
   };
 
   const save = async () => {
+    if (!rolesReady) { toast('角色选项不可用，暂不能保存', 'error'); return; }
     if (editing.userId) {
-      await api.put(`/api/v1/admin/users/${editing.userId}`, form);
-      await api.put(`/api/v1/admin/users/${editing.userId}/roles`, { roles: form.roles });
+      const updated = await api.put(`/api/v1/admin/users/${editing.userId}`, form);
+      if (updated.success === false) { toast(updated.message || '用户更新失败', 'error'); return; }
+      const assigned = await api.put(`/api/v1/admin/users/${editing.userId}/roles`, { roles: form.roles });
+      if (assigned.success === false) { toast(assigned.message || '角色更新失败', 'error'); return; }
       toast('用户已更新', 'success');
     } else {
-      await api.post('/api/v1/admin/users', form);
+      const created = await api.post('/api/v1/admin/users', form);
+      if (created.success === false) { toast(created.message || '用户创建失败', 'error'); return; }
       toast('用户已创建', 'success');
     }
     setEditing(null);
-    loadUsers();
+    list.refresh({ reset: true });
   };
 
   const columns = [
@@ -91,19 +92,21 @@ export function UsersPage({ api, toast }) {
         actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder="搜索用户、租户、邮箱" /><button className="btn" onClick={load}><RefreshCw size={16} />刷新</button><button className="btn primary" onClick={() => open()}><UserPlus size={16} />创建用户</button></>}
       />
       <div className="grid grid-3">
-        <Metric label="用户总数" value={users.length} />
-        <Metric label="启用账号" value={users.filter((item) => item.enabled).length} />
-        <Metric label="管理员" value={users.filter((item) => (item.roles || []).includes('ADMIN')).length} />
+        <Metric label="匹配用户" value={list.response?.total ?? '-'} hint="全部搜索结果" />
+        <Metric label="启用账号" value={list.response?.enabledCount ?? '-'} hint="全部搜索结果" />
+        <Metric label="管理员" value={list.response?.adminCount ?? '-'} hint="全部搜索结果" />
       </div>
       <div style={{ marginTop: 16 }}>
-        <DataTable columns={columns} rows={filtered} rowKey="userId" loading={loadingUsers} empty={<EmptyState title="暂无用户" desc="创建第一个用户后，这里会显示账号和权限信息。" />} />
+        <ListLoadError error={rolesError} onRetry={loadRoles} />
+        <ListLoadError error={list.error} onRetry={() => list.refresh()} />
+        {!list.error && <DataTable columns={columns} rows={users} rowKey="userId" loading={list.loading} serverPagination={list.pagination} empty={<EmptyState title="暂无匹配用户" desc="调整搜索条件或创建用户。" />} />}
       </div>
-      {editing && <UserModal form={form} setForm={setForm} editing={editing} roles={roles} onClose={() => setEditing(null)} onSave={save} />}
+      {editing && <UserModal form={form} setForm={setForm} editing={editing} roles={roles} ready={rolesReady} onClose={() => setEditing(null)} onSave={save} />}
     </>
   );
 }
 
-function UserModal({ form, setForm, editing, roles, onClose, onSave }) {
+function UserModal({ form, setForm, editing, roles, ready, onClose, onSave }) {
   const toggleRole = (role) => {
     const roles = new Set(form.roles || []);
     if (roles.has(role)) {
@@ -115,7 +118,7 @@ function UserModal({ form, setForm, editing, roles, onClose, onSave }) {
   };
 
   return (
-    <Modal title={editing.userId ? '编辑用户' : '创建用户'} onClose={onClose} actions={<button className="btn primary" onClick={onSave}><Save size={16} />保存</button>}>
+    <Modal title={editing.userId ? '编辑用户' : '创建用户'} onClose={onClose} actions={<button className="btn primary" disabled={!ready} onClick={onSave}><Save size={16} />保存</button>}>
       <div className="form-grid">
         <Field label="用户名"><input className="input" disabled={!!editing.userId} value={form.username || ''} onChange={(event) => setForm({ ...form, username: event.target.value })} /></Field>
         {!editing.userId && <Field label="密码"><input className="input" type="password" value={form.password || ''} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field>}
@@ -125,7 +128,7 @@ function UserModal({ form, setForm, editing, roles, onClose, onSave }) {
         <Field label="Token 配额"><input className="input" type="number" value={form.dailyTokenLimit ?? 0} onChange={(event) => setForm({ ...form, dailyTokenLimit: Number(event.target.value) })} /></Field>
       </div>
       <div className="toolbar" style={{ marginTop: 14 }}>
-        {(roles.length ? roles : [{ roleCode: 'USER' }, { roleCode: 'ADMIN' }]).map((role) => (
+        {roles.map((role) => (
           <label className="badge" key={role.roleCode}>
             <input type="checkbox" checked={(form.roles || []).includes(role.roleCode)} onChange={() => toggleRole(role.roleCode)} />
             {role.roleCode}

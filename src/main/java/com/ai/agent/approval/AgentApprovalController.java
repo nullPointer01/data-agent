@@ -1,9 +1,14 @@
 package com.ai.agent.approval;
 
+import com.ai.api.ListPageResponse;
 import com.ai.agent.approval.dto.AgentApprovalDecisionRequest;
-import com.ai.agent.approval.dto.AgentApprovalListResponse;
 import com.ai.agent.approval.dto.AgentApprovalResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,23 +27,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentApprovalController {
 
     private final AgentApprovalService approvalService;
+    private final ApprovalEventSubscriptions subscriptions;
 
-    public AgentApprovalController(AgentApprovalService approvalService) {
+    public AgentApprovalController(AgentApprovalService approvalService, ApprovalEventSubscriptions subscriptions) {
         this.approvalService = approvalService;
+        this.subscriptions = subscriptions;
+    }
+
+    /** 订阅当前有审批查看权限的租户状态变化，通知不携带工具参数。 */
+    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<Flux<ServerSentEvent<String>>> events() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).header("X-Accel-Buffering", "no")
+                .body(subscriptions.open(null, true));
     }
 
     /**
      * 查询当前租户内的动作审批，可按审批状态过滤并限制返回数量。
      *
      * @param status 可选的审批状态
-     * @param limit 最大返回数量
+     * @param page 从零开始的页码
+     * @param size 每页数量
      * @return 审批列表
      */
     @GetMapping
-    public AgentApprovalListResponse list(
+    public ListPageResponse<AgentApprovalResponse> list(
             @RequestParam(required = false) AgentApprovalDecisionStatus status,
-            @RequestParam(defaultValue = "50") int limit) {
-        return approvalService.list(status, limit);
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return approvalService.list(status, page, size);
     }
 
     /**

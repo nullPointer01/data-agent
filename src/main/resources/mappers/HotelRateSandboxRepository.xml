@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.agent.sandbox.HotelRateSandboxRepository">
+    <!-- hotel_rate_sandbox：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO hotel_rate_sandbox (tenant_id,
+            hotel_id,
+            room_type,
+            stay_date,
+            currency,
+            before_price,
+            after_price,
+            action_key,
+            approval_id,
+            tool_call_id,
+            demo,
+            created_at)
+        VALUES (#{tenantId},
+            #{hotelId},
+            #{roomType},
+            #{stayDate},
+            #{currency},
+            #{beforePrice},
+            #{afterPrice},
+            #{actionKey},
+            #{approvalId},
+            #{toolCallId},
+            #{demo},
+            #{createdAt})
+    </insert>
+    <update id="update">
+        UPDATE hotel_rate_sandbox SET tenant_id = #{tenantId},
+            hotel_id = #{hotelId},
+            room_type = #{roomType},
+            stay_date = #{stayDate},
+            currency = #{currency},
+            before_price = #{beforePrice},
+            after_price = #{afterPrice},
+            action_key = #{actionKey},
+            approval_id = #{approvalId},
+            tool_call_id = #{toolCallId},
+            demo = #{demo},
+            created_at = #{createdAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultType="com.ai.agent.sandbox.HotelRateSandboxEntity">
+        SELECT * FROM hotel_rate_sandbox WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM hotel_rate_sandbox WHERE id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.agent.sandbox.HotelRateSandboxEntity">
+        SELECT * FROM hotel_rate_sandbox
+    </select>
+    <select id="findAllById" resultType="com.ai.agent.sandbox.HotelRateSandboxEntity">
+        SELECT * FROM hotel_rate_sandbox WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM hotel_rate_sandbox WHERE id = #{id}
+    </delete>
+    <select id="findByTenantIdAndActionKey" resultType="com.ai.agent.sandbox.HotelRateSandboxEntity">
+        SELECT * FROM hotel_rate_sandbox WHERE tenant_id = #{tenantId} AND action_key = #{actionKey}
+    </select>
+    <select id="findFirstByTenantIdAndHotelIdAndRoomTypeAndStayDateOrderByCreatedAtDesc" resultType="com.ai.agent.sandbox.HotelRateSandboxEntity">
+        SELECT * FROM hotel_rate_sandbox WHERE tenant_id = #{tenantId} AND hotel_id = #{hotelId} AND room_type = #{roomType} AND stay_date = #{stayDate} ORDER BY created_at DESC LIMIT 1
+    </select>
+    <insert id="insertOnce">
+        INSERT IGNORE INTO hotel_rate_sandbox (
+        tenant_id, hotel_id, room_type, stay_date, currency,
+        before_price, after_price, action_key, approval_id, tool_call_id, demo, created_at
+        ) VALUES (
+        #{tenantId}, #{hotelId}, #{roomType}, #{stayDate}, #{currency},
+        #{beforePrice}, #{afterPrice}, #{actionKey}, #{approvalId}, #{toolCallId}, 1, #{createdAt}
+        )
+    </insert>
+</mapper>

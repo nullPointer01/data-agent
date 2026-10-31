@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 public class AgentCheckpointCodec {
 
     private static final String ENCRYPTED_PREFIX = "ENC:";
+    private static final int MAX_JSON_CHARACTERS = 2_097_152;
 
     private final ObjectMapper objectMapper;
     private final CryptoUtil cryptoUtil;
@@ -29,7 +30,11 @@ public class AgentCheckpointCodec {
         }
         AgentCheckpointVersion.requireSupported(checkpoint.schemaVersion());
         try {
-            String ciphertext = cryptoUtil.encrypt(objectMapper.writeValueAsString(checkpoint));
+            String plaintext = objectMapper.writeValueAsString(checkpoint);
+            if (plaintext.length() > MAX_JSON_CHARACTERS) {
+                throw new IllegalArgumentException("Agent Checkpoint 超过持久化上限");
+            }
+            String ciphertext = cryptoUtil.encrypt(plaintext);
             if (ciphertext == null || !ciphertext.startsWith(ENCRYPTED_PREFIX)) {
                 throw new IllegalStateException("Agent Checkpoint 未被加密");
             }
@@ -41,12 +46,16 @@ public class AgentCheckpointCodec {
 
     public AgentRunCheckpoint decode(String ciphertext, int persistedSchemaVersion) {
         AgentCheckpointVersion.requireSupported(persistedSchemaVersion);
-        if (ciphertext == null || !ciphertext.startsWith(ENCRYPTED_PREFIX)) {
+        if (ciphertext == null || !ciphertext.startsWith(ENCRYPTED_PREFIX)
+                || ciphertext.length() > MAX_JSON_CHARACTERS * 6) {
             throw new IllegalArgumentException("Agent Checkpoint 必须是加密载荷");
         }
         try {
-            AgentRunCheckpoint checkpoint = objectMapper.readValue(
-                    cryptoUtil.decrypt(ciphertext), AgentRunCheckpoint.class);
+            String plaintext = cryptoUtil.decrypt(ciphertext);
+            if (plaintext == null || plaintext.length() > MAX_JSON_CHARACTERS) {
+                throw new IllegalArgumentException("Agent Checkpoint 超过恢复上限");
+            }
+            AgentRunCheckpoint checkpoint = objectMapper.readValue(plaintext, AgentRunCheckpoint.class);
             AgentCheckpointVersion.requireSupported(checkpoint.schemaVersion());
             if (checkpoint.schemaVersion() != persistedSchemaVersion) {
                 throw new IllegalArgumentException("Agent Checkpoint 版本与数据库记录不一致");

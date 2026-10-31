@@ -97,4 +97,19 @@ public class AgentRunRegistry {
     public Optional<AgentRunContext> findActive(String runId) {
         return Optional.ofNullable(activeRuns.get(runId));
     }
+
+    /** 会话删除只取消当前所有者的关联运行，包含受控委派的子 Run。 */
+    public void cancelSession(String sessionId, String tenantId, String userId) {
+        activeRuns.values().stream().filter(context -> matchesSession(context, sessionId, tenantId, userId))
+                .forEach(context -> context.control().cancel("所属会话已删除"));
+    }
+
+    public boolean hasSession(String sessionId, String tenantId, String userId) {
+        return activeRuns.values().stream().anyMatch(context -> matchesSession(context, sessionId, tenantId, userId));
+    }
+
+    private boolean matchesSession(AgentRunContext context, String sessionId, String tenantId, String userId) {
+        return Objects.equals(sessionId, context.sessionId()) && Objects.equals(tenantId, context.tenantId())
+                && Objects.equals(userId, context.userId());
+    }
 }

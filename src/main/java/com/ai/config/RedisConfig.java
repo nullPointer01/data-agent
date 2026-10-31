@@ -83,16 +83,10 @@ public class RedisConfig implements CachingConfigurer {
 
         // 模型配置变更低频、读取极高频，TTL 可以长一些
         RedisCacheConfiguration modelConfig = defaultConfig.entryTtl(Duration.ofHours(2));
-        // RBAC 角色/权限几乎不变
-        RedisCacheConfiguration rbacConfig = defaultConfig.entryTtl(Duration.ofHours(4));
-
         return RedisCacheManager.builder(factory)
                 .cacheDefaults(defaultConfig)
                 .withInitialCacheConfigurations(Map.of(
-                        CacheNames.MODELS, modelConfig,
-                        CacheNames.MODEL_DETAIL, modelConfig,
-                        CacheNames.ROLES, rbacConfig,
-                        CacheNames.PERMISSIONS, rbacConfig))
+                        CacheNames.MODEL_DETAIL, modelConfig))
                 .transactionAware()
                 .build();
     }

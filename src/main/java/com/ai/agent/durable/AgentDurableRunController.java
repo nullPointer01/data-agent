@@ -1,6 +1,7 @@
 package com.ai.agent.durable;
 
-import com.ai.agent.durable.dto.AgentDurableRunResponse;
+import com.ai.agent.runtime.AgentRunCancellationService;
+import com.ai.agent.runtime.dto.AgentRunCancellationResponse;
 import com.ai.agent.runtime.AgentRunEvidenceService;
 import com.ai.agent.runtime.dto.AgentRunEvidenceResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,12 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/agent-runs")
 public class AgentDurableRunController {
 
-    private final AgentDurableRunService runService;
+    private final AgentRunCancellationService cancellation;
     private final AgentRunEvidenceService evidenceService;
 
-    public AgentDurableRunController(AgentDurableRunService runService,
+    public AgentDurableRunController(AgentRunCancellationService cancellation,
             AgentRunEvidenceService evidenceService) {
-        this.runService = runService;
+        this.cancellation = cancellation;
         this.evidenceService = evidenceService;
     }
 
@@ -39,13 +40,13 @@ public class AgentDurableRunController {
     }
 
     /**
-     * 取消当前用户拥有且仍在等待审批的 Run。
+     * 取消当前用户拥有的活动、排队或等待审批 Run。
      *
      * @param runId Run 编号
      * @return 取消后的 Run 状态
      */
     @PostMapping("/{runId}/cancel")
-    public AgentDurableRunResponse cancel(@PathVariable String runId) {
-        return runService.cancelWaitingOwned(runId);
+    public AgentRunCancellationResponse cancel(@PathVariable String runId) {
+        return cancellation.cancelOwned(runId);
     }
 }

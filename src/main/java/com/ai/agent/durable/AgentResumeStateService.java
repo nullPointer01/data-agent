@@ -4,9 +4,12 @@ import com.ai.agent.approval.AgentApprovalDecisionStatus;
 import com.ai.agent.approval.AgentApprovalExecutionStatus;
 import com.ai.agent.approval.AgentToolApprovalEntity;
 import com.ai.agent.approval.AgentToolApprovalRepository;
+import com.ai.agent.approval.ApprovalChanged;
+import com.ai.agent.approval.ApprovalEventPublisher;
 import com.ai.agent.runtime.AgentRunSnapshot;
 import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.runtime.AgentRunTerminationReason;
+import com.ai.agent.tool.AgentConversationRecorder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,13 +33,18 @@ public class AgentResumeStateService {
     private final AgentToolApprovalRepository approvalRepository;
     private final AgentDurableRunStore runStore;
     private final AgentDurableRuntimeProperties properties;
+    private final AgentConversationRecorder conversations;
+    private final ApprovalEventPublisher approvalEvents;
 
     public AgentResumeStateService(AgentToolApprovalRepository approvalRepository,
             AgentDurableRunStore runStore,
-            AgentDurableRuntimeProperties properties) {
+            AgentDurableRuntimeProperties properties, AgentConversationRecorder conversations,
+            ApprovalEventPublisher approvalEvents) {
         this.approvalRepository = approvalRepository;
         this.runStore = runStore;
         this.properties = properties;
+        this.conversations = conversations;
+        this.approvalEvents = approvalEvents;
     }
 
     @Transactional(readOnly = true)
@@ -62,11 +70,13 @@ public class AgentResumeStateService {
         if (approval == null || !CLAIMABLE_EXECUTION.contains(approval.getExecutionStatus())) {
             return false;
         }
-        return approvalRepository.startExecution(
+        int changed = approvalRepository.startExecution(
                 approvalId,
                 CLAIMABLE_EXECUTION,
                 Instant.now(),
-                approval.getVersion()) == 1;
+                approval.getVersion());
+        if (changed == 1) notifyChange(approval);
+        return changed == 1;
     }
 
     @Transactional
@@ -105,6 +115,8 @@ public class AgentResumeStateService {
                         safeDetail))) {
             throw new IllegalStateException("恢复失败终态与 Run 状态发生冲突");
         }
+        // 与终态在同一事务保存；通知发出后不需要前端猜测等待 400ms 才能读到结果。
+        conversations.updateRunConversation(runId, "操作未完成：" + safeDetail, null, null);
     }
 
     @Transactional
@@ -139,6 +151,7 @@ public class AgentResumeStateService {
                         "Agent Run 已达到最大恢复次数"))) {
             throw new IllegalStateException("恢复次数耗尽终态与 Run 状态发生冲突");
         }
+        conversations.updateRunConversation(runId, "审批恢复次数已耗尽，操作未完成。", null, null);
         return true;
     }
 
@@ -152,6 +165,13 @@ public class AgentResumeStateService {
         if (changed != 1) {
             throw new IllegalStateException("审批执行状态发生版本冲突");
         }
+        notifyChange(approval);
+    }
+
+    private void notifyChange(AgentToolApprovalEntity approval) {
+        // 再次挂起会改变 Run 的当前 approvalId；旧动作完成也要通知，不能只等新 Run 状态变化。
+        runStore.find(approval.getRunId()).ifPresent(run -> approvalEvents.changed(new ApprovalChanged(
+                run.getTenantId(), run.getUserId(), run.getSessionId(), run.getRunId(), approval.getApprovalId())));
     }
 
     private AgentToolApprovalEntity findApproval(String approvalId) {

@@ -15,6 +15,7 @@ public record SkillRequest(
         String apiHeaders,
         String promptTemplate,
         String steps,
+        String toolDependencies,
         String source,
         Boolean enabled,
         String remark) {

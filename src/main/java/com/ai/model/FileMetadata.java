@@ -1,14 +1,6 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
+import java.util.UUID;
 
 import java.time.LocalDateTime;
 
@@ -17,52 +9,38 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "file_metadata")
 public class FileMetadata {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String fileId;
 
-    @Column(nullable = false, length = 256)
     private String filename;
 
-    @Column(name = "content_type", length = 128)
     private String contentType;
 
     private long size;
 
-    @Column(length = 512)
     private String path;
 
-    @Column(columnDefinition = "MEDIUMTEXT")
     private String content;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "processing_status", length = 32)
     private FileProcessingStatus processingStatus = FileProcessingStatus.QUEUED;
 
-    @Column(name = "processing_error", length = 1024)
     private String processingError;
 
-    @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "uploaded_by", length = 64)
     private String uploadedBy;
 
-    @Column(name = "uploaded_at")
     private LocalDateTime uploadedAt;
 
-    @Column(name = "content_hash", length = 64)
     private String contentHash;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
+        if (fileId == null) {
+            fileId = UUID.randomUUID().toString();
+        }
         uploadedAt = LocalDateTime.now();
     }
 

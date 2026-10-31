@@ -7,6 +7,9 @@ import com.ai.security.dto.AdminResetPasswordRequest;
 import com.ai.security.dto.AdminUpdateUserRequest;
 import com.ai.security.dto.AdminUpdateUserRolesRequest;
 import com.ai.security.dto.UserAdminResponse;
+import com.ai.security.dto.UserListResponse;
+import com.ai.security.dto.UserIdentityResponse;
+import com.ai.api.ListPaging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,11 +43,27 @@ public class UserAdminService {
         this.rolePermissionService = rolePermissionService;
     }
 
-    public List<UserAdminResponse> listUsers() {
-        return userRepository.findAll().stream()
-                .sorted(Comparator.comparing(SysUser::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::toResponse)
-                .toList();
+    /** 管理员平台级账号列表；保留既有跨租户管理范围，搜索与统计均在主库执行。 */
+    @Transactional(readOnly = true)
+    public UserListResponse listUsers(int page, int size, String query) {
+        var request = ListPaging.page(page, size);
+        String keyword = ListPaging.keyword(query);
+        var counts = userRepository.countAdminUsers(keyword);
+        int lastPage = (int) Math.max(0, (counts.total() - 1) / request.getPageSize());
+        request = ListPaging.page(Math.min(page, lastPage), size);
+        var items = userRepository.findAdminPage(keyword, request).stream().map(this::toResponse).toList();
+        return new UserListResponse(true, items, request.getPageNumber(), size,
+                counts.total(), counts.enabledCount(), counts.adminCount());
+    }
+
+    /** 仅解析页面已有资源的归属人，避免为显示用户名下载全部账号。 */
+    @Transactional(readOnly = true)
+    public List<UserIdentityResponse> userIdentities(List<String> ids) {
+        if (ids == null || ids.size() > 100) throw new IllegalArgumentException("每次最多解析 100 个用户");
+        if (ids.stream().anyMatch(id -> id == null || id.isBlank() || id.length() > 64)) {
+            throw new IllegalArgumentException("用户 ID 无效");
+        }
+        return userRepository.findIdentitiesByIds(ids.stream().distinct().toList(), null);
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -1,13 +1,5 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
 
 /**
@@ -15,46 +7,31 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "audit_log")
 public class AuditLog {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "user_id", length = 64)
     private String userId;
 
-    @Column(length = 64)
     private String username;
 
-    @Column(nullable = false, length = 64)
     private String action;
 
-    @Column(name = "resource_type", length = 64)
     private String resourceType;
 
-    @Column(name = "resource_id", length = 128)
     private String resourceId;
 
-    @Column(length = 32)
     private String status;
 
-    @Column(length = 1024)
     private String message;
 
-    @Column(name = "client_ip", length = 64)
     private String clientIp;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         createdAt = LocalDateTime.now();
     }
 

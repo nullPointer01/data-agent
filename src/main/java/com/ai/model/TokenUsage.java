@@ -1,65 +1,51 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import com.ai.token.TokenAccountingStatus;
 
 /**
  * 持久化的 Token 用量记账记录。
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "token_usage")
 public class TokenUsage {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", length = 64)
     private String userId;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "model_id", length = 64)
     private String modelId;
 
-    @Column(name = "model_name", length = 128)
     private String modelName;
 
-    @Column(name = "skill_id", length = 64)
     private String skillId;
 
-    @Column(name = "skill_name", length = 64)
     private String skillName;
 
-    @Column(name = "prompt_tokens")
     private long promptTokens;
 
-    @Column(name = "completion_tokens")
     private long completionTokens;
 
-    @Column(name = "total_tokens")
     private long totalTokens;
 
-    @Column(name = "session_id", length = 64)
     private String sessionId;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
+    private String invocationId;
+    private LocalDate quotaDate;
+    private TokenAccountingStatus accountingStatus = TokenAccountingStatus.LEGACY;
+
+    /** 预占ID用于幂等；UNKNOWN 表示保守扣额，并非厂商已确认用量。 */
+    public String getInvocationId() { return invocationId; }
+    public void setInvocationId(String value) { invocationId = value; }
+    public LocalDate getQuotaDate() { return quotaDate; }
+    public void setQuotaDate(LocalDate value) { quotaDate = value; }
+    public TokenAccountingStatus getAccountingStatus() { return accountingStatus; }
+    public void setAccountingStatus(TokenAccountingStatus value) { accountingStatus = value; }
 
     public TokenUsage() {
     }

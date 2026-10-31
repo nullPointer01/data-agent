@@ -1,13 +1,6 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+import java.util.UUID;
 
 import java.time.LocalDateTime;
 
@@ -16,62 +9,46 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_profile")
 public class AgentProfile {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "agent_id", length = 64)
     private String agentId;
 
-    @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(name = "system_prompt", columnDefinition = "TEXT")
     private String systemPrompt;
 
-    @Column(name = "model_id", length = 64)
     private String modelId;
 
     /** 统一能力稳定身份 JSON 数组；[] 表示明确无能力。 */
-    @Column(name = "capability_bindings", nullable = false, columnDefinition = "TEXT")
     private String capabilityBindings;
 
     /** auto=自动选择 | chat=纯对话 | react=工具循环 | orchestrated=受控子 Agent 委派 */
-    @Column(name = "execution_mode", length = 16)
     private String executionMode = "auto";
 
     /** 当前用户的默认个人 Agent。 */
-    @Column(name = "default_agent", nullable = false, columnDefinition = "BIT(1) NOT NULL DEFAULT 0")
     private boolean defaultAgent;
 
-    @Column(nullable = false)
     private boolean enabled = true;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "created_by", length = 64)
     private String createdBy;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
+        if (agentId == null) {
+            agentId = UUID.randomUUID().toString();
+        }
         createdAt = LocalDateTime.now();
         updatedAt = createdAt;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 

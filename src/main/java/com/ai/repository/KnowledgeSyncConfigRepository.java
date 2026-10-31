@@ -1,39 +1,58 @@
 package com.ai.repository;
 
 import com.ai.model.KnowledgeSyncConfig;
-import org.springframework.data.jpa.repository.JpaRepository;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 知识同步配置仓储。
- *
- * @author data-agent
- */
-public interface KnowledgeSyncConfigRepository extends JpaRepository<KnowledgeSyncConfig, Long> {
+/** KnowledgeSyncConfig 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface KnowledgeSyncConfigRepository {
 
-    /**
-     * 查询已启用的自动同步配置。
-     *
-     * @return 已启用配置列表
-     */
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default KnowledgeSyncConfig save(KnowledgeSyncConfig entity) {
+        boolean creating = entity.getId() == null || !existsById(entity.getId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+        }
+        return entity;
+    }
+
+    int insert(KnowledgeSyncConfig entity);
+    int update(KnowledgeSyncConfig entity);
+    Optional<KnowledgeSyncConfig> findById(@Param("id") Long id);
+    boolean existsById(@Param("id") Long id);
+    List<KnowledgeSyncConfig> findAll();
+    List<KnowledgeSyncConfig> findAllById(@Param("ids") Collection<Long> ids);
+    void deleteById(@Param("id") Long id);
+
+    default void delete(KnowledgeSyncConfig entity) {
+        deleteById(entity.getId());
+    }
+
+    @Transactional
+    default List<KnowledgeSyncConfig> saveAll(Iterable<KnowledgeSyncConfig> entities) {
+        List<KnowledgeSyncConfig> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
+
     List<KnowledgeSyncConfig> findByEnabledTrue();
 
-    /**
-     * 按知识 ID 和租户 ID 查询同步配置。
-     *
-     * @param knowledgeId 知识 ID
-     * @param tenantId 租户 ID
-     * @return 同步配置
-     */
-    Optional<KnowledgeSyncConfig> findByKnowledgeIdAndTenantId(String knowledgeId, String tenantId);
+    Optional<KnowledgeSyncConfig> findByKnowledgeIdAndTenantId(@Param("knowledgeId") String knowledgeId, @Param("tenantId") String tenantId);
 
-    /**
-     * 按租户 ID 查询同步配置。
-     *
-     * @param tenantId 租户 ID
-     * @return 租户同步配置列表
-     */
-    List<KnowledgeSyncConfig> findByTenantId(String tenantId);
+    List<KnowledgeSyncConfig> findByTenantId(@Param("tenantId") String tenantId);
 }

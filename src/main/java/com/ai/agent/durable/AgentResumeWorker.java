@@ -1,7 +1,11 @@
 package com.ai.agent.durable;
 
 import com.ai.indexing.RagIndexMaintenance;
-
+import com.ai.background.BackgroundTaskConfiguration;
+import com.ai.background.BackgroundUserScope;
+import com.ai.agent.agentic.AgenticSupervisorService;
+import com.ai.agent.approval.AgentApprovalDecisionStatus;
+import com.ai.agent.approval.AgentApprovalResumeSignals;
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.capability.AgentCapabilityService;
@@ -29,15 +33,20 @@ import com.ai.agent.tool.governance.AgentToolInvocationContext;
 import com.ai.model.AgentProfile;
 import com.ai.repository.AgentProfileRepository;
 import com.ai.service.AgentExecutionTraceService;
+import com.ai.conversation.ConversationAccessGuard;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,6 +80,10 @@ public class AgentResumeWorker {
     private final AgentConversationRecorder conversationRecorder;
     private final AsyncTaskExecutor resumeExecutor;
     private final RagIndexMaintenance maintenance;
+    private final ConversationAccessGuard conversationAccess;
+    private final AgentApprovalResumeSignals resumeSignals;
+    private final AgenticSupervisorService supervisor;
+    private final BackgroundUserScope users;
     private final Set<String> scheduledApprovals = ConcurrentHashMap.newKeySet();
 
     public AgentResumeWorker(AgentDurableRuntimeProperties properties,
@@ -90,7 +103,8 @@ public class AgentResumeWorker {
             AgentOutcomeEvaluator outcomeEvaluator,
             AgentConversationRecorder conversationRecorder,
             @Qualifier("agentResumeExecutor") AsyncTaskExecutor resumeExecutor,
-            RagIndexMaintenance maintenance) {
+            RagIndexMaintenance maintenance, ConversationAccessGuard conversationAccess,
+            AgentApprovalResumeSignals resumeSignals, AgenticSupervisorService supervisor, BackgroundUserScope users) {
         this.properties = properties;
         this.stateService = stateService;
         this.leaseService = leaseService;
@@ -109,37 +123,60 @@ public class AgentResumeWorker {
         this.conversationRecorder = conversationRecorder;
         this.resumeExecutor = resumeExecutor;
         this.maintenance = maintenance;
+        this.conversationAccess = conversationAccess;
+        this.resumeSignals = resumeSignals;
+        this.supervisor = supervisor;
+        this.users = users;
     }
 
-    @Scheduled(fixedDelayString = "${app.agent.durable.scan-interval:PT15S}")
+    @Scheduled(fixedDelayString = "${app.agent.durable.recovery-interval:PT1M}")
     public void resumeApprovedRuns() {
         if (!properties.isEnabled() || maintenance.isEnabled()) {
             return;
         }
         for (AgentToolApprovalEntity candidate : stateService.candidates()) {
-            if (!scheduledApprovals.add(candidate.getApprovalId())) {
-                continue;
-            }
-            try {
-                resumeExecutor.execute(() -> {
-                    try {
-                        resume(candidate.getApprovalId(), candidate.getRunId());
-                    } catch (Exception e) {
-                        LOGGER.warn("Agent Run 恢复扫描项失败: runId={}, approvalId={}, error={}",
-                                candidate.getRunId(), candidate.getApprovalId(), e.getMessage());
-                    } finally {
-                        scheduledApprovals.remove(candidate.getApprovalId());
+            schedule(candidate.getApprovalId());
+        }
+    }
+
+    /** 批准事务提交后立即唤醒；消息只负责提示，执行权仍由主库状态/CAS/租约决定。 */
+    @RabbitListener(queues = BackgroundTaskConfiguration.RESUME_QUEUE, concurrency = "1")
+    public void receiveResume(Message message) {
+        if (message.getBody().length == 0 || message.getBody().length > 80) {
+            throw new AmqpRejectAndDontRequeueException("无效审批恢复引用");
+        }
+        schedule(new String(message.getBody(), StandardCharsets.UTF_8));
+    }
+
+    private void schedule(String approvalId) {
+        if (!properties.isEnabled() || maintenance.isEnabled() || !scheduledApprovals.add(approvalId)) return;
+        try {
+            resumeExecutor.execute(() -> {
+                try {
+                    var approval = approvalRepository.findById(approvalId).orElse(null);
+                    if (approval != null && approval.getDecisionStatus() == AgentApprovalDecisionStatus.APPROVED
+                            && (approval.getExecutionStatus() == AgentApprovalExecutionStatus.READY
+                                || approval.getExecutionStatus() == AgentApprovalExecutionStatus.RUNNING)) {
+                        resume(approvalId, approval.getRunId());
                     }
-                });
-            } catch (RuntimeException e) {
-                scheduledApprovals.remove(candidate.getApprovalId());
-                LOGGER.warn("Agent Run 恢复任务提交失败: runId={}, approvalId={}, error={}",
-                        candidate.getRunId(), candidate.getApprovalId(), e.getMessage());
-            }
+                } catch (Exception failure) {
+                    LOGGER.warn("审批恢复任务等待主库补偿: approvalId={}, errorType={}",
+                            approvalId, failure.getClass().getSimpleName());
+                } finally {
+                    scheduledApprovals.remove(approvalId);
+                }
+            });
+        } catch (RuntimeException rejected) {
+            scheduledApprovals.remove(approvalId);
+            LOGGER.warn("审批恢复池已满，等待主库补偿: approvalId={}", approvalId);
         }
     }
 
     private void resume(String approvalId, String runId) {
+        // 原请求或前一轮恢复尚未收尾时，不领取租约；收尾会补发信号，丢信号仍有分钟级补偿。
+        if (runRegistry.findActive(runId).isPresent()) {
+            return;
+        }
         AgentRunLease lease = leaseService.claim(runId, approvalId).orElse(null);
         if (lease == null) {
             if (stateService.failExhaustedIfEligible(approvalId, runId)) {
@@ -147,7 +184,6 @@ public class AgentResumeWorker {
                     recordResume(approval, AgentRunTerminationReason.RESUME_FAILED.name());
                     recordTrace(null, approval, AgentRunTerminationReason.RESUME_FAILED.name(),
                             "Agent Run 已达到最大恢复次数", null, null);
-                    updateConversation(runId, "审批恢复次数已耗尽，操作未完成。", null, null);
                 });
             }
             return;
@@ -183,15 +219,17 @@ public class AgentResumeWorker {
             RestoredAgentRun restored = checkpointRestorer.restore(
                     run, checkpoint, reauthorization.ownerAuthorization());
             context = restored.context();
-            runRegistry.register(context);
+            context.control().setExecutionFence(() -> {
+                if (!leaseService.stillOwns(runId)) throw new IllegalStateException("审批恢复租约已失效");
+            });
+            // 即使删除发生在重新授权之后，也不能把恢复任务重新注册为可执行。
+            conversationAccess.registerRun(context);
             ReActExecutionResult executionResult = executeRestored(restored, reauthorization);
             if (executionResult.suspended()) {
                 stateService.completeSuspended(approvalId);
                 recordResume(approval, "SUSPENDED_AGAIN");
                 recordTrace(context, approval, "SUSPENDED_AGAIN", "等待新的工具动作审批", null,
                         checkpointTaskContract);
-                updateConversation(runId, "工具操作已再次提交审批，审批通过后会继续执行。",
-                        null, checkpoint.modelId());
                 return;
             }
             if (!leaseService.stillOwns(runId)) {
@@ -202,8 +240,8 @@ public class AgentResumeWorker {
                 return;
             }
             if (executionResult.success()) {
-                conversationRecorder.recordResumedConversation(runId,
-                        context.executionContext().getRequest().getQuestion(), executionResult.answer(), checkpoint.modelId());
+                conversationRecorder.recordResumedConversation(runId, executionResult.answer(),
+                        checkpoint.supervisor() == null ? checkpoint.modelId() : checkpoint.supervisor().modelId());
                 context.control().complete();
                 stateService.completeTerminal(
                         approvalId,
@@ -237,24 +275,30 @@ public class AgentResumeWorker {
                 runRegistry.remove(context);
             }
             leaseService.release(runId);
+            if (context != null && context.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
+                resumeSignals.wakeReady(runId);
+            }
         }
     }
 
     private ReActExecutionResult executeRestored(RestoredAgentRun restored,
             AgentApprovalReauthorization reauthorization) {
-        return AgentRunScope.call(restored.context(), () -> {
-            AgentCapabilityBindingSnapshot capabilitySnapshot = restoredCapabilitySnapshot(restored);
-            if (capabilitySnapshot == null) {
-                return continueRestored(restored, reauthorization, restored.invocationContext());
-            }
-            if (!capabilitySnapshot.callableToolNames().contains(restored.checkpoint().pendingTool().toolName())) {
-                throw new SecurityException("待审批工具已不在原执行 Agent 的当前能力范围内");
-            }
-            AgentToolInvocationContext narrowedInvocation = narrowInvocationContext(
-                    restored.invocationContext(), capabilitySnapshot);
-            return AgentCapabilityScope.call(capabilitySnapshot,
-                    () -> continueRestored(restored, reauthorization, narrowedInvocation));
-        });
+        return users.call(restored.context().tenantId(), restored.context().userId(),
+                () -> AgentRunScope.call(restored.context(), () -> {
+                    AgentCapabilityBindingSnapshot capabilitySnapshot = restoredCapabilitySnapshot(restored);
+                    if (capabilitySnapshot == null) {
+                        return continueRestored(restored, reauthorization, restored.invocationContext());
+                    }
+                    if (!capabilitySnapshot.callableToolNames().contains(restored.checkpoint().pendingTool().toolName())) {
+                        throw new SecurityException("待审批工具已不在原执行 Agent 的当前能力范围内");
+                    }
+                    AgentToolInvocationContext narrowedInvocation = narrowInvocationContext(
+                            restored.invocationContext(), capabilitySnapshot);
+                    return AgentCapabilityScope.call(capabilitySnapshot, () -> restored.checkpoint().supervisor() == null
+                            ? continueRestored(restored, reauthorization, narrowedInvocation)
+                            : supervisor.resume(restored.checkpoint().supervisor(),
+                                () -> continueRestored(restored, reauthorization, narrowedInvocation)));
+                }));
     }
 
     private ReActExecutionResult continueRestored(RestoredAgentRun restored,
@@ -282,7 +326,9 @@ public class AgentResumeWorker {
                 toolInvoker.buildExactToolSpecifications(invocationContext.allowedToolNames()),
                 restored.checkpoint().modelId(),
                 restored.context().sessionId(),
-                restored.context().executionContext().getRequest().getQuestion(),
+                restored.checkpoint().supervisor() == null
+                        ? restored.context().executionContext().getRequest().getQuestion()
+                        : restored.checkpoint().supervisor().pendingTask(),
                 invocationContext);
     }
 
@@ -296,7 +342,9 @@ public class AgentResumeWorker {
                 .findByAgentIdAndTenantId(profileId, restored.context().tenantId())
                 .filter(AgentProfile::isEnabled)
                 .orElseThrow(() -> new SecurityException("原执行 Agent 已删除、停用或不属于当前租户"));
-        return capabilityService.resolveRuntimeBindings(profile, restored.checkpoint().mode());
+        var current = capabilityService.resolveRuntimeBindings(profile, restored.checkpoint().mode());
+        return restored.checkpoint().supervisor() == null ? current
+                : AgenticSupervisorService.narrowCapabilities(restored.checkpoint().supervisor().leafCapabilities(), current);
     }
 
     private AgentToolInvocationContext narrowInvocationContext(
@@ -306,7 +354,8 @@ public class AgentResumeWorker {
         Set<String> allowedTools = checkpointContext.allowedToolNames().stream()
                 .filter(currentlyCallable::contains)
                 .collect(Collectors.toUnmodifiableSet());
-        return new AgentToolInvocationContext(checkpointContext.executorId(), allowedTools);
+        return new AgentToolInvocationContext(checkpointContext.executorId(), allowedTools,
+                checkpointContext.initialToolNames().stream().filter(allowedTools::contains).collect(Collectors.toUnmodifiableSet()));
     }
 
     private void failIfLeaseOwned(AgentRunContext context,
@@ -328,7 +377,6 @@ public class AgentResumeWorker {
         }
         leaseService.release(runId);
         stateService.failClosed(approvalId, runId, reason, detail);
-        updateConversation(runId, "操作未完成：" + detail, null, null);
         approvalRepository.findById(approvalId).ifPresent(approval -> {
             recordResume(approval, reason.name());
             if (context != null) {
@@ -336,10 +384,6 @@ public class AgentResumeWorker {
             }
             recordTrace(context, approval, reason.name(), detail, null, taskContract);
         });
-    }
-
-    private void updateConversation(String runId, String content, String skillUsed, String modelId) {
-        conversationRecorder.updateRunConversation(runId, content, skillUsed, modelId);
     }
 
     private void recordResume(AgentToolApprovalEntity approval, String outcome) {

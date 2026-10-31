@@ -3,7 +3,6 @@ package com.ai.indexing;
 import com.ai.memory.MemoryTier;
 import com.ai.memory.MemoryEntry;
 import com.ai.rag.indexing.RagDocumentIndexer;
-import com.ai.repository.ConversationSessionRepository;
 import com.ai.repository.FileMetadataRepository;
 import com.ai.repository.KnowledgeEntryRepository;
 import com.ai.repository.MemoryEntryRepository;
@@ -18,24 +17,20 @@ import java.time.LocalDateTime;
 /** 按持久任务身份读取最新来源；租约/重试由 Worker 管理，不能依赖登录线程上下文。 */
 @Component
 public class IndexTaskProcessor {
-    private final IndexTaskStore store;
     private final KnowledgeEntryRepository knowledge;
     private final FileMetadataRepository files;
     private final MemoryEntryRepository memories;
-    private final ConversationSessionRepository sessions;
     private final KnowledgeVectorIndexService indexes;
     private final RagDocumentIndexer documents;
     private final FileProcessingWorker fileWorker;
     private final VectorMemoryService vectors;
 
-    public IndexTaskProcessor(IndexTaskStore store, KnowledgeEntryRepository knowledge, FileMetadataRepository files,
-            MemoryEntryRepository memories, ConversationSessionRepository sessions, KnowledgeVectorIndexService indexes,
+    public IndexTaskProcessor(KnowledgeEntryRepository knowledge, FileMetadataRepository files,
+            MemoryEntryRepository memories, KnowledgeVectorIndexService indexes,
             RagDocumentIndexer documents, FileProcessingWorker fileWorker, VectorMemoryService vectors) {
-        this.store = store;
         this.knowledge = knowledge;
         this.files = files;
         this.memories = memories;
-        this.sessions = sessions;
         this.indexes = indexes;
         this.documents = documents;
         this.fileWorker = fileWorker;
@@ -63,12 +58,6 @@ public class IndexTaskProcessor {
                         .filter(entry -> memoryContent(entry) != null && !memoryContent(entry).isBlank());
                 if (memory.isPresent()) vectors.indexMemory(task.sourceId(), memoryContent(memory.get()), task.tenantId(), task.userId());
                 else vectors.removeFromStore(VectorDocumentTypes.MEMORY, task.sourceId(), task.tenantId());
-            }
-            case CONVERSATION -> {
-                var payload = store.conversation(task);
-                if (sessions.findBySessionIdAndUserIdAndTenantId(payload.sessionId(), task.userId(), task.tenantId()).isPresent()) {
-                    vectors.indexConversationTurn(task.sourceId(), payload.question(), payload.answer(), task.tenantId(), task.userId());
-                }
             }
         }
     }

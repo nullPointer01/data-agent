@@ -61,15 +61,15 @@ export function ToastHost({ toasts, onClose }) {
   );
 }
 
-export function ConfirmDialog({ title, message, confirmText = '确认', danger, onCancel, onConfirm }) {
+export function ConfirmDialog({ title, message, confirmText = '确认', danger, busy = false, onCancel, onConfirm }) {
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+    <div className="modal-backdrop" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onCancel(); }}>
       <div className="confirm-dialog">
         <h2>{title}</h2>
         <p>{message}</p>
         <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn" onClick={onCancel}>取消</button>
-          <button className={`btn ${danger ? 'danger-fill' : 'primary'}`} onClick={onConfirm}>{confirmText}</button>
+          <button className="btn" disabled={busy} onClick={onCancel}>取消</button>
+          <button className={`btn ${danger ? 'danger-fill' : 'primary'}`} disabled={busy} onClick={onConfirm}>{confirmText}</button>
         </div>
       </div>
     </div>
@@ -157,13 +157,39 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
   );
 }
 
-export function DataTable({ columns, rows, rowKey, loading, empty, pageSize = 10 }) {
+/** 服务端分页不二次切片；游标页允许上一页/下一页，不虚构总页数。 */
+export function ServerPagination({ mode, page, size, total, hasMore, disabled, count, onPageChange, onPageSizeChange }) {
+  const canNext = mode === 'cursor' ? hasMore : (page + 1) * size < total;
+  if (page === 0 && !canNext && count <= size) return null;
+  return (
+    <div className="pagination" aria-label="服务端分页">
+      <span className="pagination-summary">第 {page + 1} 页 · 本页 {count} 条{mode === 'offset' ? ` · 共 ${total} 条` : ''}</span>
+      <label className="pagination-size">每页
+        <select value={size} disabled={disabled} onChange={(event) => onPageSizeChange(event.target.value)} aria-label="每页条数">
+          {[10, 20, 50].map((value) => <option key={value} value={value}>{value}</option>)}
+        </select>条
+      </label>
+      <div className="pagination-actions">
+        <button className="btn" disabled={disabled || page === 0} onClick={() => onPageChange(page - 1)}>上一页</button>
+        <button className="btn" disabled={disabled || !canNext} onClick={() => onPageChange(page + 1)}>下一页</button>
+      </div>
+    </div>
+  );
+}
+
+/** 分页请求失败单独展示，不能把失败显示成数据库没有记录。 */
+export function ListLoadError({ error, onRetry }) {
+  if (!error) return null;
+  return <div className="card" role="alert"><p>{error}</p><button className="btn" onClick={onRetry}>重新加载</button></div>;
+}
+
+export function DataTable({ columns, rows, rowKey, loading, empty, pageSize = 10, serverPagination }) {
   const pagination = usePagination(rows, { initialPageSize: pageSize, keyField: rowKey });
   if (loading) {
     return <LoadingState />;
   }
   if (!rows || !rows.length) {
-    return empty || <EmptyState />;
+    return <>{empty || <EmptyState />}{serverPagination && <ServerPagination {...serverPagination} count={0} />}</>;
   }
   return (
     <div className="data-table-shell">
@@ -173,7 +199,7 @@ export function DataTable({ columns, rows, rowKey, loading, empty, pageSize = 10
             <tr>{columns.map((column) => <th key={column.key}>{column.title}</th>)}</tr>
           </thead>
           <tbody>
-            {pagination.pageItems.map((row, rowIndex) => (
+            {(serverPagination ? rows : pagination.pageItems).map((row, rowIndex) => (
               <tr key={rowKey ? row[rowKey] : rowIndex}>
                 {columns.map((column) => (
                   <td key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>
@@ -183,13 +209,13 @@ export function DataTable({ columns, rows, rowKey, loading, empty, pageSize = 10
           </tbody>
         </table>
       </div>
-      <Pagination
+      {serverPagination ? <ServerPagination {...serverPagination} count={rows.length} /> : <Pagination
         page={pagination.page}
         pageSize={pagination.pageSize}
         total={pagination.total}
         onPageChange={pagination.setPage}
         onPageSizeChange={pagination.setPageSize}
-      />
+      />}
     </div>
   );
 }

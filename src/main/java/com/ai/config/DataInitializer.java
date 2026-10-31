@@ -13,15 +13,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.JdbcTemplate;
-
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.Set;
 
 /**
- * 初始化默认数据并修复已知旧库结构问题。
+ * 初始化默认权限和角色；表结构与旧库升级统一由 Flyway 管理。
  *
  * @author data-agent
  */
@@ -29,59 +24,23 @@ import java.util.Set;
 public class DataInitializer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DataInitializer.class);
-    private static final String TABLE_SYS_USER = "sys_user";
-    private static final String COLUMN_DAILY_TOKEN_LIMIT = "daily_token_limit";
     private static final String USERNAME_DELIMITER = ",";
     private static final String PERMISSION_ALL = "*:*";
     private static final String PERMISSION_APP_USE = "app:use";
     private static final String PERMISSION_APPROVAL_REVIEW = SecurityConstants.PERMISSION_AGENT_APPROVAL_REVIEW;
-    private static final String DEFAULT_TENANT_ID = "default";
 
     @Value("${app.security.bootstrap-admin-users:super}")
     private String bootstrapAdminUsers;
 
     @Bean
-    public CommandLineRunner initData(JdbcTemplate jdbcTemplate,
-            SysUserRepository sysUserRepository,
+    public CommandLineRunner initData(SysUserRepository sysUserRepository,
             SysRoleRepository roleRepository,
             SysPermissionRepository permissionRepository,
             RolePermissionService rolePermissionService) {
         return args -> {
-            repairUserTokenQuotaSchema(jdbcTemplate);
             initDefaultRbac(roleRepository, permissionRepository, rolePermissionService);
             bootstrapAdminUsers(sysUserRepository, rolePermissionService);
         };
-    }
-
-    private void repairUserTokenQuotaSchema(JdbcTemplate jdbcTemplate) {
-        try {
-            if (!columnExists(jdbcTemplate, TABLE_SYS_USER, COLUMN_DAILY_TOKEN_LIMIT)) {
-                jdbcTemplate.execute("ALTER TABLE sys_user ADD COLUMN daily_token_limit BIGINT DEFAULT 0 NOT NULL");
-                LOGGER.warn("Added missing sys_user.daily_token_limit column");
-            }
-            int repairedRows = jdbcTemplate.update("UPDATE sys_user SET daily_token_limit = 0 WHERE daily_token_limit IS NULL");
-            if (repairedRows > 0) {
-                LOGGER.warn("Repaired {} users with NULL daily_token_limit", repairedRows);
-            }
-        } catch (Exception e) {
-            LOGGER.warn("Could not repair sys_user.daily_token_limit automatically: {}", e.getMessage());
-        }
-    }
-
-    private boolean columnExists(JdbcTemplate jdbcTemplate, String tableName, String columnName) throws SQLException {
-        if (jdbcTemplate.getDataSource() == null) {
-            return false;
-        }
-        try (Connection connection = jdbcTemplate.getDataSource().getConnection()) {
-            return columnExists(connection, tableName, columnName)
-                    || columnExists(connection, tableName.toUpperCase(), columnName.toUpperCase());
-        }
-    }
-
-    private boolean columnExists(Connection connection, String tableName, String columnName) throws SQLException {
-        try (ResultSet columns = connection.getMetaData().getColumns(null, null, tableName, columnName)) {
-            return columns.next();
-        }
     }
 
     private void initDefaultRbac(SysRoleRepository roleRepository,

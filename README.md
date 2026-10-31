@@ -6,7 +6,7 @@ Agent 不按“数据/知识/报告”预先分类，而是由模型、System Pr
 
 正常聊天与工具对话使用 LangChain4j AiServices、`@SystemMessage` 和官方 Reactor 事件 Flux；HTTP 接口通过 Spring MVC 返回 `Flux<ServerSentEvent<String>>`。项目通过受治理的 ToolExecutor 接入权限、预算和整批审批预检；审批恢复单独续跑原生消息，与普通助手共用治理。实现和阅读顺序见 [框架集成与消息生命周期](docs/核心逻辑详解/框架集成与消息生命周期.md)。
 
-默认角色为通用个人 Agent，数据分析属于可选能力。专家委派使用 `langchain4j-agentic` 顺序工作流串联任务规划与执行；Orchestrated 可切换主助手 Tool Calling 与框架 Supervisor 动态协作。本地默认 Supervisor，权限、预算与委派深度继续由 Harness 约束；Supervisor 的整图审批恢复暂未实现。学习对照见 [Supervisor 与原编排对照](docs/核心逻辑详解/Supervisor与原编排对照.md)。
+默认角色为通用个人 Agent，数据分析属于可选能力。专家委派使用 `langchain4j-agentic` 顺序工作流串联任务规划与执行；Orchestrated 可切换主助手 Tool Calling 与框架 Supervisor 动态协作。本地默认 Supervisor，权限、预算与委派深度继续由 Harness 约束；主助手节点和直接专家支持审批检查点续跑，更深层嵌套审批仍拒绝。学习对照见 [Supervisor 与原编排对照](docs/核心逻辑详解/Supervisor与原编排对照.md)，恢复边界见 [Supervisor 检查点与审批续跑](docs/核心逻辑详解/Supervisor检查点与审批续跑.md)。
 
 标准 MCP 使用官方 `langchain4j-mcp:1.20.2-beta30` 的 Streamable HTTP 客户端，远端只读工具经统一目录、租户/RBAC、Profile 绑定和工具执行管道准入。个人/专家设置支持逐项开启外部工具；默认配置为空，不会自动连接外部服务。配置、学习断点与边界见 [标准 MCP 工具接入](docs/核心逻辑详解/标准MCP工具接入.md)。
 
@@ -21,7 +21,8 @@ Agent 不按“数据/知识/报告”预先分类，而是由模型、System Pr
 - Java 17
 - Spring Boot 3.2
 - Spring Security + JWT
-- Spring Data JPA
+- MyBatis 3.5 / MyBatis Spring Boot Starter 3.0.3
+- Flyway 9.22（MySQL 版本化建表与升级）
 - MySQL
 - LangChain4j Core / OpenAI 1.20.2
 - LangChain4j Milvus 1.20.2-beta30（对应发布线的 Milvus 集成仍为 beta）
@@ -32,6 +33,7 @@ Agent 不按“数据/知识/报告”预先分类，而是由模型、System Pr
 - Apache POI / PDFBox
 - 可选 Redis
 - Elasticsearch 8
+- RabbitMQ 4.2 + Spring AMQP（索引与持久记忆提取任务）
 
 ## 本地启动
 
@@ -56,14 +58,15 @@ local 默认连接：
 - Milvus：`localhost:19530`
 - 应用端口：`8080`
 
-先确保 MySQL 数据库存在：
+先确保 MySQL 数据库存在。应用启动后由 Flyway 自动建表和执行版本升级；`sql/init.sql` 仅作为可选手工初始化入口，无需每次执行。
 
 ```bash
 mysql -uroot -pzym190457 -e "CREATE DATABASE IF NOT EXISTS data_agent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 ```
 
 启动外部依赖：
+
+索引与记忆提取依赖 RabbitMQ，已有其他容器时可单独执行 `docker compose up -d rabbitmq`。重启应用后 Flyway V3 创建两张记忆任务/修订表、取消旧问答索引任务并删除废弃载荷列；已有聊天记录保留。saveMemory/forgetMemory/searchMemory 需在 Agent 设置中绑定，并使用自主决策或 ReAct。架构、迁移边界与验收输入见 [记忆与后台任务技术方案](docs/核心逻辑详解/记忆与后台任务技术方案.md)。
 
 ```bash
 docker-compose up -d
@@ -98,7 +101,7 @@ http://localhost:8080
 
 - `application.yml`：公共配置使用可直接阅读的固定值，不包含环境变量占位符。
 - `local`：默认本地环境，使用 MySQL 和 Milvus；`application-local.yml` 同样只写固定值，审批恢复和 `hotel_rate_sandbox` 演示工具默认开启，不需要在 IDEA 配置环境变量。
-- `prod`：线上环境，`application-prod.yml` 当前与 local 使用相同的固定配置和功能开关，不需要额外维护环境变量。
+- `prod`：线上环境，使用显式固定配置；Embedding 和精排保留云端服务，与 local 的 Ollama 配置不同。
 
 ## 外部依赖
 
@@ -110,7 +113,9 @@ http://localhost:8080
 - Elasticsearch：`9200`
 - Milvus 所需 etcd / MinIO
 
-当前应用启动时会校验 Milvus 可达。Milvus 和 Elasticsearch 是 RAG 混合检索依赖；Redis 是否必需取决于启用的记忆和缓存能力。Embedding 不在 Compose 中运行，local profile 默认调用硅基流动的外部 API。Elasticsearch 不可用时不会回退到数据库模糊检索。
+当前应用启动时会校验 Milvus 可达。Milvus 和 Elasticsearch 是 RAG 混合检索依赖；Redis 是否必需取决于启用的记忆和缓存能力。Embedding 不在 Compose 中运行，local profile 调用 macOS 原生 Ollama。Elasticsearch 不可用时不会回退到数据库模糊检索。
+
+本地先启动 Ollama（`open -a Ollama`，或在终端运行 `ollama serve`），用 `ollama list` 确认已有 `bge-m3:latest`；没有时执行 `ollama pull bge-m3`。Docker 运行 `milvus-standalone`、`milvus-etcd`、`milvus-minio` 和 `data-agent-elasticsearch`；Attu 只是可选管理界面，MySQL 使用本机服务。Java 在宿主机运行时使用 `localhost:11434`，若之后把 Java 放入 Docker，须改用宿主机地址。
 
 ## 配置方式
 
@@ -120,7 +125,7 @@ local 和 prod 都直接读取仓库内的 YAML 固定值，不要求在 IDEA Ru
 java -jar data-agent.jar --spring.profiles.active=prod
 ```
 
-当前 `application-prod.yml` 与 `application-local.yml` 使用相同的连接、密钥和功能开关，只适合当前个人项目部署。模型 Key 优先通过 Control Plane 的模型目录维护；`app.encryption.key` 会影响数据库敏感字段解密，不能随意更换。
+当前 YAML 固定配置只适合个人项目部署；local 使用 Ollama 向量化和规则排序，prod 保留云端向量化和精排。聊天模型仍通过 Control Plane 的模型目录维护；`app.encryption.key` 会影响数据库敏感字段解密，不能随意更换。
 
 ## 管理员和权限
 
@@ -221,15 +226,20 @@ com.ai.memory           记忆系统
 com.ai.rag              RAG 检索
 com.ai.vector           Embedding 与 Milvus
 com.ai.service          应用服务
-com.ai.repository       JPA Repository
+com.ai.repository       MyBatis 仓储 Mapper（SQL 位于 resources/mappers）
 ```
 
 ## Agent Run Harness
 
+主库已统一迁到 MyBatis：普通仓储、Agent Eval、索引任务和 RBAC 均使用 Mapper XML；原 Hibernate 实体、脏检查、自动建表和加密转换器已替换。数据库结构由 Flyway 管理，现有表与数据保留。阅读入口见 [MyBatis 主库持久化](docs/核心逻辑详解/MyBatis主库持久化.md)。
+
 入口：
 
 - `POST /api/v1/analysis/analyze`
-- `POST /api/v1/analysis/analyze/stream`
+- `POST /api/v1/agent-runs`：持久提交产品聊天，返回 Run ID。
+- `GET /api/v1/agent-runs/{runId}/events?after=...`：SSE 游标续读，断连不取消任务。
+
+聊天已采用持久后台 Run；新增 Flyway V8，前后端须同版。执行与 SSE 生命周期分离，重复提交键复用原 Run，已开始但失去现场的任务明确中断，不自动重跑写工具。配置和验收见 [后台 Run 与事件续读](docs/核心逻辑详解/后台Run与事件续读.md)。
 
 每次被接受的分析请求都会创建唯一 `runId`。`AgentRunCoordinator` 统一负责路线解析、状态机、deadline、模型/工具/Token 预算、SSE 事件、取消、会话记录和 Trace；同步与流式请求使用相同路线。
 
@@ -274,7 +284,7 @@ app:
 
 `data-agent-rag-v3` 使用官方 ICU 与 strict Mapping，首次和周期使用检查插件、字段类型和分词合同。知识/文件一次分块写入两边索引，文件任务复用持久队列。旧索引不会自动删除，历史需维护窗口分批重建；镜像启动、分页重建接口与评测工具见 [中文检索与索引维护](docs/核心逻辑详解/中文检索与索引维护.md)。代码离线验证通过，真实部署和检索效果尚未验收。
 
-RRF 融合后的候选默认通过外部 Cross-Encoder 精排。首个配置使用硅基流动兼容接口和 `BAAI/bge-reranker-v2-m3`；真实密钥只放在本地 Shell 环境或部署平台 Secret：
+RRF 融合后的候选在 prod 通过硅基流动 `BAAI/bge-reranker-v2-m3` Cross-Encoder 精排。local 显式关闭云端精排，使用现有确定性规则排序；Ollama Embedding 不能代替 Cross-Encoder。精排由 YAML 的 `app.rag.reranker` 配置，下面旧环境变量名称仅用于理解字段对应关系，不是当前启动配置入口：
 
 ```bash
 RERANK_ENABLED=true
@@ -326,7 +336,22 @@ RAG_BENCHMARK_MAXIMUM_CASES=200
 
 ## 向量和 Embedding
 
-Embedding 统一通过外部 OpenAI-compatible 服务生成，不在 JVM 或本地 Compose 中加载模型。local profile 默认使用硅基流动 `BAAI/bge-m3`；真实 API Key 只从运行环境读取。自建且无鉴权的内网服务可以不配置 Key：
+Embedding 统一通过 OpenAI-compatible 服务生成，JVM 复用 LangChain4j 的 `OpenAiEmbeddingModel`。local 使用 macOS 上的 Ollama `bge-m3:latest`，prod 保留硅基流动 `BAAI/bge-m3`。本地配置直接读取 `application-local.yml`：
+
+```yaml
+app:
+  embedding:
+    dimension: 1024
+    index-version: ollama-bge-m3-v1
+    api:
+      base-url: http://localhost:11434/v1
+      api-key: ollama # 本地无鉴权端点的占位值，不是云端 Key。
+      model-name: bge-m3:latest
+      timeout: 120s
+      batch-size: 8
+```
+
+切换后使用独立 Milvus Collection，不删除旧云端向量，也不会自动搬迁历史数据。已有知识、文件和长期记忆须从原文重建索引，具体步骤见 [中文检索与索引维护](docs/核心逻辑详解/中文检索与索引维护.md)。同名模型跨服务实现也不直接混用向量。以下旧环境变量名称仅用于理解字段对应关系，实际值统一在 YAML 中配置：
 
 ```bash
 EMBEDDING_API_BASE_URL=https://api.siliconflow.cn/v1

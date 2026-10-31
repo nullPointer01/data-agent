@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.security.SysUserRepository">
+    <!-- sys_user：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <!-- 角色来自关系表，需要 collection；用户普通字段使用自动映射。 -->
+    <resultMap id="entity" type="com.ai.security.SysUser" autoMapping="true">
+        <id column="id" property="id"/>
+        <collection property="roles" javaType="java.util.HashSet" column="id" select="com.ai.security.rbac.SysRoleRepository.findRolesByUserId"/>
+    </resultMap>
+    <insert id="insert">
+        INSERT INTO sys_user (id, username, password, nickname, email, enabled, tenant_id, daily_token_limit, created_at, updated_at)
+        VALUES (#{id}, #{username}, #{password}, #{nickname}, #{email}, #{enabled}, #{tenantId}, #{dailyTokenLimit}, #{createdAt}, #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE sys_user SET username = #{username},
+            password = #{password},
+            nickname = #{nickname},
+            email = #{email},
+            enabled = #{enabled},
+            tenant_id = #{tenantId},
+            daily_token_limit = #{dailyTokenLimit},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultMap="entity">
+        SELECT * FROM sys_user WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM sys_user WHERE id = #{id})
+    </select>
+    <select id="findAll" resultMap="entity">
+        SELECT * FROM sys_user
+    </select>
+    <resultMap id="adminList" type="com.ai.security.SysUser" autoMapping="true">
+        <id column="id" property="id"/>
+        <collection property="roles" ofType="com.ai.security.rbac.SysRole" notNullColumn="list_role_code">
+            <id column="list_role_code" property="roleCode"/>
+            <result column="list_role_enabled" property="enabled"/>
+        </collection>
+    </resultMap>
+    <sql id="adminSearch">
+        <if test="query != null and query != ''">
+            WHERE LOCATE(LOWER(#{query}), LOWER(CONCAT_WS(' ', username, nickname, email, tenant_id))) &gt; 0
+        </if>
+    </sql>
+    <select id="findAdminPage" resultMap="adminList" resultOrdered="true">
+        SELECT u.*, ur.role_code AS list_role_code, r.enabled AS list_role_enabled
+        FROM (SELECT * FROM sys_user <include refid="adminSearch"/>
+            ORDER BY created_at DESC, id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}) u
+        LEFT JOIN sys_user_role ur ON ur.user_id = u.id
+        LEFT JOIN sys_role r ON r.role_code = ur.role_code
+        ORDER BY u.created_at DESC, u.id DESC, ur.role_code
+    </select>
+    <select id="countAdminUsers" resultType="com.ai.security.dto.UserListCounts">
+        SELECT COUNT(*) AS total, COALESCE(SUM(enabled = 1), 0) AS enabled_count,
+            COALESCE(SUM(EXISTS(SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.role_code = ur.role_code
+                WHERE ur.user_id = sys_user.id AND ur.role_code = 'ADMIN' AND r.enabled = 1)), 0) AS admin_count
+        FROM sys_user <include refid="adminSearch"/>
+    </select>
+    <select id="findIdentitiesByIds" resultType="com.ai.security.dto.UserIdentityResponse">
+        SELECT id AS user_id, username, nickname FROM sys_user
+        WHERE <choose><when test="ids != null and !ids.isEmpty()">id IN
+            <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>1 = 0</otherwise></choose>
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+        ORDER BY username, id
+    </select>
+    <select id="findAllById" resultMap="entity">
+        SELECT * FROM sys_user WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM sys_user WHERE id = #{id}
+    </delete>
+    <select id="findByUsername" resultMap="entity">
+        SELECT * FROM sys_user WHERE username = #{username}
+    </select>
+    <select id="existsByUsername" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM sys_user WHERE username = #{username})
+    </select>
+    <select id="existsByRolesRoleCode" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM sys_user_role WHERE role_code = #{role})
+    </select>
+    <delete id="deleteRoleLinks">DELETE FROM sys_user_role WHERE user_id = #{userId}</delete>
+    <insert id="insertRoleLinks">INSERT INTO sys_user_role(user_id, role_code) VALUES
+        <foreach collection="roleCodes" item="code" separator=",">(#{userId}, #{code})</foreach>
+    </insert>
+</mapper>

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.ModelConfigRepository">
+    <!-- model_config：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <!-- 仅 API Key 需要解密处理器，其余字段由 MyBatis 自动映射。 -->
+    <resultMap id="entity" type="com.ai.model.ModelConfig" autoMapping="true">
+        <result column="api_key" property="apiKey" typeHandler="com.ai.persistence.EncryptedStringTypeHandler"/>
+    </resultMap>
+    <insert id="insert">
+        INSERT INTO model_config (model_id,
+            name,
+            provider,
+            api_key,
+            base_url,
+            model_name,
+            temperature,
+            max_tokens,
+            enabled,
+            is_default,
+            tenant_id,
+            created_by,
+            created_at,
+            updated_at)
+        VALUES (#{modelId},
+            #{name},
+            #{provider},
+            #{apiKey,typeHandler=com.ai.persistence.EncryptedStringTypeHandler},
+            #{baseUrl},
+            #{modelName},
+            #{temperature},
+            #{maxTokens},
+            #{enabled},
+            #{isDefault},
+            #{tenantId},
+            #{createdBy},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE model_config SET name = #{name},
+            provider = #{provider},
+            api_key = #{apiKey,typeHandler=com.ai.persistence.EncryptedStringTypeHandler},
+            base_url = #{baseUrl},
+            model_name = #{modelName},
+            temperature = #{temperature},
+            max_tokens = #{maxTokens},
+            enabled = #{enabled},
+            is_default = #{isDefault},
+            tenant_id = #{tenantId},
+            created_by = #{createdBy},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE model_id = #{modelId}
+    </update>
+    <select id="findById" resultMap="entity">
+        SELECT * FROM model_config WHERE model_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM model_config WHERE model_id = #{id})
+    </select>
+    <select id="findAll" resultMap="entity">
+        SELECT * FROM model_config
+    </select>
+    <select id="findAllById" resultMap="entity">
+        SELECT * FROM model_config WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                model_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM model_config WHERE model_id = #{id}
+    </delete>
+    <select id="findByTenantIdAndEnabledTrue" resultMap="entity">
+        SELECT * FROM model_config WHERE tenant_id = #{tenantId} AND enabled = true
+    </select>
+    <select id="findByTenantIdAndEnabledTrueAndIsDefaultTrue" resultMap="entity">
+        SELECT * FROM model_config WHERE tenant_id = #{tenantId} AND enabled = true AND is_default = true
+    </select>
+    <select id="findByModelIdAndTenantId" resultMap="entity">
+        SELECT * FROM model_config WHERE model_id = #{modelId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="countByIsDefaultTrue" resultType="long">
+        SELECT COUNT(*) FROM model_config WHERE is_default = true
+    </select>
+    <update id="clearOtherDefaults">
+        UPDATE model_config m
+        SET m.is_default = false
+        WHERE m.tenant_id = #{tenantId}
+        AND m.model_id &lt;&gt; #{excludedModelId}
+        AND m.is_default = true
+    </update>
+    <select id="findByEnabledTrue" resultMap="entity">
+        SELECT * FROM model_config WHERE enabled = true
+    </select>
+    <sql id="listFilter">
+        (tenant_id = #{filter.tenantId}<if test="filter.includeShared"> OR tenant_id = 'default'</if>)
+        <if test="filter.ownerId != null and filter.ownerId != ''">AND created_by = #{filter.ownerId}</if>
+        <if test="filter.enabledOnly">AND enabled = true</if>
+        <if test="filter.query != ''">
+            AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(provider, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(model_name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(base_url, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findListPage" resultMap="entity">
+        SELECT * FROM model_config WHERE <include refid="listFilter"/>
+        ORDER BY created_at DESC, model_id DESC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM model_config WHERE <include refid="listFilter"/>
+    </select>
+    <sql id="personalOptionsFilter">
+        (tenant_id = #{tenantId} OR tenant_id = 'default') AND enabled = true
+        <if test="query != ''">
+            AND (LOCATE(LOWER(#{query}), LOWER(COALESCE(name, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(model_name, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(provider, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findPersonalOptions" resultType="com.ai.modelconfig.dto.PersonalModelOptionResponse">
+        SELECT model_id, name AS display_name, model_name, provider, is_default FROM model_config
+        WHERE <include refid="personalOptionsFilter"/>
+        ORDER BY CASE WHEN tenant_id = #{tenantId} THEN 0 ELSE 1 END, is_default DESC, model_id ASC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countPersonalOptions" resultType="long">
+        SELECT COUNT(*) FROM model_config WHERE <include refid="personalOptionsFilter"/>
+    </select>
+</mapper>

@@ -12,7 +12,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** MVC 原生支持 Flux SSE；配置网络写入池与超时，无需把阻塞式 JPA 系统切换为 WebFlux。 */
+/** MVC 原生支持 Flux SSE；配置网络写入池与超时，主库访问通过阻塞式 MyBatis 执行。 */
 @Configuration
 public class MvcStreamingConfig implements WebMvcConfigurer {
     private final AsyncTaskExecutor executor;

@@ -64,7 +64,7 @@ public class KnowledgeSyncResultWriter {
         entry.setContentLength(content.length());
         int chunkCount = knowledgeVectorIndexService.estimateChunkCount(content);
         entry.setChunkCount(chunkCount);
-        knowledgeEntryRepository.saveAndFlush(entry);
+        knowledgeEntryRepository.save(entry);
     }
 
     private void updateSyncConfig(KnowledgeSyncConfig config) {

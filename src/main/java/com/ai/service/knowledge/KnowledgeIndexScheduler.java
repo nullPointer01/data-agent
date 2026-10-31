@@ -14,6 +14,6 @@ public class KnowledgeIndexScheduler {
     }
 
     public void schedule(KnowledgeEntry entry) {
-        tasks.enqueue(IndexTask.Kind.KNOWLEDGE, entry.getTenantId(), entry.getCreatedBy(), entry.getKnowledgeId(), null);
+        tasks.enqueue(IndexTask.Kind.KNOWLEDGE, entry.getTenantId(), entry.getCreatedBy(), entry.getKnowledgeId());
     }
 }

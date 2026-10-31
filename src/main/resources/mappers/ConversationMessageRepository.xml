@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.ConversationMessageRepository">
+    <!-- conversation_message：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO conversation_message (session_id, role, content, tokens, skill_used, model_used, run_id, created_at)
+        VALUES (#{sessionId}, #{role}, #{content}, #{tokens}, #{skillUsed}, #{modelUsed}, #{runId}, #{createdAt})
+    </insert>
+    <update id="update">
+        UPDATE conversation_message SET session_id = #{sessionId},
+            role = #{role},
+            content = #{content},
+            tokens = #{tokens},
+            skill_used = #{skillUsed},
+            model_used = #{modelUsed},
+            run_id = #{runId},
+            created_at = #{createdAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM conversation_message WHERE id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message
+    </select>
+    <select id="findAllById" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM conversation_message WHERE id = #{id}
+    </delete>
+    <select id="findBySessionIdOrderByCreatedAtAsc" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE session_id = #{sessionId} ORDER BY created_at ASC
+    </select>
+    <select id="findBySessionIdAndRoleOrderByCreatedAtAsc" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE session_id = #{sessionId} AND role = #{role} ORDER BY created_at ASC
+    </select>
+    <select id="countBySessionId" resultType="long">
+        SELECT COUNT(*) FROM conversation_message WHERE session_id = #{sessionId}
+    </select>
+    <delete id="deleteBySessionId">
+        DELETE FROM conversation_message WHERE session_id = #{sessionId}
+    </delete>
+    <select id="findRecentBySessionId" resultType="com.ai.model.ConversationMessage">
+        SELECT m.* FROM conversation_message m WHERE m.session_id = #{sessionId}
+            AND NOT EXISTS(SELECT 1 FROM agent_run_submission s JOIN agent_run_state r ON r.run_id=s.run_id
+                WHERE s.run_id=m.run_id AND r.status IN ('CREATED','RUNNING','WAITING_APPROVAL','RESUMING'))
+        ORDER BY m.id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findHistoryPage" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE session_id=#{sessionId}
+        <if test="beforeId != null">AND id &lt; #{beforeId}</if>
+        ORDER BY id DESC LIMIT #{limit}
+    </select>
+    <select id="findFirstBySessionIdAndRunIdAndRoleOrderByCreatedAtAsc" resultType="com.ai.model.ConversationMessage">
+        SELECT * FROM conversation_message WHERE session_id = #{sessionId} AND run_id = #{runId} AND role = #{role} ORDER BY created_at ASC LIMIT 1
+    </select>
+</mapper>

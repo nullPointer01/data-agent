@@ -1,8 +1,8 @@
 package com.ai.memory;
 
 import com.ai.repository.MemoryEntryRepository;
-import com.ai.service.VectorMemoryService;
-import com.ai.vector.VectorDocumentTypes;
+import com.ai.indexing.IndexTask;
+import com.ai.indexing.IndexTaskStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -21,18 +21,20 @@ public class MemoryQuotaService {
     private static final String METRIC_CLEANUP_TOTAL = "data_agent_memory_cleanup_total";
 
     private final MemoryEntryRepository memoryEntryRepository;
-    private final VectorMemoryService vectorMemoryService;
+    private final IndexTaskStore indexTasks;
     private final MemoryProperties memoryProperties;
     private final MeterRegistry meterRegistry;
+    private final MemoryWriteGuard writeGuard;
 
     public MemoryQuotaService(MemoryEntryRepository memoryEntryRepository,
-            VectorMemoryService vectorMemoryService,
+            IndexTaskStore indexTasks,
             MemoryProperties memoryProperties,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry, MemoryWriteGuard writeGuard) {
         this.memoryEntryRepository = memoryEntryRepository;
-        this.vectorMemoryService = vectorMemoryService;
+        this.indexTasks = indexTasks;
         this.memoryProperties = memoryProperties;
         this.meterRegistry = meterRegistry;
+        this.writeGuard = writeGuard;
     }
 
     /**
@@ -44,6 +46,7 @@ public class MemoryQuotaService {
      */
     @Transactional(rollbackFor = Exception.class)
     public int pruneBeforeCapture(String tenantId, String userId) {
+        writeGuard.lock(tenantId, userId);
         int quota = Math.max(1, memoryProperties.getMaxMemoriesPerUser());
         long currentCount = memoryEntryRepository.countByTenantIdAndUserId(tenantId, userId);
         if (currentCount < quota) {
@@ -54,15 +57,15 @@ public class MemoryQuotaService {
                 Math.max(1, memoryProperties.getRetentionBatchSize())));
         List<MemoryEntry> prunableEntries = memoryEntryRepository.findPrunableMemories(
                 tenantId, userId, PageRequest.of(0, pruneCount));
-        prunableEntries.forEach(this::cleanupVectorIfNecessary);
+        prunableEntries.forEach(this::scheduleVectorCleanup);
         memoryEntryRepository.deleteAll(prunableEntries);
         meterRegistry.counter(METRIC_CLEANUP_TOTAL, "reason", "quota").increment(prunableEntries.size());
         return prunableEntries.size();
     }
 
-    private void cleanupVectorIfNecessary(MemoryEntry entry) {
+    private void scheduleVectorCleanup(MemoryEntry entry) {
         if (MemoryTier.LONG_TERM.equals(entry.getTier())) {
-            vectorMemoryService.removeFromStore(VectorDocumentTypes.MEMORY, entry.getMemoryId(), entry.getTenantId());
+            indexTasks.enqueue(IndexTask.Kind.MEMORY, entry.getTenantId(), entry.getUserId(), entry.getMemoryId());
         }
     }
 }

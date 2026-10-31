@@ -1,5 +1,7 @@
+import { loadListOptions } from '../../api/listOptions.js';
+import { AgentOwnerFilter } from '../../components/admin/AgentOwnerFilter.jsx';
 import { GitBranch } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ResourcePage } from '../../components/admin/ResourcePage.jsx';
 import { Badge } from '../../components/ui.jsx';
 import { formatTime, truncate } from '../../utils/format.js';
@@ -13,14 +15,30 @@ export function AgentsPage({ api, toast, onOpenTraces }) {
   const [detail, setDetail] = useState(null);
 
   useEffect(() => {
-    Promise.all([
-      api.get('/api/v1/models/list').catch(() => ({ models: [] })),
-      api.get('/api/v1/admin/users').catch(() => ({ data: [] }))
-    ]).then(([modelResponse, userResponse]) => {
-      setModels(modelResponse.models || []);
-      setUsers(userResponse.data || []);
-    });
+    const controller = new AbortController();
+    loadListOptions(api, '/api/v1/models/list', {}, controller.signal)
+      .then(setModels).catch((error) => { if (error.name !== 'AbortError') toast(error.message, 'error'); });
+    return () => controller.abort();
   }, []);
+
+  // 归属名称只解析已有 Agent 的用户 ID，不再借用户列表接口下载全部账号。
+  const loadOwners = useCallback(async (agents) => {
+    const ids = [...new Set(agents.map((agent) => agent.createdBy).filter(Boolean))];
+    const batches = [];
+    for (let start = 0; start < ids.length; start += 100) batches.push(ids.slice(start, start + 100));
+    try {
+      const owners = [];
+      for (const batch of batches) {
+        const params = new URLSearchParams({ ids: batch.join(',') });
+        const response = await api.get(`/api/v1/admin/users/identities?${params}`);
+        if (response.success !== true) throw new Error(response.message || '归属用户加载失败');
+        owners.push(...(response.data || []));
+      }
+      setUsers((current) => [...new Map([...current, ...owners].map((user) => [user.userId, user])).values()]);
+    } catch (error) {
+      toast(error.message || '归属用户加载失败', 'error');
+    }
+  }, [api, toast]);
 
   const userById = useMemo(() => new Map(users.map((user) => [user.userId, user])), [users]);
   const modelById = useMemo(() => new Map(models.map((model) => [
@@ -28,10 +46,6 @@ export function AgentsPage({ api, toast, onOpenTraces }) {
     model.name || model.displayName || model.modelName || model.modelId
   ])), [models]);
 
-  const ownerLabel = (createdBy) => {
-    const owner = userById.get(createdBy);
-    return owner ? [owner.username, owner.nickname].filter(Boolean).join(' ') : createdBy || '';
-  };
 
   const tableColumns = [
     {
@@ -65,23 +79,18 @@ export function AgentsPage({ api, toast, onOpenTraces }) {
         title="用户 Agent"
         desc="查看用户 Agent 的归属、能力和运行状态；个性化配置由所属用户维护"
         listUrl="/api/v1/agents"
-        listKey="agents"
         idKey="agentId"
+        onItemsLoaded={loadOwners}
         toggleUrl={(id) => `/api/v1/agents/${id}/enabled`}
         searchPlaceholder="搜索名称或归属用户"
-        searchText={(item) => [item.name, item.description, item.createdBy, ownerLabel(item.createdBy), item.defaultAgent ? '主 Agent' : '专家助手'].filter(Boolean).join(' ')}
-        filterPredicate={(item) => (!ownerFilter || item.createdBy === ownerFilter)
-          && (!roleFilter || (roleFilter === 'PRIMARY') === Boolean(item.defaultAgent))}
+        listFilters={{ ownerId: ownerFilter, role: roleFilter }}
         headerExtra={<>
           <select className="select compact-select" aria-label="按 Agent 角色筛选" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
             <option value="">全部角色</option>
             <option value="PRIMARY">主 Agent</option>
             <option value="EXPERT">专家助手</option>
           </select>
-          <select className="select compact-select" aria-label="按归属用户筛选" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
-            <option value="">全部用户</option>
-            {users.map((user) => <option key={user.userId} value={user.userId}>{user.username}{user.nickname ? ` · ${user.nickname}` : ''}</option>)}
-          </select>
+          <AgentOwnerFilter api={api} value={ownerFilter} onChange={setOwnerFilter} />
         </>}
         fields={[]}
         tableColumns={tableColumns}

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.ConversationSessionRepository">
+    <!-- conversation_session：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO conversation_session (session_id,
+            user_id,
+            tenant_id,
+            model_id,
+            skill_id,
+            title,
+            status,
+            message_count,
+            total_tokens,
+            created_at,
+            updated_at,
+            last_access_at)
+        VALUES (#{sessionId},
+            #{userId},
+            #{tenantId},
+            #{modelId},
+            #{skillId},
+            #{title},
+            #{status},
+            #{messageCount},
+            #{totalTokens},
+            #{createdAt},
+            #{updatedAt},
+            #{lastAccessAt})
+    </insert>
+    <update id="update">
+        UPDATE conversation_session SET user_id = #{userId},
+            tenant_id = #{tenantId},
+            model_id = #{modelId},
+            skill_id = #{skillId},
+            title = #{title},
+            status = #{status},
+            message_count = #{messageCount},
+            total_tokens = #{totalTokens},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt},
+            last_access_at = #{lastAccessAt}
+        WHERE session_id = #{sessionId}
+    </update>
+    <select id="findById" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE session_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM conversation_session WHERE session_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session
+    </select>
+    <select id="findAllById" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                session_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM conversation_session WHERE session_id = #{id}
+    </delete>
+    <select id="findOwnedForUpdate" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT s.* FROM conversation_session s WHERE s.session_id = #{sessionId} AND s.user_id = #{userId} AND s.tenant_id = #{tenantId} FOR UPDATE
+    </select>
+    <select id="findByUserIdOrderByLastAccessAtDesc" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE user_id = #{userId} ORDER BY last_access_at DESC
+    </select>
+    <select id="findByUserIdAndStatusOrderByLastAccessAtDesc" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE user_id = #{userId} AND status = #{status} ORDER BY last_access_at DESC
+    </select>
+    <select id="findByTenantIdOrderByLastAccessAtDesc" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE tenant_id = #{tenantId} ORDER BY last_access_at DESC
+    </select>
+    <select id="findByUserIdAndStatus" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE user_id = #{userId} AND status = #{status}
+    </select>
+    <select id="findBySessionIdAndUserId" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE session_id = #{sessionId} AND user_id = #{userId}
+    </select>
+    <select id="findBySessionIdAndUserIdAndTenantId" resultType="com.ai.model.ConversationSessionEntity">
+        SELECT * FROM conversation_session WHERE session_id = #{sessionId} AND user_id = #{userId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM conversation_session WHERE user_id = #{userId}
+    </select>
+</mapper>

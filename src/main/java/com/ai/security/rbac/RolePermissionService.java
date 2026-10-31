@@ -1,12 +1,9 @@
 package com.ai.security.rbac;
 
-import com.ai.config.CacheNames;
 import com.ai.security.SecurityConstants;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -103,14 +100,6 @@ public class RolePermissionService {
         permissions.add(permission);
         role.setPermissions(permissions);
         roleRepository.save(role);
-    }
-
-    @Cacheable(value = CacheNames.ROLES, key = "'entity_all'")
-    @Transactional(readOnly = true)
-    public List<SysRole> listRoles() {
-        return roleRepository.findAll().stream()
-                .sorted(Comparator.comparing(SysRole::getRoleCode))
-                .toList();
     }
 
     private String normalizeRoleCode(String roleCode) {

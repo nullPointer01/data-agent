@@ -1,14 +1,5 @@
 package com.ai.agent.eval;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -17,72 +8,43 @@ import java.util.UUID;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_eval_sample", indexes = {
-        @Index(name = "idx_agent_eval_sample_dataset", columnList = "tenant_id,dataset_id,dataset_version,sort_order")
-}, uniqueConstraints = {
-        @UniqueConstraint(name = "uk_agent_eval_sample_key", columnNames = {"dataset_id", "sample_key"})
-})
 public class AgentEvalSampleEntity {
 
-    @Id
-    @Column(name = "sample_id", nullable = false, length = 64)
     private String sampleId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;
 
-    @Column(name = "dataset_id", nullable = false, length = 64)
     private String datasetId;
 
-    @Column(name = "dataset_version", nullable = false)
     private int datasetVersion;
 
-    @Column(name = "sample_key", nullable = false, length = 64)
     private String sampleKey;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
     private String question;
 
-    @Column(name = "expected_intent", length = 64)
     private String expectedIntent;
 
-    @Column(name = "expected_mode", length = 32)
     private String expectedMode;
 
-    @Lob
-    @Column(name = "expected_context_plan_json", columnDefinition = "TEXT")
     private String expectedContextPlanJson;
 
-    @Lob
-    @Column(name = "task_contract_json", nullable = false, columnDefinition = "LONGTEXT")
     private String taskContractJson;
 
-    @Lob
-    @Column(name = "expected_tools_json", columnDefinition = "TEXT")
     private String expectedToolsJson;
 
-    @Column(name = "expected_approval_required")
     private Boolean expectedApprovalRequired;
 
-    @Column(name = "invalid_loop_expected")
     private Boolean invalidLoopExpected;
 
-    @Lob
-    @Column(name = "rag_expected_references_json", columnDefinition = "TEXT")
     private String ragExpectedReferencesJson;
 
-    @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
-    @Column(nullable = false)
     private boolean enabled = true;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         sampleId = sampleId == null ? UUID.randomUUID().toString() : sampleId;
         createdAt = createdAt == null ? Instant.now() : createdAt;
     }

@@ -1,8 +1,6 @@
 package com.ai.agent.runtime.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -16,8 +14,6 @@ import java.util.function.Consumer;
  */
 @Component
 public class AgentSseEventWriter {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(AgentSseEventWriter.class);
 
     private final ObjectMapper objectMapper;
 
@@ -50,20 +46,21 @@ public class AgentSseEventWriter {
     }
 
     private void write(Consumer<String> emitter, AgentEvent event) {
+        emitter.accept(encode(event));
+    }
+
+    /** HTTP 与持久日志共用同一事件协议，编码失败不能静默遗漏。 */
+    public String encode(AgentEvent event) {
         Map<String, Object> body = new LinkedHashMap<>(event.payload());
         body.put("type", legacyType(event.type()));
         body.put("runId", event.runId());
         body.put("mode", event.mode().name());
         body.put("eventTime", event.occurredAt().toString());
-        String serialized;
         try {
-            serialized = objectMapper.writeValueAsString(body);
+            return objectMapper.writeValueAsString(body);
         } catch (Exception e) {
-            LOGGER.warn("序列化 Agent SSE 事件失败: runId={}, type={}", event.runId(), event.type(), e);
-            return;
+            throw new IllegalStateException("Agent 事件编码失败", e);
         }
-        // 传输失败必须交给上层驱动取消，不能在序列化适配器里吞掉。
-        emitter.accept(serialized);
     }
 
     private String legacyType(AgentEventType type) {

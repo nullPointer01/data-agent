@@ -3,6 +3,7 @@ package com.ai.security.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Min;
 
 import java.util.Set;
 
@@ -30,6 +31,6 @@ public record AdminCreateUserRequest(
 
         Boolean enabled,
 
-        Long dailyTokenLimit
+        @Min(value = -1, message = "每日 Token 配额只能为 -1、不小于 0 的整数") Long dailyTokenLimit
 ) {
 }

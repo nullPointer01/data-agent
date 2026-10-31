@@ -1,4 +1,4 @@
--- 索引 Outbox。部署未开启 Hibernate ddl-auto=update 时，在启动新版本前执行此建表语句。
+-- 历史手工升级脚本。当前版本由 Flyway V1/V2 管理索引任务及运行模式，无需重复执行。
 -- 将旧 Hibernate 可能生成的原生 ENUM 转成 VARCHAR，允许内部 PLANNING 阶段；不改已有模式值。
 ALTER TABLE agent_run_state MODIFY COLUMN mode VARCHAR(32) NOT NULL;
 -- 不删除或重建任何现有向量/全文索引。

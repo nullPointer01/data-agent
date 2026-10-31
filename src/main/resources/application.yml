@@ -1,12 +1,30 @@
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: data_agent
+    password: data_agent_local
+    virtual-host: /data-agent
+    connection-timeout: 3s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: false
   profiles:
     default: local
-  jpa:
-    open-in-view: false
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: false
+  flyway:
+    enabled: true
+    # 接管已有库；V1 只创建缺失表，已有表与数据保留。
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
   servlet:
     multipart:
       max-file-size: 50MB
@@ -21,6 +39,14 @@ spring:
         pool:
           max-active: 8
           min-idle: 0
+
+mybatis:
+  mapper-locations: classpath*:mappers/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    # CAS 后立刻重读数据库，避免会话缓存返回旧版本/租约。
+    local-cache-scope: STATEMENT
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
 
 langchain4j:
   open-ai:
@@ -67,20 +93,34 @@ app:
     requests-per-minute: 20
   token-quota:
     daily-limit-per-user: 1000000
+    zone-id: Asia/Shanghai
+    reservation-ttl: PT10M
+    input-safety-tokens: 256
+    default-output-tokens: 4096
   security:
     bootstrap-admin-users: super
     registration:
       enabled: false
       tenant-id: default
-  index-tasks:
-    # 只扫描 MySQL 任务；外部索引由独立有界线程池处理。
-    scan-delay-ms: 2000
+  background-tasks:
+    # MQ 负责及时分发；每分钟只补偿未完成任务，保留崩溃恢复能力。
+    recovery-delay-ms: 60000
+  conversation:
+    retention:
+      enabled: true
+      # 只清理用户已删除的会话，正常/归档会话不自动过期。
+      deleted-days: 30
+      cron: "0 17 * * * *"
+      session-batch: 10
+      row-batch: 200
   sse:
     timeout-ms: 600000
-    core-pool-size: 2
-    max-pool-size: 8
-    queue-capacity: 100
   agent:
+    background:
+      event-retention-days: 7
+      core-pool-size: 2
+      max-pool-size: 8
+      queue-capacity: 100
     planning:
       # 精确能力介绍使用本地响应；其他请求基于会话和已授权能力描述做语义规划。
       semantic-router-enabled: true
@@ -108,14 +148,20 @@ app:
       # 按项目模型 ID 配置已确认的 tokenizer 名称；未知模型保守估算，不从厂商 URL 推断。
       model-tokenizers: {}
       compaction:
-        # 超限时按预算保留完整历史轮次；系统指令和当前任务放不下时明确拒绝。
+        # 超限才摘要已完成旧协议组；原文证据校验失败则整组裁剪，保护内容放不下时拒绝。
         enabled: true
-        model-summary-enabled: false
+        model-summary-enabled: true
+        summary-input-tokens: 8192
+        summary-output-tokens: 768
+        minimum-savings-tokens: 1024
+        max-summaries-per-run: 2
     durable:
       # 是否启用持久化审批及沙箱工具由各环境 Profile 显式决定。
       approval-ttl: 24h
       lease-duration: 60s
       scan-interval: PT15S
+      # 审批通过由 MQ 唤醒；这里只补偿漏投和失效租约，不再高频扫恢复候选。
+      recovery-interval: PT1M
       terminal-retention: 30d
       scan-batch-size: 50
       max-resume-attempts: 3

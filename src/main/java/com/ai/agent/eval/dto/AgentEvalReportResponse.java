@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 一次版本化 Agent Eval 的聚合报告与样本级安全证据。
+ * 一次版本化 Agent Eval 的聚合报告；样本安全证据由独立分页接口读取。
  *
  * @author data-agent
  */
@@ -19,15 +19,9 @@ public record AgentEvalReportResponse(
         AgentSnapshot agent,
         RunCounts counts,
         Metrics metrics,
-        List<SampleResult> samples,
         String errorSummary,
         Instant startedAt,
         Instant completedAt) {
-
-    public AgentEvalReportResponse {
-        samples = samples == null ? List.of() : List.copyOf(samples);
-    }
-
     /** 评测数据集版本摘要。 */
     public record DatasetSummary(String datasetId, String name, String description,
             int datasetVersion, String status, long enabledSamples) {

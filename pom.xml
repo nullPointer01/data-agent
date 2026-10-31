@@ -36,6 +36,11 @@
   </parent>
   
   <dependencies>
+        <!-- 后台任务由官方 Spring AMQP 分发，主库任务负责恢复与去重。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
         <!-- 通用重试与熔断交给框架，业务层保留错误分类、预算和指标。 -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
@@ -52,8 +57,18 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+        <!-- 表结构由版本化 SQL 管理；不再由 ORM 根据实体自动改表。 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

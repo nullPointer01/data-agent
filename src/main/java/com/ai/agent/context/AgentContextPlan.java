@@ -108,6 +108,8 @@ public record AgentContextPlan(
         CURRENT_TASK,
         UNRESOLVED_TOOL_PROTOCOL,
         ACTIVE_APPROVAL,
+        TASK_SUMMARY,
+        SKILL_INSTRUCTION,
         RECENT_EVIDENCE
     }
 

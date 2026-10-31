@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.agent.eval.AgentEvalMapper">
+    <insert id="insertRun">
+        INSERT INTO agent_eval_run (eval_run_id,
+            tenant_id,
+            dataset_id,
+            dataset_version,
+            agent_id,
+            agent_profile_version,
+            model_id,
+            harness_config_identity,
+            status,
+            total_samples,
+            completed_samples,
+            passed_samples,
+            failed_samples,
+            not_evaluated_samples,
+            metrics_json,
+            error_summary,
+            created_by,
+            row_version,
+            started_at,
+            completed_at)
+        VALUES (#{evalRunId},
+            #{tenantId},
+            #{datasetId},
+            #{datasetVersion},
+            #{agentId},
+            #{agentProfileVersion},
+            #{modelId},
+            #{harnessConfigIdentity},
+            #{status},
+            #{totalSamples},
+            #{completedSamples},
+            #{passedSamples},
+            #{failedSamples},
+            #{notEvaluatedSamples},
+            #{metricsJson},
+            #{errorSummary},
+            #{createdBy},
+            #{rowVersion},
+            #{startedAt},
+            #{completedAt})
+    </insert>
+    <insert id="insertResult">
+        INSERT INTO agent_eval_result (result_id,
+            tenant_id,
+            eval_run_id,
+            sample_id,
+            sample_key,
+            agent_run_id,
+            trace_id,
+            observed_intent,
+            observed_mode,
+            observed_context_plan_json,
+            outcome_status,
+            reason_code,
+            outcome_evaluation_json,
+            observed_tools_json,
+            approval_observed,
+            invalid_loop_observed,
+            duration_ms,
+            token_usage,
+            token_usage_estimated,
+            error_summary,
+            created_at)
+        VALUES (#{resultId},
+            #{tenantId},
+            #{evalRunId},
+            #{sampleId},
+            #{sampleKey},
+            #{agentRunId},
+            #{traceId},
+            #{observedIntent},
+            #{observedMode},
+            #{observedContextPlanJson},
+            #{outcomeStatus},
+            #{reasonCode},
+            #{outcomeEvaluationJson},
+            #{observedToolsJson},
+            #{approvalObserved},
+            #{invalidLoopObserved},
+            #{durationMs},
+            #{tokenUsage},
+            #{tokenUsageEstimated},
+            #{errorSummary},
+            #{createdAt})
+    </insert>
+    <update id="updateRun">
+        UPDATE agent_eval_run SET tenant_id = #{tenantId},
+            dataset_id = #{datasetId},
+            dataset_version = #{datasetVersion},
+            agent_id = #{agentId},
+            agent_profile_version = #{agentProfileVersion},
+            model_id = #{modelId},
+            harness_config_identity = #{harnessConfigIdentity},
+            status = #{status},
+            total_samples = #{totalSamples},
+            completed_samples = #{completedSamples},
+            passed_samples = #{passedSamples},
+            failed_samples = #{failedSamples},
+            not_evaluated_samples = #{notEvaluatedSamples},
+            metrics_json = #{metricsJson},
+            error_summary = #{errorSummary},
+            created_by = #{createdBy},
+            row_version = row_version + 1,
+            started_at = #{startedAt},
+            completed_at = #{completedAt}
+        WHERE eval_run_id = #{evalRunId} AND tenant_id = #{tenantId} AND row_version = #{rowVersion}
+    </update>
+    <select id="findRun" resultType="com.ai.agent.eval.AgentEvalRunEntity">
+        SELECT * FROM agent_eval_run WHERE eval_run_id = #{runId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="lockRun" resultType="com.ai.agent.eval.AgentEvalRunEntity">
+        SELECT * FROM agent_eval_run WHERE eval_run_id = #{runId} AND tenant_id = #{tenantId} FOR UPDATE
+    </select>
+    <select id="findDataset" resultType="com.ai.agent.eval.AgentEvalDatasetEntity">
+        SELECT * FROM agent_eval_dataset WHERE dataset_id = #{datasetId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="listReadyDatasets" resultType="com.ai.agent.eval.AgentEvalDatasetEntity">
+        SELECT * FROM agent_eval_dataset WHERE tenant_id = #{tenantId} AND status = 'READY' ORDER BY updated_at DESC, dataset_id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="listRuns" resultType="com.ai.agent.eval.AgentEvalRunEntity">
+        SELECT * FROM agent_eval_run WHERE tenant_id = #{tenantId} ORDER BY started_at DESC, eval_run_id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="loadSamples" resultType="com.ai.agent.eval.AgentEvalSampleEntity">
+        SELECT * FROM agent_eval_sample WHERE tenant_id = #{tenantId} AND dataset_id = #{datasetId} AND dataset_version = #{version} AND enabled = true ORDER BY sort_order,
+            sample_key
+    </select>
+    <select id="countEnabledSamples" resultType="long">
+        SELECT COUNT(*) FROM agent_eval_sample WHERE tenant_id = #{tenantId} AND dataset_id = #{datasetId} AND dataset_version = #{version} AND enabled = true
+    </select>
+    <select id="listResults" resultType="com.ai.agent.eval.AgentEvalResultEntity">
+        SELECT * FROM agent_eval_result WHERE tenant_id = #{tenantId} AND eval_run_id = #{runId} ORDER BY created_at
+    </select>
+    <select id="countReadyDatasets" resultType="long">
+        SELECT COUNT(*) FROM agent_eval_dataset WHERE tenant_id = #{tenantId} AND status = 'READY'
+    </select>
+    <select id="countRuns" resultType="long">
+        SELECT COUNT(*) FROM agent_eval_run WHERE tenant_id = #{tenantId}
+    </select>
+    <select id="loadSamplePage" resultType="com.ai.agent.eval.AgentEvalSampleEntity">
+        SELECT * FROM agent_eval_sample WHERE tenant_id = #{tenantId} AND dataset_id = #{datasetId}
+            AND dataset_version = #{version} AND enabled = true
+        ORDER BY sort_order, sample_key, sample_id
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="listPageResults" resultType="com.ai.agent.eval.AgentEvalResultEntity">
+        SELECT * FROM agent_eval_result WHERE tenant_id = #{tenantId} AND eval_run_id = #{runId}
+        AND sample_id IN
+        <foreach collection="sampleIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+    </select>
+</mapper>

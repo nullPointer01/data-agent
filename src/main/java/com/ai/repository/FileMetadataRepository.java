@@ -1,66 +1,70 @@
 package com.ai.repository;
 
 import com.ai.model.FileMetadata;
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import com.ai.model.FileProcessingStatus;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 上传文件元数据仓储。
- *
- * @author data-agent
- */
-public interface FileMetadataRepository extends JpaRepository<FileMetadata, String> {
+/** FileMetadata 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface FileMetadataRepository {
 
-    /**
-     * 查询租户文件。
-     *
-     * @param tenantId 租户编号
-     * @return 租户文件
-     */
-    List<FileMetadata> findByTenantId(String tenantId);
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default FileMetadata save(FileMetadata entity) {
+        boolean creating = entity.getFileId() == null || !existsById(entity.getFileId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+        }
+        return entity;
+    }
 
-    /**
-     * 查询租户用户上传的文件。
-     *
-     * @param tenantId 租户编号
-     * @param uploadedBy 用户编号
-     * @return 用户文件
-     */
-    List<FileMetadata> findByTenantIdAndUploadedBy(String tenantId, String uploadedBy);
+    int insert(FileMetadata entity);
+    int update(FileMetadata entity);
+    Optional<FileMetadata> findById(@Param("id") String id);
+    boolean existsById(@Param("id") String id);
+    List<FileMetadata> findAll();
+    List<FileMetadata> findAllById(@Param("ids") Collection<String> ids);
+    void deleteById(@Param("id") String id);
 
-    /**
-     * 按租户查询单个文件。
-     *
-     * @param fileId 文件编号
-     * @param tenantId 租户编号
-     * @return 文件元数据
-     */
-    Optional<FileMetadata> findByFileIdAndTenantId(String fileId, String tenantId);
+    default void delete(FileMetadata entity) {
+        deleteById(entity.getFileId());
+    }
 
-    /**
-     * 按租户和上传人查询单个文件。
-     */
-    Optional<FileMetadata> findByFileIdAndTenantIdAndUploadedBy(String fileId, String tenantId, String uploadedBy);
+    @Transactional
+    default List<FileMetadata> saveAll(Iterable<FileMetadata> entities) {
+        List<FileMetadata> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
 
-    /**
-     * 按内容哈希和租户查询已完成处理的文件（用于上传去重）。
-     *
-     * @param contentHash SHA-256 hex digest
-     * @param tenantId 租户编号
-     * @param status 期望的处理状态（通常为 COMPLETED）
-     * @return 匹配的已有文件
-     */
-    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndProcessingStatus(
-            String contentHash, String tenantId, FileProcessingStatus status);
+    List<FileMetadata> findByTenantIdAndUploadedBy(@Param("tenantId") String tenantId, @Param("uploadedBy") String uploadedBy);
 
-    /**
-     * 按内容哈希、租户和上传人查询已处理完成的文件。
-     */
-    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndUploadedByAndProcessingStatus(
-            String contentHash, String tenantId, String uploadedBy, FileProcessingStatus status);
+    Optional<FileMetadata> findByFileIdAndTenantId(@Param("fileId") String fileId, @Param("tenantId") String tenantId);
 
+    Optional<FileMetadata> findByFileIdAndTenantIdAndUploadedBy(@Param("fileId") String fileId,
+            @Param("tenantId") String tenantId,
+            @Param("uploadedBy") String uploadedBy);
+
+    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndProcessingStatus(@Param("contentHash") String contentHash,
+            @Param("tenantId") String tenantId,
+            @Param("status") FileProcessingStatus status);
+
+    Optional<FileMetadata> findFirstByContentHashAndTenantIdAndUploadedByAndProcessingStatus(@Param("contentHash") String contentHash,
+            @Param("tenantId") String tenantId,
+            @Param("uploadedBy") String uploadedBy,
+            @Param("status") FileProcessingStatus status);
 }

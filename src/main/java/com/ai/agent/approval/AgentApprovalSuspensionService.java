@@ -1,6 +1,7 @@
 package com.ai.agent.approval;
 
 import com.ai.agent.agentic.SupervisorExecutionScope;
+import com.ai.agent.agentic.SupervisorCheckpoint;
 import com.ai.agent.durable.AgentCheckpointCodec;
 import com.ai.agent.durable.AgentCheckpointMessageMapper;
 import com.ai.agent.durable.AgentCheckpointVersion;
@@ -16,7 +17,9 @@ import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.tool.governance.AgentToolApprovalContext;
 import com.ai.agent.tool.governance.AgentToolExecutionResult;
 import com.ai.agent.tool.governance.AgentToolInvocationContext;
+import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.util.CryptoUtil;
+import com.ai.conversation.ConversationAccessGuard;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -45,6 +48,8 @@ public class AgentApprovalSuspensionService {
     private final ObjectMapper objectMapper;
     private final CryptoUtil cryptoUtil;
     private final AgentApprovalTelemetry telemetry;
+    private final ConversationAccessGuard conversationAccess;
+    private final AgentConversationRecorder conversations;
 
     public AgentApprovalSuspensionService(AgentDurableRuntimeProperties properties,
             AgentRunControlFactory controlFactory,
@@ -54,7 +59,8 @@ public class AgentApprovalSuspensionService {
             AgentToolApprovalRepository approvalRepository,
             ObjectMapper objectMapper,
             CryptoUtil cryptoUtil,
-            AgentApprovalTelemetry telemetry) {
+            AgentApprovalTelemetry telemetry, ConversationAccessGuard conversationAccess,
+            AgentConversationRecorder conversations) {
         this.properties = properties;
         this.controlFactory = controlFactory;
         this.messageMapper = messageMapper;
@@ -64,16 +70,19 @@ public class AgentApprovalSuspensionService {
         this.objectMapper = objectMapper;
         this.cryptoUtil = cryptoUtil;
         this.telemetry = telemetry;
+        this.conversationAccess = conversationAccess;
+        this.conversations = conversations;
     }
 
     @Transactional
     public AgentApprovalSuspension suspend(ToolExecutionRequest request,
             AgentToolExecutionResult executionResult,
             AgentToolInvocationContext invocationContext,
-            List<ChatMessage> messages) {
-        SupervisorExecutionScope.requireApprovalContinuationSupported();
+            List<ChatMessage> messages, String modelId) {
+        SupervisorCheckpoint supervisor = SupervisorExecutionScope.capture(invocationContext.executorId());
         AgentRunContext runContext = AgentRunScope.current()
                 .orElseThrow(() -> new IllegalStateException("审批暂停缺少 Agent Run Context"));
+        conversationAccess.lockActive(runContext.sessionId(), runContext.tenantId(), runContext.userId());
         if (!properties.isEnabled() || !executionResult.approvalRequired()) {
             throw new IllegalStateException("持久化审批未启用或工具不需要审批");
         }
@@ -81,7 +90,7 @@ public class AgentApprovalSuspensionService {
             throw new IllegalStateException("Agent Run 无法进入等待审批状态");
         }
         try {
-            return persistSuspension(runContext, request, executionResult, invocationContext, messages);
+            return persistSuspension(runContext, request, executionResult, invocationContext, messages, modelId, supervisor);
         } catch (RuntimeException e) {
             runContext.control().failSuspension("审批现场持久化失败");
             throw e;
@@ -92,7 +101,7 @@ public class AgentApprovalSuspensionService {
             ToolExecutionRequest request,
             AgentToolExecutionResult executionResult,
             AgentToolInvocationContext invocationContext,
-            List<ChatMessage> messages) {
+            List<ChatMessage> messages, String modelId, SupervisorCheckpoint supervisor) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(properties.getApprovalTtl());
         String approvalId = UUID.randomUUID().toString();
@@ -107,9 +116,9 @@ public class AgentApprovalSuspensionService {
         AgentRunBudgetCheckpoint budget = controlFactory.freeze(runContext.control());
         AgentRunCheckpoint checkpoint = new AgentRunCheckpoint(
                 AgentCheckpointVersion.CURRENT,
-                runContext.mode(),
-                "react",
-                resolveModelId(runContext),
+                supervisor == null ? runContext.mode() : supervisor.leafCapabilities().mode(),
+                supervisor == null ? "react" : "supervisor",
+                modelId,
                 invocationContext.executorId(),
                 "TOOL_APPROVAL",
                 budget.usedIterations(),
@@ -120,7 +129,9 @@ public class AgentApprovalSuspensionService {
                 invocationContext.allowedToolNames(),
                 runContext.taskContract(),
                 budget,
-                now);
+                now,
+                supervisor,
+                invocationContext.initialToolNames());
         String checkpointCiphertext = checkpointCodec.encode(checkpoint);
 
         AgentToolApprovalEntity approval = new AgentToolApprovalEntity();
@@ -135,7 +146,7 @@ public class AgentApprovalSuspensionService {
         approval.setSafeArgumentSummary(approvalContext.safeArgumentSummary());
         approval.setRequestCiphertext(encryptRequest(request, executionResult.toolCallId()));
         approval.setExpiresAt(expiresAt);
-        approvalRepository.saveAndFlush(approval);
+        approvalRepository.save(approval);
 
         boolean suspended = runStore.suspendForApproval(
                 runContext.runId(),
@@ -146,6 +157,14 @@ public class AgentApprovalSuspensionService {
                 expiresAt);
         if (!suspended) {
             throw new IllegalStateException("Agent Run 审批暂停发生版本冲突");
+        }
+        // 审批可见前先保存可恢复的消息；批准速度不能决定是否能找到待更新的助手消息。
+        if (runContext.executionContext().getOrigin().isConversationPersistenceEnabled()) {
+            conversations.recordWaitingApprovalConversation(runContext.executionContext().getSession(),
+                    runContext.executionContext().getRequest(), null, checkpoint.modelId(), runContext.runId());
+        } else {
+            conversations.updateRunConversation(runContext.runId(),
+                    "工具操作已提交审批，审批通过后会继续执行。", null, checkpoint.modelId());
         }
         telemetry.record(
                 "REQUEST",
@@ -185,11 +204,6 @@ public class AgentApprovalSuspensionService {
 
     private String normalizeArguments(String arguments) {
         return arguments == null || arguments.isBlank() ? "{}" : arguments;
-    }
-
-    private String resolveModelId(AgentRunContext context) {
-        String modelId = context.executionContext().getRequest().getModelId();
-        return modelId == null ? "" : modelId;
     }
 
     private AgentRunStatus persistedActiveStatus(String runId) {

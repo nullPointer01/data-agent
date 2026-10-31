@@ -13,6 +13,7 @@ import com.ai.agent.context.AgentContextPlan.MessageKind;
 import com.ai.agent.context.AgentContextPlan.PlannedMessage;
 import com.ai.agent.context.AgentContextPlan.ProtectionReason;
 import com.ai.mcp.TokenMonitor;
+import com.ai.skill.SkillCatalog;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -48,6 +49,7 @@ public class AgentContextGovernor {
     private final AgentContextProperties properties;
     private final TokenMonitor tokenMonitor;
     private final ContextReductionStrategy reductionStrategy;
+    private final TaskContextCompactor taskCompactor;
     private final Map<String, List<ContextEvidenceRecord>> evidenceByRun = Collections.synchronizedMap(
             new LinkedHashMap<>(64, 0.75F, true) {
                 @Override
@@ -58,10 +60,11 @@ public class AgentContextGovernor {
 
     public AgentContextGovernor(AgentContextProperties properties,
             TokenMonitor tokenMonitor,
-            ConservativeContextReducer reductionStrategy) {
+            ConservativeContextReducer reductionStrategy, TaskContextCompactor taskCompactor) {
         this.properties = properties;
         this.tokenMonitor = tokenMonitor;
         this.reductionStrategy = reductionStrategy;
+        this.taskCompactor = taskCompactor;
     }
 
     /**
@@ -70,14 +73,14 @@ public class AgentContextGovernor {
      * @param sourceMessages 调用方准备的完整消息
      * @param toolSpecifications 本次调用可用工具定义
      * @param modelId 项目模型 ID
+     * @param summarizer 受治理摘要回调；内部摘要请求必须传 null
      * @return 可直接发送给模型的上下文与安全证据
      * @throws ContextLimitException protected 内容无法安全放入预算时抛出
      */
     public GovernedContext govern(List<ChatMessage> sourceMessages,
-            List<ToolSpecification> toolSpecifications,
-            String modelId) {
+            List<ToolSpecification> toolSpecifications, String modelId, TaskContextCompactor.Generator summarizer) {
         List<ChatMessage> messages = withTaskContract(sourceMessages);
-        AgentContextPlan plan = createPlan(messages, toolSpecifications, modelId);
+        AgentContextPlan plan = createPlan(messages, toolSpecifications, modelId, Set.of());
         if (plan.estimatedInputTokens() <= plan.inputTokenLimit()) {
             return publish(admitted(messages, plan));
         }
@@ -86,22 +89,36 @@ public class AgentContextGovernor {
                     plan.estimatedInputTokens(), messages.size()));
         }
 
-        ContextReductionStrategy.ReductionResult reduced = reductionStrategy.reduce(messages, plan);
-        long reducedInputTokens = reduced.estimatedMessageTokens() + plan.estimatedToolTokens();
-        if (!retainsProtectedMessages(plan, messages, reduced.messages())) {
-            throw publish(rejected(plan, Reason.PROTECTED_CONTEXT_EXCEEDS_LIMIT, reductionStrategy.strategyId(),
-                    reducedInputTokens, reduced.messages().size()));
+        var compacted = taskCompactor.compact(messages, plan, modelId, summarizer);
+        // 摘要已消耗真实模型预算，不能沿用调用前的 Run 剩余额度。
+        AgentContextPlan activePlan = createPlan(compacted.messages(), toolSpecifications, modelId, compacted.summaries());
+        boolean hasSummary = !compacted.summaries().isEmpty();
+        String strategy = hasSummary ? "GROUNDED_TASK_SUMMARY_V1" : reductionStrategy.strategyId();
+        if (activePlan.estimatedInputTokens() <= activePlan.inputTokenLimit()) {
+            Reason reason = compacted.evidence().outcome() == TaskContextCompactor.Outcome.GENERATED
+                    ? Reason.MODEL_SUMMARY_APPLIED : Reason.MODEL_SUMMARY_REUSED;
+            return publish(new GovernedContext(compacted.messages(), plan, evidence(plan, activePlan,
+                    Decision.REDUCED, reason, strategy, activePlan.estimatedInputTokens(),
+                    compacted.messages().size(), compacted.evidence())));
         }
-        if (reducedInputTokens > plan.inputTokenLimit()) {
-            Reason reason = plan.protectedMessageTokens() + plan.estimatedToolTokens() > plan.inputTokenLimit()
+        ContextReductionStrategy.ReductionResult reduced = reductionStrategy.reduce(compacted.messages(), activePlan);
+        long reducedInputTokens = reduced.estimatedMessageTokens() + activePlan.estimatedToolTokens();
+        if (hasSummary) strategy = "GROUNDED_TASK_SUMMARY_AND_TRIM_V1";
+        if (!retainsProtectedMessages(plan, messages, reduced.messages())) {
+            throw publish(new ContextLimitException("AGENT_CONTEXT_PROTECTED_CONTEXT_EXCEEDS_LIMIT",
+                    evidence(plan, activePlan, Decision.REJECTED, Reason.PROTECTED_CONTEXT_EXCEEDS_LIMIT,
+                            strategy, reducedInputTokens, reduced.messages().size(), compacted.evidence())));
+        }
+        if (reducedInputTokens > activePlan.inputTokenLimit()) {
+            Reason reason = activePlan.protectedMessageTokens() + activePlan.estimatedToolTokens() > activePlan.inputTokenLimit()
                     ? Reason.PROTECTED_CONTEXT_EXCEEDS_LIMIT : Reason.REDUCTION_INSUFFICIENT;
-            throw publish(rejected(plan, reason, reductionStrategy.strategyId(),
-                    reducedInputTokens, reduced.messages().size()));
+            throw publish(new ContextLimitException("AGENT_CONTEXT_" + reason.name(), evidence(plan, activePlan,
+                    Decision.REJECTED, reason, strategy, reducedInputTokens, reduced.messages().size(), compacted.evidence())));
         }
 
-        AgentContextEvidence evidence = evidence(plan, Decision.REDUCED,
-                Reason.CONSERVATIVE_TRIM_APPLIED, reductionStrategy.strategyId(),
-                reducedInputTokens, reduced.messages().size());
+        AgentContextEvidence evidence = evidence(plan, activePlan, Decision.REDUCED,
+                Reason.CONSERVATIVE_TRIM_APPLIED, strategy,
+                reducedInputTokens, reduced.messages().size(), compacted.evidence());
         return publish(new GovernedContext(reduced.messages(), plan, evidence));
     }
 
@@ -156,7 +173,7 @@ public class AgentContextGovernor {
 
     private AgentContextPlan createPlan(List<ChatMessage> messages,
             List<ToolSpecification> toolSpecifications,
-            String modelId) {
+            String modelId, Set<ChatMessage> summaries) {
         AgentRunContext runContext = AgentRunScope.current().orElse(null);
         long modelWindow = properties.resolveModelWindowTokens(modelId);
         long runRemaining = runRemainingTokens(runContext, modelWindow);
@@ -165,7 +182,7 @@ public class AgentContextGovernor {
                 - properties.getSafetyMarginTokens());
         long runInputLimit = Math.max(0L, runRemaining - properties.getReservedOutputTokens());
         long inputLimit = Math.min(modelInputLimit, runInputLimit);
-        List<PlannedMessage> plannedMessages = planMessages(messages, modelId);
+        List<PlannedMessage> plannedMessages = planMessages(messages, modelId, summaries);
         long messageTokens = plannedMessages.stream().mapToLong(PlannedMessage::estimatedTokens).sum();
         long toolTokens = estimateToolTokens(toolSpecifications, modelId);
         return new AgentContextPlan(
@@ -180,7 +197,7 @@ public class AgentContextGovernor {
                 properties.getCompaction().isEnabled());
     }
 
-    private List<PlannedMessage> planMessages(List<ChatMessage> messages, String modelId) {
+    private List<PlannedMessage> planMessages(List<ChatMessage> messages, String modelId, Set<ChatMessage> summaries) {
         List<Set<ProtectionReason>> protections = new ArrayList<>(messages.size());
         for (int index = 0; index < messages.size(); index++) {
             protections.add(EnumSet.noneOf(ProtectionReason.class));
@@ -189,6 +206,17 @@ public class AgentContextGovernor {
         protectCurrentTask(messages, protections);
         protectRecentMessages(messages, protections);
         protectUnresolvedToolProtocol(messages, protections);
+        for (int index = 0; index < messages.size(); index++) {
+            if (messages.get(index) instanceof ToolExecutionResultMessage result
+                    && (SkillCatalog.ACTIVATE_TOOL.equals(result.toolName())
+                        || SkillCatalog.READ_RESOURCE_TOOL.equals(result.toolName()))) {
+                // 当前 Skills 资源是操作步骤；不能摘要掉已加载的流程约束，再让模型自行补全。
+                protections.get(index).add(ProtectionReason.SKILL_INSTRUCTION);
+            }
+        }
+        for (int index = 0; index < messages.size(); index++) {
+            if (summaries.contains(messages.get(index))) protections.get(index).add(ProtectionReason.TASK_SUMMARY);
+        }
 
         List<PlannedMessage> planned = new ArrayList<>(messages.size());
         for (int index = 0; index < messages.size(); index++) {
@@ -328,6 +356,12 @@ public class AgentContextGovernor {
 
     private AgentContextEvidence evidence(AgentContextPlan plan, Decision decision, Reason reason,
             String strategy, long estimatedTokensAfter, int retainedMessageCount) {
+        return evidence(plan, plan, decision, reason, strategy, estimatedTokensAfter, retainedMessageCount, null);
+    }
+
+    private AgentContextEvidence evidence(AgentContextPlan plan, AgentContextPlan activePlan,
+            Decision decision, Reason reason, String strategy, long estimatedTokensAfter, int retainedMessageCount,
+            TaskContextCompactor.Evidence summary) {
         int protectedCount = (int) plan.messages().stream().filter(PlannedMessage::protectedMessage).count();
         return new AgentContextEvidence(
                 decision,
@@ -339,9 +373,9 @@ public class AgentContextGovernor {
                 retainedMessageCount,
                 protectedCount,
                 plan.modelWindowTokens(),
-                plan.runRemainingTokens(),
-                plan.inputTokenLimit(),
-                true);
+                activePlan.runRemainingTokens(),
+                activePlan.inputTokenLimit(),
+                true, summary);
     }
 
     private MessageKind messageKind(ChatMessage message) {

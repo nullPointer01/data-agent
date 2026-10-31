@@ -5,6 +5,7 @@ import com.ai.agent.tool.governance.AgentToolDescriptor;
 import com.ai.agent.tool.governance.AgentToolGovernanceProperties;
 import com.ai.agent.tool.governance.AgentToolRegistry;
 import com.ai.agent.tool.governance.AgentToolRiskLevel;
+import com.ai.api.CursorPageResponse;
 import com.ai.model.AgentProfile;
 import com.ai.model.SkillConfig;
 import com.ai.repository.AgentProfileRepository;
@@ -20,9 +21,11 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * 将现有 Tool Registry、Skill 配置和 Agent Profile 投影为统一能力目录。
@@ -71,12 +74,7 @@ public class AgentCapabilityRegistry {
             throw new IllegalArgumentException("能力目录租户不能为空");
         }
         Map<String, AgentCapabilityDescriptor> registered = new LinkedHashMap<>();
-        toolRegistry.registeredToolNames().stream()
-                .filter(name -> !AgentTools.isCapabilityAdapter(name))
-                .filter(name -> toolRegistry.isVisibleToTenant(name, tenantId))
-                .sorted()
-                .map(toolRegistry::find).flatMap(Optional::stream)
-                .map(this::toolDescriptor)
+        toolSnapshot(tenantId).stream()
                 .forEach(descriptor -> register(registered, descriptor));
         visibleSkills(tenantId).stream()
                 .map(this::skillDescriptor)
@@ -93,19 +91,45 @@ public class AgentCapabilityRegistry {
     }
 
     /**
-     * 按统一稳定标识查询租户可见能力。
-     *
-     * @param tenantId 当前租户
-     * @param identity 能力标识
-     * @return 匹配描述符
+     * 页面配置目录的候选页，与运行时完整快照分离。
+     * Skill/专家在 SQL 内限制租户、归属、搜索及读取量；Tool 来自有限内存注册表。
+     * 游标属于候选集合，后续 RBAC 过滤即使得到空页也必须保留这个推进位置。
      */
-    public Optional<AgentCapabilityDescriptor> find(String tenantId, String identity) {
-        if (identity == null || identity.isBlank()) {
-            return Optional.empty();
-        }
-        return snapshot(tenantId).stream()
-                .filter(descriptor -> descriptor.identity().equals(identity.trim()))
-                .findFirst();
+    public CursorPageResponse<AgentCapabilityDescriptor> candidates(String tenantId, String ownerId,
+            AgentCapabilityType type, String editingAgentId, String query, String after, int size,
+            Predicate<AgentCapabilityDescriptor> authorized) {
+        List<AgentCapabilityDescriptor> fetched = switch (type) {
+            case TOOL -> toolSnapshot(tenantId).stream()
+                    // 工具名本身也不能泄漏；先鉴权，再决定内存页边界。
+                    .filter(authorized)
+                    .filter(item -> after.isEmpty() || type.sourceId(item.identity()).compareTo(after) > 0)
+                    .filter(item -> matches(item, query))
+                    .limit(size + 1L).toList();
+            case SKILL -> skillRepository.findCapabilityCandidates(tenantId, query, after, size + 1)
+                    .stream().map(this::skillDescriptor).toList();
+            case SUB_AGENT -> agentRepository.findCapabilityCandidates(tenantId, ownerId, editingAgentId,
+                    query, after, size + 1).stream().map(this::agentDescriptor).toList();
+        };
+        fetched.forEach(validator::validate);
+        List<AgentCapabilityDescriptor> items = List.copyOf(fetched.subList(0, Math.min(size, fetched.size())));
+        boolean hasMore = fetched.size() > size;
+        return new CursorPageResponse<>(true, items, size, hasMore,
+                hasMore ? items.get(items.size() - 1).identity() : null);
+    }
+
+    private List<AgentCapabilityDescriptor> toolSnapshot(String tenantId) {
+        return toolRegistry.registeredToolNames().stream()
+                .filter(name -> !AgentTools.isCapabilityAdapter(name))
+                .filter(name -> toolRegistry.isVisibleToTenant(name, tenantId))
+                .sorted().map(toolRegistry::find).flatMap(Optional::stream)
+                .map(this::toolDescriptor).toList();
+    }
+
+    private boolean matches(AgentCapabilityDescriptor item, String query) {
+        String keyword = query.toLowerCase(Locale.ROOT);
+        return item.identity().toLowerCase(Locale.ROOT).contains(keyword)
+                || item.name().toLowerCase(Locale.ROOT).contains(keyword)
+                || (item.description() != null && item.description().toLowerCase(Locale.ROOT).contains(keyword));
     }
 
     private void register(Map<String, AgentCapabilityDescriptor> registered,
@@ -170,7 +194,7 @@ public class AgentCapabilityRegistry {
                 skill.getDescription(),
                 Map.of("type", "object", "properties", Map.of("skill_name", Map.of("type", "string")),
                         "required", List.of("skill_name")),
-                Map.of("type", "string", "contract", "skill-instructions"),
+                Map.of("type", "string", "contract", "skill-instructions", "privateSkill", skill.isPrivateSkill()),
                 resolveOwner(skill.getCreatedBy(), skill.getTenantId()),
                 skill.getTenantId(),
                 Set.of(USE_PERMISSION),

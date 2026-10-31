@@ -25,6 +25,7 @@ public record AgentRunEvidenceResponse(
         String terminationReason,
         String statusDetail,
         String approvalId,
+        String approvalExecutionStatus,
         Instant approvalExpiresAt,
         int usedIterations,
         int usedModelCalls,
@@ -41,6 +42,7 @@ public record AgentRunEvidenceResponse(
         Instant completedAt,
         String evidenceSource,
         boolean eventHistoryComplete,
+        boolean backgroundExecution,
         boolean taskContractPresent,
         AgentOutcomeEvaluation outcomeEvaluation,
         List<RunEvent> events) {

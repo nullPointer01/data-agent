@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.AgentProfileRepository">
+    <!-- agent_profile：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO agent_profile (agent_id,
+            name,
+            description,
+            system_prompt,
+            model_id,
+            capability_bindings,
+            execution_mode,
+            default_agent,
+            enabled,
+            tenant_id,
+            created_by,
+            created_at,
+            updated_at)
+        VALUES (#{agentId},
+            #{name},
+            #{description},
+            #{systemPrompt},
+            #{modelId},
+            #{capabilityBindings},
+            #{executionMode},
+            #{defaultAgent},
+            #{enabled},
+            #{tenantId},
+            #{createdBy},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE agent_profile SET name = #{name},
+            description = #{description},
+            system_prompt = #{systemPrompt},
+            model_id = #{modelId},
+            capability_bindings = #{capabilityBindings},
+            execution_mode = #{executionMode},
+            default_agent = #{defaultAgent},
+            enabled = #{enabled},
+            tenant_id = #{tenantId},
+            created_by = #{createdBy},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE agent_id = #{agentId}
+    </update>
+    <select id="findById" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE agent_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_profile WHERE agent_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile
+    </select>
+    <select id="findAllById" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                agent_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM agent_profile WHERE agent_id = #{id}
+    </delete>
+    <select id="findByTenantIdOrderByUpdatedAtDesc" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE tenant_id = #{tenantId} ORDER BY updated_at DESC
+    </select>
+    <select id="findByTenantIdAndCreatedByOrderByUpdatedAtDesc" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE tenant_id = #{tenantId} AND created_by = #{createdBy} ORDER BY updated_at DESC
+    </select>
+    <select id="findByAgentIdAndTenantId" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE agent_id = #{agentId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findByAgentIdAndTenantIdAndCreatedBy" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE agent_id = #{agentId} AND tenant_id = #{tenantId} AND created_by = #{createdBy}
+    </select>
+    <select id="findFirstByTenantIdAndCreatedByAndDefaultAgentTrueOrderByUpdatedAtDesc" resultType="com.ai.model.AgentProfile">
+        SELECT * FROM agent_profile WHERE tenant_id = #{tenantId} AND created_by = #{createdBy} AND default_agent = true ORDER BY updated_at DESC LIMIT 1
+    </select>
+    <sql id="listFilter">
+        (a.tenant_id = #{filter.tenantId}<if test="filter.includeShared"> OR a.tenant_id = 'default'</if>)
+        <if test="filter.ownerId != null and filter.ownerId != ''">AND a.created_by = #{filter.ownerId}</if>
+        <if test="filter.enabledOnly">AND a.enabled = true</if>
+        <if test="filter.defaultAgent != null">AND a.default_agent = #{filter.defaultAgent}</if>
+        <if test="filter.query != ''">
+            AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(a.name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(a.description, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(a.created_by, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(a.agent_id, ''))) > 0
+                OR EXISTS (SELECT 1 FROM sys_user u WHERE u.id = a.created_by AND u.tenant_id = a.tenant_id
+                    AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(u.username, ''))) > 0
+                        OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(u.nickname, ''))) > 0)))
+        </if>
+    </sql>
+    <select id="findListPage" resultType="com.ai.model.AgentProfile">
+        SELECT a.* FROM agent_profile a WHERE <include refid="listFilter"/>
+        ORDER BY a.updated_at DESC, a.agent_id DESC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM agent_profile a WHERE <include refid="listFilter"/>
+    </select>
+    <select id="findCapabilityCandidates" resultType="com.ai.model.AgentProfile">
+        SELECT agent_id, name, description, tenant_id, created_by, enabled, capability_bindings,
+            created_at, updated_at FROM agent_profile
+        WHERE tenant_id = #{tenantId} AND created_by = #{ownerId} AND default_agent = false
+        <if test="editingAgentId != null and editingAgentId != ''">AND agent_id != #{editingAgentId}</if>
+        <if test="after != ''">AND agent_id > #{after}</if>
+        <if test="query != ''">
+            AND (LOCATE(LOWER(#{query}), LOWER(COALESCE(name, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(description, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(CONCAT('agent:', agent_id))) > 0)
+        </if>
+        ORDER BY agent_id ASC LIMIT #{limit}
+    </select>
+</mapper>

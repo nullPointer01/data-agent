@@ -1,14 +1,5 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
 
 /**
@@ -16,77 +7,50 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_execution_trace")
 public class AgentExecutionTrace {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "trace_id", nullable = false, length = 64, unique = true)
     private String traceId;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "user_id", length = 64)
     private String userId;
 
-    @Column(name = "session_id", length = 128)
     private String sessionId;
 
-    @Column(name = "selected_agent", length = 128)
     private String selectedAgent;
 
     /** 历史字段名，当前记录 Chat、ReAct 或 Orchestrated 运行模式。 */
-    @Column(name = "selected_type", length = 32)
     private String selectedType;
 
-    @Column(length = 32)
     private String intent;
 
-    @Column(length = 32)
     private String complexity;
 
-    @Column(nullable = false)
     private boolean success;
 
-    @Column(name = "fallback_used", nullable = false)
     private boolean fallbackUsed;
 
-    @Column(name = "task_count", nullable = false)
     private int taskCount;
 
-    @Column(name = "duration_ms", nullable = false)
     private long durationMs;
 
-    @Column(length = 1024)
     private String question;
 
-    @Column(length = 1024)
     private String reason;
 
-    @Column(length = 1024)
     private String error;
 
-    @Lob
-    @Column(name = "plan_json", columnDefinition = "TEXT")
     private String planJson;
 
-    @Lob
-    @Column(name = "task_results_json", columnDefinition = "TEXT")
     private String taskResultsJson;
 
-    @Lob
-    @Column(name = "shared_context_json", columnDefinition = "TEXT")
     private String sharedContextJson;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         createdAt = LocalDateTime.now();
     }
 

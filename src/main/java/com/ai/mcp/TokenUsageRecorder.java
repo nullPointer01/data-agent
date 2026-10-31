@@ -1,92 +1,82 @@
 package com.ai.mcp;
 
-import com.ai.model.ModelConfig;
-import com.ai.model.SkillConfig;
-import com.ai.model.TokenUsage;
-import com.ai.repository.SkillConfigRepository;
-import com.ai.repository.TokenUsageRepository;
-import com.ai.security.SecurityContextHelper;
-import com.ai.service.ModelConfigService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.ai.agent.runtime.AgentRunControl;
+import com.ai.agent.runtime.AgentRunScope;
+import com.ai.agent.runtime.event.AgentEvent;
+import com.ai.agent.runtime.event.AgentEventType;
+import com.ai.service.TokenQuotaService;
+import com.ai.token.TokenAccountingException;
+import com.ai.token.TokenAccountingStatus;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 /**
- * 持久化模型令牌使用记录。
+ * 将厂商响应转换为用量合同，并通过日配额服务原子记账；不吞掉持久化失败。
  *
  * @author data-agent
  */
 @Component
 public class TokenUsageRecorder {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TokenUsageRecorder.class);
-    private static final String DIRECT_SKILL_ID = "direct";
-    private static final String DIRECT_SKILL_NAME = "直接调用";
-    private static final String DEFAULT_MODEL_NAME = "默认模型";
+    private final TokenQuotaService quotas;
+    private final TokenMonitor monitor;
 
-    private final ModelConfigService modelConfigService;
-    private final SkillConfigRepository skillConfigRepository;
-    private final TokenUsageRepository tokenUsageRepository;
-    private final SecurityContextHelper securityContextHelper;
-
-    public TokenUsageRecorder(ModelConfigService modelConfigService,
-            SkillConfigRepository skillConfigRepository,
-            TokenUsageRepository tokenUsageRepository,
-            SecurityContextHelper securityContextHelper) {
-        this.modelConfigService = modelConfigService;
-        this.skillConfigRepository = skillConfigRepository;
-        this.tokenUsageRepository = tokenUsageRepository;
-        this.securityContextHelper = securityContextHelper;
+    public TokenUsageRecorder(TokenQuotaService quotas, TokenMonitor monitor) {
+        this.quotas = quotas;
+        this.monitor = monitor;
     }
 
-    /**
-     * 记录一条令牌使用项。
-     *
-     * @param modelId 模型 ID
-     * @param skillId 技能 ID
-     * @param promptTokens 提示令牌计数
-     * @param completionTokens 完成令牌计数
-     * @param totalTokens total token count
-     * @param sessionId session id
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
-    public void record(String modelId, String skillId, long promptTokens,
-            long completionTokens, long totalTokens, String sessionId) {
+    /** 即使内容校验失败，厂商已返回的用量也必须先记账。 */
+    public void complete(TokenQuotaGuard.ReservedRequest attempt, ChatResponse response, AgentRunControl control) {
+        java.util.Objects.requireNonNull(attempt, "模型响应缺少预占身份");
+        if (response == null) { failed(attempt, control); return; }
+        var ticket = attempt.ticket();
+        var usage = response.tokenUsage();
+        var message = response.aiMessage();
+        String text = message == null || message.text() == null ? "" : message.text();
+        String tools = message != null && message.hasToolExecutionRequests() ? message.toolExecutionRequests().toString() : "";
+        boolean reported = usage != null && usage.inputTokenCount() != null && usage.outputTokenCount() != null
+                && usage.totalTokenCount() != null;
+        if (usage != null && usage.totalTokenCount() != null && usage.totalTokenCount() < 0) {
+            throw new TokenAccountingException("厂商返回了非法 Token 用量", null);
+        }
+        long input = usage != null && usage.inputTokenCount() != null ? usage.inputTokenCount() : ticket.estimatedInputTokens();
+        long output = usage != null && usage.outputTokenCount() != null ? usage.outputTokenCount()
+                : monitor.estimateTokens(text + tools, ticket.modelId());
+        long total = Math.max(Math.addExact(input, output), usage != null && usage.totalTokenCount() != null
+                ? usage.totalTokenCount() : 0L);
+        long charged;
         try {
-            TokenUsage usage = new TokenUsage();
-            usage.setUserId(securityContextHelper.getCurrentUserId());
-            usage.setTenantId(securityContextHelper.getCurrentTenantId());
-            usage.setModelId(modelId);
-            usage.setSkillId(skillId);
-            usage.setPromptTokens(promptTokens);
-            usage.setCompletionTokens(completionTokens);
-            usage.setTotalTokens(totalTokens);
-            usage.setSessionId(sessionId);
-            usage.setModelName(resolveModelName(modelId));
-            usage.setSkillName(resolveSkillName(skillId));
-            tokenUsageRepository.save(usage);
-        } catch (Exception e) {
-            LOGGER.warn("Failed to record token usage", e);
+            charged = quotas.settle(ticket, input, output, total,
+                    reported ? TokenAccountingStatus.ACTUAL : TokenAccountingStatus.ESTIMATED);
+        } catch (RuntimeException error) {
+            throw new TokenAccountingException("模型已响应，但 Token 结算未确认；预占仍保留", error);
         }
+        budget(attempt, control, charged, !reported);
     }
 
-    private String resolveModelName(String modelId) {
-        if (modelId == null) {
-            return DEFAULT_MODEL_NAME;
+    /** 失败用完整预占上界占住配额，不能只凭可见 partialText 低估思考/工具输出。 */
+    public void failed(TokenQuotaGuard.ReservedRequest attempt, AgentRunControl control) {
+        if (attempt == null) return;
+        long charged;
+        try {
+            charged = quotas.fail(attempt.ticket());
+        } catch (RuntimeException error) {
+            throw new TokenAccountingException("Token 失败结算未确认；预占仍保留", error);
         }
-        ModelConfig config = modelConfigService.getModel(modelId);
-        return config != null ? config.getName() : modelId;
+        budget(attempt, control, charged, true);
     }
 
-    private String resolveSkillName(String skillId) {
-        if (skillId == null || DIRECT_SKILL_ID.equals(skillId)) {
-            return DIRECT_SKILL_NAME;
-        }
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        return skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId)
-                .map(SkillConfig::getName)
-                .orElse(skillId);
+    private void budget(TokenQuotaGuard.ReservedRequest attempt, AgentRunControl control, long charged, boolean estimated) {
+        if (control == null || charged <= 0) return;
+        long previous = attempt.runChargedTokens().getAndAccumulate(charged, Math::max);
+        long delta = charged - previous;
+        if (delta <= 0) return;
+        // 日账本允许迟到响应退款；已终止 Run 不恢复执行，运行计数保持保守值。
+        control.afterModelCall(delta, estimated);
+        AgentRunScope.current().ifPresent(context -> context.eventSink().emit(
+                AgentEvent.of(context, AgentEventType.BUDGET_UPDATED, Map.of("usage", context.snapshot()))));
     }
 }

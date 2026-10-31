@@ -3,6 +3,8 @@ package com.ai.agent.tool;
 import com.ai.agent.AgentExecutionContext;
 import com.ai.agent.AgentRunOrigin;
 import com.ai.agent.agentic.AgenticDelegationWorkflow;
+import com.ai.agent.agentic.SupervisorExecutionScope;
+import com.ai.agent.tool.ai.AgentToolSuspendedException;
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.capability.AgentDelegationGuard;
@@ -70,6 +72,9 @@ public class AgentDelegationToolService {
         // 防环路/深度检查覆盖整个工作流，非法委派不能先消耗一次规划模型调用。
         return delegationGuard.call(parentSnapshot.agentId(), childAgentId, () -> {
             AnalysisResponse response = workflow.execute(childProfile, childExecutionContext);
+            if (SupervisorExecutionScope.active() && response != null && response.getApprovalId() != null) {
+                throw new AgentToolSuspendedException(response.getApprovalId());
+            }
             if (response == null || !response.isSuccess() || response.getResult() == null) {
                 throw new IllegalStateException("子 Agent 未返回可用结果");
             }

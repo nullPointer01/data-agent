@@ -1,13 +1,13 @@
 package com.ai.security.rbac;
 
-import com.ai.config.CacheNames;
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
 import com.ai.security.dto.PermissionResponse;
+import com.ai.security.dto.RoleListResponse;
 import com.ai.security.dto.RoleResponse;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -27,20 +27,23 @@ public class RbacAdminService {
         this.permissionRepository = permissionRepository;
     }
 
-    @Cacheable(value = CacheNames.ROLES, key = "'all'")
     @Transactional(readOnly = true)
-    public List<RoleResponse> listRoles() {
-        return roleRepository.findAll().stream()
-                .map(this::toRoleResponse)
-                .toList();
+    public RoleListResponse listRoles(int page, int size, String query) {
+        ListPaging.page(page, size);
+        String keyword = ListPaging.keyword(query);
+        var counts = roleRepository.countList(keyword);
+        var result = ListPageResponse.fetch(page, size, counts.total(),
+                pageable -> roleRepository.findListPage(keyword, pageable)).map(this::toRoleResponse);
+        return new RoleListResponse(true, result.items(), result.page(), result.size(), result.total(),
+                counts.enabledCount(), counts.systemCount());
     }
 
-    @Cacheable(value = CacheNames.PERMISSIONS, key = "'all'")
     @Transactional(readOnly = true)
-    public List<PermissionResponse> listPermissions() {
-        return permissionRepository.findAll().stream()
-                .map(this::toPermissionResponse)
-                .toList();
+    public ListPageResponse<PermissionResponse> listPermissions(int page, int size, String query) {
+        ListPaging.page(page, size);
+        String keyword = ListPaging.keyword(query);
+        return ListPageResponse.fetch(page, size, permissionRepository.countList(keyword),
+                pageable -> permissionRepository.findListPage(keyword, pageable)).map(this::toPermissionResponse);
     }
 
     private RoleResponse toRoleResponse(SysRole role) {

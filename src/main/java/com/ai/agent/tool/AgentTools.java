@@ -49,6 +49,8 @@ public class AgentTools {
     private final AgentUtilityToolService agentUtilityToolService;
     private final AgentChartToolService agentChartToolService;
     private final AgentSandboxToolService agentSandboxToolService;
+    private final AgentMemoryToolService agentMemoryToolService;
+    private final com.ai.skill.SkillLearningService skillLearning;
 
     public AgentTools(AgentDelegationToolService agentDelegationToolService,
             AgentFileToolService agentFileToolService,
@@ -57,7 +59,8 @@ public class AgentTools {
             AgentDataSourceToolService agentDataSourceToolService,
             AgentUtilityToolService agentUtilityToolService,
             AgentChartToolService agentChartToolService,
-            AgentSandboxToolService agentSandboxToolService) {
+            AgentSandboxToolService agentSandboxToolService,
+            AgentMemoryToolService agentMemoryToolService, com.ai.skill.SkillLearningService skillLearning) {
         this.agentDelegationToolService = agentDelegationToolService;
         this.agentFileToolService = agentFileToolService;
         this.agentKnowledgeToolService = agentKnowledgeToolService;
@@ -66,6 +69,8 @@ public class AgentTools {
         this.agentUtilityToolService = agentUtilityToolService;
         this.agentChartToolService = agentChartToolService;
         this.agentSandboxToolService = agentSandboxToolService;
+        this.agentMemoryToolService = agentMemoryToolService;
+        this.skillLearning = skillLearning;
     }
 
     // ==================== [正式功能] 子 Agent 委派；Skill 工具由官方 Skills 提供 ====================
@@ -78,6 +83,15 @@ public class AgentTools {
     }
 
     // ==================== [正式功能] 文件、会话与记忆 ====================
+
+    @Tool("用户表达长期操作方法，或本轮完成多个业务工具形成可复用流程时，主动提议个人技能候选。USER_PROCEDURE 依据用户方法；EXECUTED_WORKFLOW 由服务端读取真实成功工具轨迹。普通事实偏好不用。用户确认后才启用")
+    @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = false, idempotent = true, retryable = false,
+            timeoutMs = 60000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 4000)
+    public String proposeSkill(@P("本轮用户原话中的方法或任务目标完整子句，不得改写") String evidence,
+            @P("USER_PROCEDURE：用户长期方法；EXECUTED_WORKFLOW：当前真实成功的多工具流程") com.ai.skill.SkillLearningSource source) {
+        var candidate = skillLearning.propose(evidence, source);
+        return "已生成个人技能候选，尚未启用。请用户在“上下文 → 技能经验”检查并确认。候选ID：" + candidate.skillId();
+    }
 
     @Tool("获取已上传文件的内容")
     @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = true, idempotent = true, retryable = true,
@@ -107,11 +121,25 @@ public class AgentTools {
         return agentConversationToolService.askUserForInfo(message);
     }
 
-    @Tool("搜索相关的历史对话、文件内容和知识，实现长期记忆")
+    @Tool("搜索当前用户已保存的长期个人记忆，返回记忆ID与内容；不搜索原始问答或知识库")
     @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = true, idempotent = true, retryable = true,
             timeoutMs = 20000, maxAttempts = 2, requiredPermission = "app:use", maxResultLength = 12000)
     public String searchMemory(@P("搜索关键词") String query) {
         return agentKnowledgeToolService.searchMemory(query);
+    }
+
+    @Tool("仅在用户本轮明确要求长期记住或修正个人事实、偏好时保存；证据必须逐字摘自用户原话。返回成功才表示已保存")
+    @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = false, idempotent = false, retryable = false,
+            timeoutMs = 60000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 4000)
+    public String saveMemory(@P("用户本轮原话中要求保存的事实或偏好证据片段，不能改写") String evidence) {
+        return agentMemoryToolService.saveMemory(evidence);
+    }
+
+    @Tool("用户明确要求忘记某条个人记忆时，按 searchMemory 返回的准确记忆ID删除本人记忆；目标不清楚先询问用户")
+    @AgentToolPolicy(risk = AgentToolRiskLevel.MEDIUM, readOnly = false, idempotent = false, retryable = false,
+            timeoutMs = 60000, maxAttempts = 1, requiredPermission = "app:use", maxResultLength = 4000)
+    public String forgetMemory(@P("检索返回且用户明确要求删除的记忆ID") String memoryId) {
+        return agentMemoryToolService.forgetMemory(memoryId);
     }
 
     // ==================== [正式功能] 通用计算与时间 ====================

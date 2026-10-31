@@ -2,6 +2,7 @@ package com.ai.agent.durable;
 
 import com.ai.agent.runtime.AgentRunRegistry;
 import com.ai.agent.runtime.AgentRunStatus;
+import com.ai.agent.approval.ApprovalEventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -33,15 +34,17 @@ public class AgentRunLeaseService {
     private final AgentRunStateRepository repository;
     private final AgentDurableRuntimeProperties properties;
     private final AgentRunRegistry runRegistry;
+    private final ApprovalEventPublisher approvalEvents;
     private final String nodeId = "agent-node-" + UUID.randomUUID();
     private final ConcurrentMap<String, ActiveLease> activeLeases = new ConcurrentHashMap<>();
 
     public AgentRunLeaseService(AgentRunStateRepository repository,
             AgentDurableRuntimeProperties properties,
-            AgentRunRegistry runRegistry) {
+            AgentRunRegistry runRegistry, ApprovalEventPublisher approvalEvents) {
         this.repository = repository;
         this.properties = properties;
         this.runRegistry = runRegistry;
+        this.approvalEvents = approvalEvents;
     }
 
     @Transactional
@@ -70,6 +73,7 @@ public class AgentRunLeaseService {
             return Optional.empty();
         }
         AgentRunStateEntity claimed = repository.findById(runId).orElseThrow();
+        approvalEvents.changed(claimed);
         ActiveLease active = new ActiveLease(claimed.getVersion(), leaseUntil);
         activeLeases.put(runId, active);
         return Optional.of(new AgentRunLease(runId, nodeId, claimed.getVersion(), leaseUntil));

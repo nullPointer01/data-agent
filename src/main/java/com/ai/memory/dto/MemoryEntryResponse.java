@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
  * @param createdAt 创建时间
  * @param updatedAt 更新时间
  * @param expiresAt 过期时间
+ * @param indexState 向量索引状态，与主库保存成功分别表达
  * @author data-agent
  */
 public record MemoryEntryResponse(
@@ -38,15 +39,17 @@ public record MemoryEntryResponse(
         int accessCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        LocalDateTime expiresAt) {
+        LocalDateTime expiresAt,
+        String indexState) {
 
     /**
      * 将持久化的记忆条目转换为 API 响应。
      *
      * @param entry 记忆条目
+     * @param indexState 批量查询得到的向量索引状态
      * @return 响应
      */
-    public static MemoryEntryResponse from(MemoryEntry entry) {
+    public static MemoryEntryResponse from(MemoryEntry entry, String indexState) {
         String displayContent = entry.getCompressedContent() != null && !entry.getCompressedContent().isBlank()
                 ? entry.getCompressedContent()
                 : entry.getContent();
@@ -63,6 +66,6 @@ public record MemoryEntryResponse(
                 entry.getAccessCount(),
                 entry.getCreatedAt(),
                 entry.getUpdatedAt(),
-                entry.getExpiresAt());
+                entry.getExpiresAt(), indexState);
     }
 }

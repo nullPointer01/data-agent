@@ -1,6 +1,7 @@
 package com.ai.resource;
 
-import com.ai.resource.dto.ResourceAssetsResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.resource.dto.ResourceAssetResponse;
 import com.ai.resource.dto.ResourceSummaryResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,11 +32,12 @@ public class ResourceCenterController {
      * @return 聚合后的资源列表
      */
     @GetMapping("/assets")
-    public ResourceAssetsResponse listAssets(
+    public ListPageResponse<ResourceAssetResponse> listAssets(
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "resourceType", required = false) String resourceType,
-            @RequestParam(value = "status", required = false) String status) {
-        return resourceCenterService.listAssets(keyword, resourceType, status);
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return resourceCenterService.listAssets(keyword, resourceType, status, page, size);
     }
 
     /**

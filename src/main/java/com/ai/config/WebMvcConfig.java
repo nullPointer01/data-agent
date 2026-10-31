@@ -23,6 +23,6 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns(
                         "/api/v1/analysis/analyze",
-                        "/api/v1/analysis/analyze/stream");
+                        "/api/v1/agent-runs");
     }
 }

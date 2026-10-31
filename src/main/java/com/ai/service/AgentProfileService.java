@@ -1,11 +1,13 @@
 package com.ai.service;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.CatalogListFilter;
 import com.ai.agent.AgentSystemPrompts;
 
 import com.ai.agent.capability.AgentCapabilityConfigurationCodec;
 import com.ai.agent.capability.AgentCapabilityService;
 import com.ai.agent.capability.AgentCapabilityType;
-import com.ai.agent.dto.AgentProfileListResponse;
 import com.ai.agent.dto.AgentProfileMutationResponse;
 import com.ai.agent.dto.AgentProfileRequest;
 import com.ai.agent.dto.AgentProfileResponse;
@@ -17,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 面向租户的 Agent 配置应用服务。
@@ -45,40 +46,33 @@ public class AgentProfileService {
         this.capabilityConfigurationCodec = capabilityConfigurationCodec;
     }
 
+    /** 管理清单保留租户边界；姓名搜索和归属/角色筛选先于 SQL 分页。 */
     @Transactional(readOnly = true)
-    public AgentProfileListResponse listAgents(boolean enabledOnly) {
-        return listTenantAgents(enabledOnly);
+    public ListPageResponse<AgentProfileResponse> listAgents(boolean enabledOnly, int page, int size,
+            String query, String ownerId, String role) {
+        return listPage(enabledOnly, page, size, query, ownerId, role);
     }
 
-    /**
-     * 查询当前登录用户创建的 Agent 配置列表。
-     *
-     * @param enabledOnly 是否只返回启用配置
-     * @return Agent 配置列表
-     */
+    /** 个人专家只读当前用户；默认主 Agent 用独立详情接口读取。 */
     @Transactional(readOnly = true)
-    public AgentProfileListResponse listMyAgents(boolean enabledOnly) {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        String userId = securityContextHelper.getCurrentUserId();
-        List<AgentProfile> agents = enabledOnly
-                ? agentProfileRepository.findByTenantIdAndCreatedByAndEnabledTrueOrderByUpdatedAtDesc(tenantId, userId)
-                : agentProfileRepository.findByTenantIdAndCreatedByOrderByUpdatedAtDesc(tenantId, userId);
-        return toListResponse(agents);
+    public ListPageResponse<AgentProfileResponse> listMyAgents(boolean enabledOnly, int page, int size,
+            String query, String role) {
+        return listPage(enabledOnly, page, size, query, securityContextHelper.getCurrentUserId(), role);
     }
 
-    private AgentProfileListResponse listTenantAgents(boolean enabledOnly) {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        List<AgentProfile> agents = enabledOnly
-                ? agentProfileRepository.findByTenantIdAndEnabledTrueOrderByUpdatedAtDesc(tenantId)
-                : agentProfileRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId);
-        return toListResponse(agents);
-    }
-
-    private AgentProfileListResponse toListResponse(List<AgentProfile> agents) {
-        List<AgentProfileResponse> responses = agents.stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
-        return new AgentProfileListResponse(true, responses);
+    private ListPageResponse<AgentProfileResponse> listPage(boolean enabledOnly, int page, int size,
+            String query, String ownerId, String role) {
+        ListPaging.page(page, size);
+        Boolean primary = switch (role == null ? "" : role) {
+            case "" -> null;
+            case "PRIMARY" -> true;
+            case "EXPERT" -> false;
+            default -> throw new IllegalArgumentException("Agent 角色无效");
+        };
+        var filter = new CatalogListFilter(securityContextHelper.getCurrentTenantId(), ownerId,
+                false, enabledOnly, primary, query);
+        return ListPageResponse.fetch(page, size, agentProfileRepository.countList(filter),
+                pageable -> agentProfileRepository.findListPage(filter, pageable)).map(this::toResponse);
     }
 
     /**

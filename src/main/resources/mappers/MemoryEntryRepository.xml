@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.MemoryEntryRepository">
+    <!-- memory_entry：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO memory_entry (memory_id,
+            tenant_id,
+            user_id,
+            session_id,
+            tier,
+            type,
+            source,
+            content,
+            compressed_content,
+            source_content_length,
+            stored_content_length,
+            metadata_json,
+            semantic_key,
+            confidence,
+            key_entities_json,
+            topic_tags_json,
+            vector_id,
+            relevance_score,
+            access_count,
+            decay_weight,
+            created_at,
+            updated_at,
+            last_accessed_at,
+            expires_at)
+        VALUES (#{memoryId},
+            #{tenantId},
+            #{userId},
+            #{sessionId},
+            #{tier},
+            #{type},
+            #{source},
+            #{content},
+            #{compressedContent},
+            #{sourceContentLength},
+            #{storedContentLength},
+            #{metadataJson},
+            #{semanticKey},
+            #{confidence},
+            #{keyEntitiesJson},
+            #{topicTagsJson},
+            #{vectorId},
+            #{relevanceScore},
+            #{accessCount},
+            #{decayWeight},
+            #{createdAt},
+            #{updatedAt},
+            #{lastAccessedAt},
+            #{expiresAt})
+    </insert>
+    <update id="update">
+        UPDATE memory_entry SET tenant_id = #{tenantId},
+            user_id = #{userId},
+            session_id = #{sessionId},
+            tier = #{tier},
+            type = #{type},
+            source = #{source},
+            content = #{content},
+            compressed_content = #{compressedContent},
+            source_content_length = #{sourceContentLength},
+            stored_content_length = #{storedContentLength},
+            metadata_json = #{metadataJson},
+            semantic_key = #{semanticKey},
+            confidence = #{confidence},
+            key_entities_json = #{keyEntitiesJson},
+            topic_tags_json = #{topicTagsJson},
+            vector_id = #{vectorId},
+            relevance_score = #{relevanceScore},
+            access_count = #{accessCount},
+            decay_weight = #{decayWeight},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt},
+            last_accessed_at = #{lastAccessedAt},
+            expires_at = #{expiresAt}
+        WHERE memory_id = #{memoryId}
+    </update>
+    <update id="updateLongTermDecayIfUnchanged">
+        UPDATE memory_entry SET decay_weight = #{decayWeight}, updated_at = CURRENT_TIMESTAMP(6)
+        WHERE memory_id = #{memoryId} AND tenant_id = #{tenantId} AND user_id = #{userId}
+          AND tier = 'LONG_TERM' AND updated_at = #{updatedAt}
+    </update>
+    <select id="findById" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE memory_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM memory_entry WHERE memory_id = #{id})
+    </select>
+    <select id="findCursorPage" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+        <if test="tier != null">AND tier = #{tier}</if>
+        <if test="cursor != null">
+            <choose>
+                <when test="cursor.time != null">
+                    AND (created_at &lt; #{cursor.time} OR (created_at = #{cursor.time}
+                        AND memory_id &lt; #{cursor.id}) OR created_at IS NULL)
+                </when>
+                <otherwise>AND created_at IS NULL AND memory_id &lt; #{cursor.id}</otherwise>
+            </choose>
+        </if>
+        ORDER BY created_at DESC, memory_id DESC LIMIT #{limit}
+    </select>
+    <select id="findAll" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry
+    </select>
+    <select id="findAllById" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                memory_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <select id="findActiveLongTermByIds" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry
+        WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+          AND tier = 'LONG_TERM' AND (expires_at IS NULL OR expires_at > #{now})
+          AND
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                memory_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM memory_entry WHERE memory_id = #{id}
+    </delete>
+    <select id="findActiveByTenantUserAndSession" resultType="com.ai.memory.MemoryEntry">
+        SELECT m.* FROM memory_entry m
+        WHERE m.tenant_id = #{tenantId}
+        AND m.user_id = #{userId}
+        AND m.session_id = #{sessionId}
+        AND (m.expires_at IS NULL OR m.expires_at > #{now})
+        ORDER BY m.created_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByTenantIdAndUserIdOrderByCreatedAtDesc" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} ORDER BY created_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByTenantIdAndUserIdAndTierOrderByCreatedAtDesc" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND tier = #{tier} ORDER BY created_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByTenantIdAndUserIdAndTierAndTypeOrderByUpdatedAtDesc" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND tier = #{tier} AND type = #{type} ORDER BY updated_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND tier = #{tier} AND
+        <choose><when test="types != null and !types.isEmpty()">type IN <foreach collection="types" item="value" open="(" close=")" separator=",">#{value}</foreach>
+        </when><otherwise>1 = 0</otherwise></choose> ORDER BY updated_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset} FOR UPDATE
+    </select>
+    <select id="findProfileEvidenceForReset" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry
+        WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+          AND tier = 'LONG_TERM' AND type IN ('PREFERENCE', 'ENTITY')
+          AND (1 = 0
+            <if test="keys != null and !keys.isEmpty()">
+                OR BINARY semantic_key IN
+                <foreach collection="keys" item="key" open="(" close=")" separator=",">#{key}</foreach>
+            </if>
+            <foreach collection="prefixes" item="prefix">
+                OR LOCATE(BINARY #{prefix}, BINARY semantic_key) = 1
+            </foreach>
+          )
+        ORDER BY memory_id LIMIT #{limit} FOR UPDATE
+    </select>
+    <select id="findByTenantIdAndUserIdAndTypeAndSemanticKey" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND type = #{type} AND semantic_key = #{semanticKey}
+    </select>
+    <select id="findByTierOrderByUpdatedAtAsc" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE tier = #{tier} ORDER BY updated_at ASC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findPrunableMemories" resultType="com.ai.memory.MemoryEntry">
+        SELECT m.* FROM memory_entry m
+        WHERE m.tenant_id = #{tenantId}
+        AND m.user_id = #{userId}
+        ORDER BY m.decay_weight ASC, m.last_accessed_at ASC, m.created_at ASC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findPromotionCandidates" resultType="com.ai.memory.MemoryEntry">
+        SELECT m.* FROM memory_entry m
+        WHERE m.tier = 'SHORT_TERM'
+        AND m.decay_weight >= #{minDecayWeight}
+        AND m.access_count >= #{minAccessCount}
+        AND (m.expires_at IS NULL OR m.expires_at > #{now})
+        ORDER BY m.decay_weight DESC, m.access_count DESC, m.last_accessed_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByMemoryIdAndTenantIdAndUserId" resultType="com.ai.memory.MemoryEntry">
+        SELECT * FROM memory_entry WHERE memory_id = #{memoryId} AND tenant_id = #{tenantId} AND user_id = #{userId}
+    </select>
+    <select id="countByTenantIdAndUserId" resultType="long">
+        SELECT COUNT(*) FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+    </select>
+    <select id="countByTenantIdAndUserIdAndTier" resultType="long">
+        SELECT COUNT(*) FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND tier = #{tier}
+    </select>
+    <select id="countByTenantIdAndUserIdAndType" resultType="long">
+        SELECT COUNT(*) FROM memory_entry WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND type = #{type}
+    </select>
+    <select id="sumSourceContentLengthByTenantUser" resultType="long">
+        SELECT COALESCE(SUM(m.source_content_length), 0)
+        FROM memory_entry m
+        WHERE m.tenant_id = #{tenantId}
+        AND m.user_id = #{userId}
+    </select>
+    <select id="sumStoredContentLengthByTenantUser" resultType="long">
+        SELECT COALESCE(SUM(m.stored_content_length), 0)
+        FROM memory_entry m
+        WHERE m.tenant_id = #{tenantId}
+        AND m.user_id = #{userId}
+    </select>
+    <select id="findExpiredMemories" resultType="com.ai.memory.MemoryEntry">
+        SELECT m.* FROM memory_entry m
+        WHERE m.expires_at IS NOT NULL
+        AND m.expires_at &lt;= #{now}
+        ORDER BY m.expires_at ASC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+</mapper>

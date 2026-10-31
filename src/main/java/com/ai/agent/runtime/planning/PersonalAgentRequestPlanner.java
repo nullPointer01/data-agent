@@ -9,6 +9,9 @@ import com.ai.agent.runtime.AgentRunScope;
 import com.ai.agent.tool.AgentTools;
 import com.ai.skill.SkillCatalog;
 import com.ai.model.AgentProfile;
+import com.ai.memory.MemoryCaptureMode;
+import com.ai.memory.MemoryWriteGuard;
+import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -26,12 +29,17 @@ public class PersonalAgentRequestPlanner {
     private final AgentCapabilityService capabilityService;
     private final AgentToolCandidateSelector toolSelector;
     private final SemanticRequestRouter semanticRouter;
+    private final MemoryWriteGuard memoryWrites;
+    private final SecurityContextHelper security;
 
     public PersonalAgentRequestPlanner(AgentCapabilityService capabilityService,
-            AgentToolCandidateSelector toolSelector, SemanticRequestRouter semanticRouter) {
+            AgentToolCandidateSelector toolSelector, SemanticRequestRouter semanticRouter,
+            MemoryWriteGuard memoryWrites, SecurityContextHelper security) {
         this.capabilityService = capabilityService;
         this.toolSelector = toolSelector;
         this.semanticRouter = semanticRouter;
+        this.memoryWrites = memoryWrites;
+        this.security = security;
     }
 
     /** 为本次请求生成与当前权限、模式及会话状态一致的计划。 */
@@ -56,6 +64,8 @@ public class PersonalAgentRequestPlanner {
         if (!filePresent && CAPABILITY_QUESTIONS.contains(question.trim().replaceAll("[\\s。！？!?]+$", ""))) {
             return localPlan(profile, catalog);
         }
+        // 在模型规划前获取快照，生成回答期间发生的用户纠错也会使后台候选失效。
+        long memoryRevision = memoryWrites.snapshot(security.getCurrentTenantId(), security.getCurrentUserId());
         boolean historyPresent = executionContext.getSession() != null
                 && executionContext.getSession().getHistory() != null
                 && !executionContext.getSession().getHistory().isEmpty();
@@ -93,9 +103,12 @@ public class PersonalAgentRequestPlanner {
                 RequestExecutionPlan.CURRENT_VERSION,
                 decision == null ? RequestIntent.GENERAL_CONVERSATION : decision.intent(),
                 mode, true, contextPlan,
+                decision == null ? MemoryCaptureMode.SKIP : decision.memoryCapture(),
+                memoryRevision,
                 new RequestPlanningEvidence(true, result.modelRequestAttempted(), result.durationMs(),
                         AgentRunScope.current().isPresent()),
-                candidates, AgentToolChoice.AUTO,
+                candidates, candidates.contains("saveMemory") || candidates.contains("forgetMemory")
+                        ? AgentToolChoice.REQUIRED : AgentToolChoice.AUTO,
                 decision == null ? 0D : decision.confidence(),
                 decision == null ? "semantic-router-fallback" : "semantic-router",
                 decision == null
@@ -138,7 +151,7 @@ public class PersonalAgentRequestPlanner {
         }
         return new RequestExecutionPlan(RequestExecutionPlan.CURRENT_VERSION,
                 RequestIntent.CAPABILITY_INTRODUCTION, AgentExecutionMode.CHAT, false,
-                RequestContextPlan.none(), RequestPlanningEvidence.deterministic(),
+                RequestContextPlan.none(), MemoryCaptureMode.SKIP, 0L, RequestPlanningEvidence.deterministic(),
                 Set.of(), AgentToolChoice.AUTO, 1D, "exact-capability-introduction",
                 "完整请求仅询问当前身份或可用能力", answer.toString());
     }

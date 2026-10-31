@@ -2,7 +2,8 @@ package com.ai.controller;
 
 import com.ai.memory.MemoryGovernanceService;
 import com.ai.memory.MemoryTier;
-import com.ai.memory.dto.MemoryListResponse;
+import com.ai.api.CursorPageResponse;
+import com.ai.memory.dto.MemoryEntryResponse;
 import com.ai.memory.dto.MemoryMutationResponse;
 import com.ai.memory.dto.MemoryStatsResponse;
 import com.ai.memory.dto.SemanticMemoryUpdateRequest;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,7 +28,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/memories")
 public class MemoryController {
 
-    private static final int DEFAULT_LIMIT = 50;
 
     private final MemoryGovernanceService memoryGovernanceService;
 
@@ -38,14 +39,16 @@ public class MemoryController {
      * 查询当前用户的记忆，可按记忆层级过滤。
      *
      * @param tier 可选的记忆层级
-     * @param limit 最大返回数量
+     * @param size 每页数量
+     * @param after 上一页游标
      * @return 记忆列表
      */
     @GetMapping
-    public MemoryListResponse listMemories(
+    public CursorPageResponse<MemoryEntryResponse> listMemories(
             @RequestParam(value = "tier", required = false) MemoryTier tier,
-            @RequestParam(value = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit) {
-        return memoryGovernanceService.listCurrentUserMemories(tier, limit);
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String after) {
+        return memoryGovernanceService.listCurrentUserMemories(tier, size, after);
     }
 
     /**
@@ -56,6 +59,16 @@ public class MemoryController {
     @GetMapping("/profile")
     public UserMemoryProfileResponse getProfile() {
         return memoryGovernanceService.getCurrentUserProfile();
+    }
+
+    /**
+     * 重置本人结构化画像及其长期记忆依据，不接受客户端指定用户。
+     *
+     * @return 重置结果
+     */
+    @PostMapping("/profile/reset")
+    public MemoryMutationResponse resetProfile() {
+        return memoryGovernanceService.resetCurrentUserProfile();
     }
 
     /**

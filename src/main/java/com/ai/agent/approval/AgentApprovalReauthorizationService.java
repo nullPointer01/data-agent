@@ -10,6 +10,7 @@ import com.ai.security.SecurityConstants;
 import com.ai.security.SysUser;
 import com.ai.security.SysUserRepository;
 import com.ai.security.rbac.RolePermissionService;
+import com.ai.conversation.ConversationAccessGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,15 +29,17 @@ public class AgentApprovalReauthorizationService {
     private final AgentToolRegistry toolRegistry;
     private final SysUserRepository userRepository;
     private final RolePermissionService rolePermissionService;
+    private final ConversationAccessGuard conversationAccess;
 
     public AgentApprovalReauthorizationService(AgentToolAuthorizationService authorizationService,
             AgentToolRegistry toolRegistry,
             SysUserRepository userRepository,
-            RolePermissionService rolePermissionService) {
+            RolePermissionService rolePermissionService, ConversationAccessGuard conversationAccess) {
         this.authorizationService = authorizationService;
         this.toolRegistry = toolRegistry;
         this.userRepository = userRepository;
         this.rolePermissionService = rolePermissionService;
+        this.conversationAccess = conversationAccess;
     }
 
     @Transactional(readOnly = true)
@@ -44,6 +47,13 @@ public class AgentApprovalReauthorizationService {
             AgentToolApprovalEntity approval,
             AgentRunCheckpoint checkpoint) {
         requireMatchingState(run, approval, checkpoint);
+        if (run.getSessionId() != null && !run.getSessionId().isBlank()) {
+            try {
+                conversationAccess.requireActive(run.getSessionId(), run.getTenantId(), run.getUserId());
+            } catch (IllegalArgumentException | IllegalStateException error) {
+                throw denied("所属会话已删除或归档");
+            }
+        }
         AgentToolDescriptor descriptor = toolRegistry.find(approval.getToolName())
                 .filter(entry -> toolRegistry.isEnabled(entry.descriptor().name()))
                 .map(AgentToolRegistry.RegisteredTool::descriptor)

@@ -1,6 +1,7 @@
+import { useDebouncedValue, useServerList } from '../hooks/useServerList.js';
 import { BookOpen, FileText, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
+import { useEffect, useState } from 'react';
+import { Badge, ConfirmDialog, DataTable, EmptyState, ListLoadError, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
 import { formatBytes, formatTime, truncate } from '../utils/format.js';
 
 function statusTone(status) {
@@ -83,11 +84,9 @@ function QualityMetric({ label, value, hint }) {
 
 /** 租户资源中心：统一查看和治理文件、知识等已入库资产。 */
 export function ResourceCenterPage({ api, toast }) {
-  const [assets, setAssets] = useState([]);
   const [summary, setSummary] = useState({});
   const [ragSettings, setRagSettings] = useState({});
   const [ragHealth, setRagHealth] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
   const [resourceType, setResourceType] = useState('');
   const [textModal, setTextModal] = useState(false);
@@ -96,33 +95,24 @@ export function ResourceCenterPage({ api, toast }) {
   const [textForm, setTextForm] = useState({ name: '', description: '', content: '' });
   const [probe, setProbe] = useState({ query: '', topK: 5, results: [], rag: null, quality: null });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (keyword.trim()) {
-        params.set('keyword', keyword.trim());
-      }
-      if (resourceType) {
-        params.set('resourceType', resourceType);
-      }
-      const [res, rag] = await Promise.all([
-        api.get(`/api/v1/resources/assets?${params.toString()}`),
-        api.get('/api/v1/rag/settings').catch(() => ({}))
-      ]);
-      const health = await api.get('/api/v1/rag/health').catch(() => null);
-      setAssets(res.assets || []);
-      setSummary(res.summary || {});
-      setRagSettings(rag || {});
-      setRagHealth(health);
-    } finally {
-      setLoading(false);
-    }
+  const query = useDebouncedValue(keyword);
+  const { items: assets, loading, error, refresh, pagination } = useServerList({
+    api, url: '/api/v1/resources/assets', mode: 'offset', filters: { keyword: query, resourceType }
+  });
+  const loadSummary = async () => {
+    try { setSummary(await api.get('/api/v1/resources/summary')); }
+    catch (failure) { toast(failure.message || '资料统计加载失败', 'error'); }
   };
+  const loadHealth = async () => {
+    const [rag, health] = await Promise.all([
+      api.get('/api/v1/rag/settings').catch(() => ({})),
+      api.get('/api/v1/rag/health').catch(() => null)
+    ]);
+    setRagSettings(rag); setRagHealth(health);
+  };
+  const load = () => Promise.all([refresh(), loadSummary(), loadHealth()]);
+  useEffect(() => { loadSummary(); loadHealth(); }, [api]);
 
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => assets, [assets]);
   const relevanceMetric = (probe.quality?.metrics || []).find((metric) => metric.key === 'RELEVANCE');
   const relevanceHint = probe.quality?.expectedKeywordCount > 0
     ? `${probe.quality.matchedKeywordCount || 0}/${probe.quality.expectedKeywordCount} 标注关键词`
@@ -256,7 +246,8 @@ export function ResourceCenterPage({ api, toast }) {
           <span>验证向量索引是否能召回相关资料。</span>
         </button>
       </div>
-      <DataTable loading={loading} empty={<EmptyState title="暂无资料" desc="上传文件或添加文本知识后，这里会显示统一资料列表。" />} columns={[
+      <ListLoadError error={error} onRetry={refresh} />
+      <DataTable serverPagination={pagination} loading={loading} empty={<EmptyState title="暂无资料" desc="上传文件或添加文本知识后，这里会显示统一资料列表。" />} columns={[
         { key: 'name', title: '名称', render: (item) => <><strong>{item.name}</strong><div className="muted">{truncate(item.description || item.sourceFilename || item.contentType, 90)}</div></> },
         { key: 'resourceType', title: '类型', render: (item) => <Badge tone={item.resourceType === 'KNOWLEDGE' ? 'blue' : 'gray'}>{typeLabel(item.resourceType)}</Badge> },
         { key: 'status', title: '状态', render: (item) => <Badge tone={statusTone(item.status)}>{item.status || '-'}</Badge> },
@@ -264,7 +255,7 @@ export function ResourceCenterPage({ api, toast }) {
         { key: 'chunkCount', title: '片段', render: (item) => item.chunkCount || '-' },
         { key: 'createdAt', title: '创建时间', render: (item) => formatTime(item.createdAt) },
         { key: 'actions', title: '操作', render: (item) => <button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} />删除</button> }
-      ]} rows={filtered} rowKey="id" />
+      ]} rows={assets.map((asset) => ({ ...asset, resourceKey: `${asset.resourceType}:${asset.id}` }))} rowKey="resourceKey" />
       {textModal && <Modal title="录入文本知识" onClose={() => setTextModal(false)} size="lg" actions={<button className="btn primary" onClick={addTextKnowledge}><BookOpen size={16} />保存并索引</button>}>
         <div className="form-stack">
           <Field label="名称"><input className="input" value={textForm.name} onChange={(event) => setTextForm({ ...textForm, name: event.target.value })} /></Field>

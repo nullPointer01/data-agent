@@ -1,72 +1,80 @@
 package com.ai.agent.approval;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 工具审批仓储。决定更新必须通过审批服务的条件更新入口。
- *
- * @author data-agent
- */
-public interface AgentToolApprovalRepository extends JpaRepository<AgentToolApprovalEntity, String> {
+/** AgentToolApprovalEntity 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface AgentToolApprovalRepository {
 
-    Optional<AgentToolApprovalEntity> findByApprovalIdAndTenantId(String approvalId, String tenantId);
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default AgentToolApprovalEntity save(AgentToolApprovalEntity entity) {
+        boolean creating = entity.getApprovalId() == null || !existsById(entity.getApprovalId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            entity.onUpdate();
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+            entity.setVersion(entity.getVersion() + 1);
+        }
+        return entity;
+    }
 
-    Optional<AgentToolApprovalEntity> findByTenantIdAndRunIdAndToolCallId(
-            String tenantId, String runId, String toolCallId);
+    int insert(AgentToolApprovalEntity entity);
+    int update(AgentToolApprovalEntity entity);
+    Optional<AgentToolApprovalEntity> findById(@Param("id") String id);
+    /** 个人 Run 只补执行状态，不读取审批参数或加密现场。 */
+    Optional<AgentApprovalExecutionStatus> findExecutionStatus(@Param("approvalId") String approvalId,
+            @Param("tenantId") String tenantId, @Param("userId") String userId);
+    boolean existsById(@Param("id") String id);
+    List<AgentToolApprovalEntity> findAll();
+    List<AgentToolApprovalEntity> findAllById(@Param("ids") Collection<String> ids);
+    void deleteById(@Param("id") String id);
 
-    List<AgentToolApprovalEntity> findByTenantIdAndDecisionStatusOrderByRequestedAtDesc(
-            String tenantId, AgentApprovalDecisionStatus decisionStatus, Pageable pageable);
+    default void delete(AgentToolApprovalEntity entity) {
+        deleteById(entity.getApprovalId());
+    }
 
-    List<AgentToolApprovalEntity> findByTenantIdOrderByRequestedAtDesc(String tenantId, Pageable pageable);
+    @Transactional
+    default List<AgentToolApprovalEntity> saveAll(Iterable<AgentToolApprovalEntity> entities) {
+        List<AgentToolApprovalEntity> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
 
-    List<AgentToolApprovalEntity> findByDecisionStatusAndExpiresAtBeforeOrderByExpiresAtAsc(
-            AgentApprovalDecisionStatus decisionStatus, Instant expiresAt, Pageable pageable);
+    Optional<AgentToolApprovalEntity> findByApprovalIdAndTenantId(@Param("approvalId") String approvalId, @Param("tenantId") String tenantId);
 
-    List<AgentToolApprovalEntity> findByDecisionStatusAndExecutionStatusOrderByDecidedAtAsc(
-            AgentApprovalDecisionStatus decisionStatus,
-            AgentApprovalExecutionStatus executionStatus,
-            Pageable pageable);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentToolApprovalEntity a
-               set a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.CANCELLED,
-                   a.executionStatus = com.ai.agent.approval.AgentApprovalExecutionStatus.CANCELLED,
-                   a.decidedAt = :now,
-                   a.updatedAt = :now,
-                   a.version = a.version + 1
-             where a.tenantId = :tenantId
-               and a.runId = :runId
-               and a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.PENDING
-            """)
-    int cancelPendingByRun(@Param("tenantId") String tenantId,
+    Optional<AgentToolApprovalEntity> findByTenantIdAndRunIdAndToolCallId(@Param("tenantId") String tenantId,
             @Param("runId") String runId,
-            @Param("now") Instant now);
+            @Param("toolCallId") String toolCallId);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentToolApprovalEntity a
-               set a.decisionStatus = :decisionStatus,
-                   a.executionStatus = :executionStatus,
-                   a.reviewerUserId = :reviewerUserId,
-                   a.decisionComment = :decisionComment,
-                   a.decidedAt = :now,
-                   a.updatedAt = :now,
-                   a.version = a.version + 1
-             where a.approvalId = :approvalId
-               and a.tenantId = :tenantId
-               and a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.PENDING
-               and a.expiresAt > :now
-               and a.version = :expectedVersion
-            """)
+    List<AgentToolApprovalEntity> findListPage(@Param("tenantId") String tenantId,
+            @Param("status") AgentApprovalDecisionStatus status, @Param("pageable") Pageable pageable);
+    long countList(@Param("tenantId") String tenantId, @Param("status") AgentApprovalDecisionStatus status);
+
+    List<AgentToolApprovalEntity> findByDecisionStatusAndExpiresAtBeforeOrderByExpiresAtAsc(@Param("decisionStatus") AgentApprovalDecisionStatus decisionStatus,
+            @Param("expiresAt") Instant expiresAt,
+            @Param("pageable") Pageable pageable);
+
+    List<AgentToolApprovalEntity> findByDecisionStatusAndExecutionStatusOrderByDecidedAtAsc(@Param("decisionStatus") AgentApprovalDecisionStatus decisionStatus,
+            @Param("executionStatus") AgentApprovalExecutionStatus executionStatus,
+            @Param("pageable") Pageable pageable);
+
+    int cancelUnfinishedByRun(@Param("tenantId") String tenantId, @Param("runId") String runId, @Param("now") Instant now);
+
     int decide(@Param("approvalId") String approvalId,
             @Param("tenantId") String tenantId,
             @Param("decisionStatus") AgentApprovalDecisionStatus decisionStatus,
@@ -76,52 +84,13 @@ public interface AgentToolApprovalRepository extends JpaRepository<AgentToolAppr
             @Param("now") Instant now,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentToolApprovalEntity a
-               set a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.EXPIRED,
-                   a.executionStatus = com.ai.agent.approval.AgentApprovalExecutionStatus.CANCELLED,
-                   a.decidedAt = :now,
-                   a.updatedAt = :now,
-                   a.version = a.version + 1
-             where a.approvalId = :approvalId
-               and a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.PENDING
-               and a.expiresAt <= :now
-               and a.version = :expectedVersion
-            """)
-    int expire(@Param("approvalId") String approvalId,
-            @Param("now") Instant now,
-            @Param("expectedVersion") long expectedVersion);
+    int expire(@Param("approvalId") String approvalId, @Param("now") Instant now, @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentToolApprovalEntity a
-               set a.executionStatus = com.ai.agent.approval.AgentApprovalExecutionStatus.RUNNING,
-                   a.executionStartedAt = :now,
-                   a.updatedAt = :now,
-                   a.version = a.version + 1
-             where a.approvalId = :approvalId
-               and a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.APPROVED
-               and a.executionStatus in :claimableStatuses
-               and a.version = :expectedVersion
-            """)
     int startExecution(@Param("approvalId") String approvalId,
             @Param("claimableStatuses") List<AgentApprovalExecutionStatus> claimableStatuses,
             @Param("now") Instant now,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentToolApprovalEntity a
-               set a.executionStatus = :targetStatus,
-                   a.executionCompletedAt = :now,
-                   a.updatedAt = :now,
-                   a.version = a.version + 1
-             where a.approvalId = :approvalId
-               and a.decisionStatus = com.ai.agent.approval.AgentApprovalDecisionStatus.APPROVED
-               and a.executionStatus = com.ai.agent.approval.AgentApprovalExecutionStatus.RUNNING
-               and a.version = :expectedVersion
-            """)
     int completeExecution(@Param("approvalId") String approvalId,
             @Param("targetStatus") AgentApprovalExecutionStatus targetStatus,
             @Param("now") Instant now,

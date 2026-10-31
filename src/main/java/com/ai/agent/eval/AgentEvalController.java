@@ -1,5 +1,6 @@
 package com.ai.agent.eval;
 
+import com.ai.api.ListPageResponse;
 import com.ai.agent.eval.dto.AgentEvalReportResponse;
 import com.ai.agent.eval.dto.AgentEvalReportResponse.DatasetSummary;
 import com.ai.agent.eval.dto.AgentEvalReportResponse.RunSummary;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -27,7 +27,6 @@ import java.util.concurrent.RejectedExecutionException;
 @PreAuthorize("hasRole('ADMIN')")
 public class AgentEvalController {
 
-    private static final int DEFAULT_LIMIT = 30;
 
     private final AgentEvalService evalService;
     private final Executor agentEvalExecutor;
@@ -40,8 +39,9 @@ public class AgentEvalController {
 
     /** 查询当前租户可运行的评测数据集版本。 */
     @GetMapping("/datasets")
-    public List<DatasetSummary> datasets() {
-        return evalService.listDatasets();
+    public ListPageResponse<DatasetSummary> datasets(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return evalService.listDatasets(page, size);
     }
 
     /** 创建评测运行，并提交到传播认证上下文的有界 Agent 线程池。 */
@@ -62,15 +62,22 @@ public class AgentEvalController {
 
     /** 查询最近的评测运行摘要。 */
     @GetMapping("/runs")
-    public List<RunSummary> runs(
-            @RequestParam(value = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit) {
-        return evalService.listRuns(limit);
+    public ListPageResponse<RunSummary> runs(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return evalService.listRuns(page, size);
     }
 
     /** 查询单次评测报告及样本级 Run 下钻引用。 */
     @GetMapping("/runs/{evalRunId}")
     public AgentEvalReportResponse report(@PathVariable String evalRunId) {
         return evalService.getReport(evalRunId);
+    }
+
+    /** 样本证据独立分页；报告状态轮询不重复下载整套结果。 */
+    @GetMapping("/runs/{evalRunId}/samples")
+    public ListPageResponse<AgentEvalReportResponse.SampleResult> samples(@PathVariable String evalRunId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return evalService.listSampleResults(evalRunId, page, size);
     }
 
     /** 启动评测所需的固定数据集与 Agent 标识。 */

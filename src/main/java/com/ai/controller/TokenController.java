@@ -1,12 +1,11 @@
 package com.ai.controller;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
 import com.ai.model.TokenUsage;
 import com.ai.repository.TokenUsageRepository;
 import com.ai.security.SecurityContextHelper;
 import com.ai.service.TokenQuotaService;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,14 +29,7 @@ public class TokenController {
     private static final String KEY_TOTAL_TOKENS = "totalTokens";
     private static final String KEY_BY_MODEL = "byModel";
     private static final String KEY_BY_SKILL = "bySkill";
-    private static final String KEY_RECORDS = "records";
-    private static final String KEY_TOTAL_ELEMENTS = "totalElements";
-    private static final String KEY_TOTAL_PAGES = "totalPages";
-    private static final String KEY_CURRENT_PAGE = "currentPage";
-    private static final String KEY_SUCCESS = "success";
-    private static final String KEY_REMAINING_TOKENS = "remainingTokens";
     private static final int TENANT_SUMMARY_INITIAL_CAPACITY = 3;
-    private static final int USAGE_RECORDS_INITIAL_CAPACITY = 4;
 
     private final TokenUsageRepository tokenUsageRepository;
     private final SecurityContextHelper securityContextHelper;
@@ -77,7 +69,7 @@ public class TokenController {
     @GetMapping("/user-summary")
     public Map<String, Object> getUserTokenSummary() {
         String userId = securityContextHelper.getCurrentUserId();
-        Long total = tokenUsageRepository.sumTotalTokensByUserId(userId);
+        Long total = tokenUsageRepository.sumTotalTokensByOwner(securityContextHelper.getCurrentTenantId(), userId);
         return Map.of(KEY_TOTAL_TOKENS, total != null ? total : 0);
     }
 
@@ -89,19 +81,14 @@ public class TokenController {
      * @return Token 明细和分页信息
      */
     @GetMapping("/usage-records")
-    public Map<String, Object> getUsageRecords(
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ListPageResponse<TokenUsage> getUsageRecords(
             @RequestParam(defaultValue = "" + DEFAULT_PAGE) int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        ListPaging.page(page, size);
         String tenantId = securityContextHelper.getCurrentTenantId();
-        Page<TokenUsage> records = tokenUsageRepository.findByTenantIdOrderByCreatedAtDesc(
-                tenantId, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-
-        Map<String, Object> result = new HashMap<>(USAGE_RECORDS_INITIAL_CAPACITY);
-        result.put(KEY_RECORDS, records.getContent());
-        result.put(KEY_TOTAL_ELEMENTS, records.getTotalElements());
-        result.put(KEY_TOTAL_PAGES, records.getTotalPages());
-        result.put(KEY_CURRENT_PAGE, records.getNumber());
-        return result;
+        return ListPageResponse.fetch(page, size, tokenUsageRepository.countByTenantId(tenantId),
+                pageable -> tokenUsageRepository.selectUsagePage(tenantId, pageable));
     }
 
     /**
@@ -110,9 +97,7 @@ public class TokenController {
      * @return 剩余配额，返回 -1 表示未限制
      */
     @GetMapping("/remaining-quota")
-    public Map<String, Object> getRemainingQuota() {
-        String userId = securityContextHelper.getCurrentUserId();
-        long remaining = tokenQuotaService.getRemainingQuota(userId);
-        return Map.of(KEY_SUCCESS, true, KEY_REMAINING_TOKENS, remaining == Long.MAX_VALUE ? -1 : remaining);
+    public TokenQuotaService.QuotaSnapshot getRemainingQuota() {
+        return tokenQuotaService.current(securityContextHelper.getCurrentTenantId(), securityContextHelper.getCurrentUserId());
     }
 }

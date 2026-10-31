@@ -2,6 +2,7 @@ package com.ai.memory;
 
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -18,6 +19,17 @@ final class SemanticMemoryKey {
     static final String INDUSTRY = "profile.industry";
     static final String COMMUNICATION_STYLE = "preference.communication_style";
     static final String OUTPUT_FORMAT = "preference.output_format";
+
+    // 投影和重置共用字段范围，新增画像字段时不能遗漏对应的遗忘入口。
+    static final List<String> PROFILE_KEYS = List.of(DISPLAY_NAME, ROLE, COMPANY, INDUSTRY,
+            COMMUNICATION_STYLE, OUTPUT_FORMAT);
+    static final List<String> PROFILE_KEY_PREFIXES = List.of(
+            "profile.expertise_area.", "profile.topic.", "profile.data_source.");
+
+    static boolean isProfileKey(String key) {
+        return key != null && (PROFILE_KEYS.contains(key)
+                || PROFILE_KEY_PREFIXES.stream().anyMatch(key::startsWith));
+    }
 
     private static final Pattern VALID_PATTERN = Pattern.compile(
             "^(preference|profile|conclusion)\\.[a-z0-9_.-]{1,120}$");

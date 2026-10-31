@@ -7,6 +7,10 @@ import com.ai.agent.runtime.AgentRunTerminatedException;
 import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.agent.tool.AgentTools;
+import com.ai.agent.tool.ai.AgentToolSuspendedException;
+import com.ai.agent.agentic.SupervisorExecutionScope;
+import com.ai.agent.runtime.AgentRunStatus;
+import com.ai.conversation.ConversationAccessGuard;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -34,6 +38,7 @@ public class AgentToolExecutionPipeline {
     private final AgentToolGovernanceProperties properties;
     private final AsyncTaskExecutor toolExecutor;
     private final AsyncTaskExecutor delegationExecutor;
+    private final ConversationAccessGuard conversationAccess;
 
     public AgentToolExecutionPipeline(AgentToolAdmissionService admissionService,
             AgentToolRetryPolicy retryPolicy,
@@ -42,7 +47,8 @@ public class AgentToolExecutionPipeline {
             AgentToolTelemetry telemetry,
             AgentToolGovernanceProperties properties,
             @Qualifier("agentToolExecutor") AsyncTaskExecutor toolExecutor,
-            @Qualifier("agentDelegationExecutor") AsyncTaskExecutor delegationExecutor) {
+            @Qualifier("agentDelegationExecutor") AsyncTaskExecutor delegationExecutor,
+            ConversationAccessGuard conversationAccess) {
         this.admissionService = admissionService;
         this.retryPolicy = retryPolicy;
         this.failureClassifier = failureClassifier;
@@ -51,6 +57,7 @@ public class AgentToolExecutionPipeline {
         this.properties = properties;
         this.toolExecutor = toolExecutor;
         this.delegationExecutor = delegationExecutor;
+        this.conversationAccess = conversationAccess;
     }
 
     public AgentToolExecutionResult execute(ToolExecutionRequest request,
@@ -142,6 +149,7 @@ public class AgentToolExecutionPipeline {
         AgentToolFailure lastFailure = null;
         while (attempts < retryPolicy.maximumAttempts(descriptor)) {
             try {
+                conversationAccess.checkRun(runContext);
                 runContext.control().ensureActive();
                 runContext.control().beforeToolCall();
             } catch (AgentRunTerminatedException e) {
@@ -149,15 +157,22 @@ public class AgentToolExecutionPipeline {
                 break;
             }
             attempts++;
-            Future<String> future = null;
+            Future<dev.langchain4j.service.tool.ToolExecutionResult> future = null;
             try {
                 Duration timeout = effectiveTimeout(runContext, descriptor);
-                future = executorFor(descriptor).submit(() -> registered.executor().execute(request, null));
-                String rawResult = future.get(Math.max(1L, timeout.toMillis()), TimeUnit.MILLISECONDS);
+                future = executorFor(descriptor).submit(() -> {
+                    // 排队等待期间也可能删除会话，在真正调用工具前重验。
+                    conversationAccess.checkRun(runContext);
+                    runContext.control().ensureActive();
+                    return registered.executor().executeWithContext(request,
+                            dev.langchain4j.invocation.InvocationContext.builder().build());
+                });
+                var rawResult = future.get(Math.max(1L, timeout.toMillis()), TimeUnit.MILLISECONDS);
                 recordAttempt(runContext, descriptor, "success");
                 return finish(runContext, invocationContext, descriptor, toolCallId, descriptor.name(),
                         AgentToolExecutionStatus.SUCCESS, false, attempts, startedNanos,
-                        validation.safeSummary(), rawResult, true);
+                        validation.safeSummary(), rawResult.resultText(), true)
+                        .withAttributes(activationAttributes(descriptor.name(), rawResult.attributes()));
             } catch (TimeoutException e) {
                 if (future != null) {
                     future.cancel(true);
@@ -173,6 +188,13 @@ public class AgentToolExecutionPipeline {
                 lastFailure = new AgentToolFailure(AgentToolExecutionStatus.RUN_TERMINATED, false,
                         "Agent Run 已终止");
             } catch (Exception e) {
+                // 委派的审批是整个协作暂停信号，不能被 Future/反射包装转换为普通失败再继续模型调用。
+                var suspended = AgentToolSuspendedException.find(e);
+                if (suspended != null && SupervisorExecutionScope.active()
+                        && AgentTools.isDelegationAdapter(descriptor.name())
+                        && runContext.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
+                    throw suspended;
+                }
                 if (future != null && !future.isDone()) {
                     future.cancel(true);
                 }
@@ -201,6 +223,13 @@ public class AgentToolExecutionPipeline {
             context.control().ensureActive();
         }
         return min(configured, remaining);
+    }
+
+    private java.util.Map<String, Object> activationAttributes(String name, java.util.Map<String, Object> attributes) {
+        if (!com.ai.skill.SkillCatalog.ACTIVATE_TOOL.equals(name) || attributes == null) return java.util.Map.of();
+        Object activated = attributes.get(com.ai.skill.SkillCatalog.ACTIVATED_ATTRIBUTE);
+        return activated instanceof String id ? java.util.Map.of(com.ai.skill.SkillCatalog.ACTIVATED_ATTRIBUTE, id)
+                : java.util.Map.of();
     }
 
     private AsyncTaskExecutor executorFor(AgentToolDescriptor descriptor) {

@@ -1,9 +1,14 @@
 package com.ai.memory;
 
+import com.ai.indexing.IndexTask;
+import com.ai.indexing.IndexTaskStore;
 import com.ai.memory.dto.MemoryCaptureRequest;
 import com.ai.repository.MemoryEntryRepository;
 import com.ai.service.VectorMemoryService;
 import com.ai.vector.VectorDocumentTypes;
+import com.ai.vector.VectorMetadataKeys;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,7 +16,11 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 长期记忆元数据存储和 Milvus 向量索引入口。
@@ -29,21 +38,25 @@ public class LongTermMemory {
     private final VectorMemoryService vectorMemoryService;
     private final MemoryQuotaService memoryQuotaService;
     private final MemoryProperties memoryProperties;
+    private final IndexTaskStore indexTasks;
+    private final MemoryWriteGuard writeGuard;
 
     public LongTermMemory(MemoryEntryRepository memoryEntryRepository,
             MemoryEntryFactory memoryEntryFactory,
             VectorMemoryService vectorMemoryService,
             MemoryQuotaService memoryQuotaService,
-            MemoryProperties memoryProperties) {
+            MemoryProperties memoryProperties, IndexTaskStore indexTasks, MemoryWriteGuard writeGuard) {
         this.memoryEntryRepository = memoryEntryRepository;
         this.memoryEntryFactory = memoryEntryFactory;
         this.vectorMemoryService = vectorMemoryService;
         this.memoryQuotaService = memoryQuotaService;
         this.memoryProperties = memoryProperties;
+        this.indexTasks = indexTasks;
+        this.writeGuard = writeGuard;
     }
 
     /**
-     * 写入长期记忆并同步建立向量索引。
+     * 保存长期记忆并在同一事务登记索引任务，外部向量服务由后台处理。
      *
      * @param tenantId 租户 ID
      * @param userId 用户 ID
@@ -56,12 +69,13 @@ public class LongTermMemory {
             throw new IllegalArgumentException("tenantId and userId are required");
         }
         MemoryCaptureRequest normalized = request.normalize();
+        writeGuard.advance(tenantId, userId);
         MemoryEntry entry = memoryEntryFactory.create(tenantId, userId, normalized);
         entry.setTier(MemoryTier.LONG_TERM);
-        MemoryEntry saved = memoryEntryRepository.saveAndFlush(entry);
+        MemoryEntry saved = memoryEntryRepository.save(entry);
         String content = normalized.effectiveContent();
         if (StringUtils.hasText(content)) {
-            vectorMemoryService.indexMemory(saved.getMemoryId(), content, tenantId, userId);
+            scheduleIndex(saved);
             saved.setVectorId(VectorDocumentTypes.MEMORY + ":" + saved.getMemoryId());
             return memoryEntryRepository.save(saved);
         }
@@ -78,6 +92,7 @@ public class LongTermMemory {
      */
     @Transactional(rollbackFor = Exception.class)
     public MemoryEntry upsertSemantic(String tenantId, String userId, MemoryCaptureRequest request) {
+        writeGuard.lock(tenantId, userId);
         MemoryCaptureRequest normalized = request.normalize();
         if (!StringUtils.hasText(normalized.semanticKey())) {
             throw new IllegalArgumentException("semanticKey is required");
@@ -91,10 +106,10 @@ public class LongTermMemory {
         MemoryEntry target = existing == null ? incoming : applySemanticUpdate(existing, incoming);
         target.setTier(MemoryTier.LONG_TERM);
         target.setExpiresAt(null);
-        MemoryEntry saved = memoryEntryRepository.saveAndFlush(target);
+        MemoryEntry saved = memoryEntryRepository.save(target);
         String content = resolveContent(saved);
         if (StringUtils.hasText(content)) {
-            vectorMemoryService.indexMemory(saved.getMemoryId(), content, tenantId, userId);
+            scheduleIndex(saved);
             saved.setVectorId(VectorDocumentTypes.MEMORY + ":" + saved.getMemoryId());
             return memoryEntryRepository.save(saved);
         }
@@ -109,12 +124,17 @@ public class LongTermMemory {
      */
     @Transactional(rollbackFor = Exception.class)
     public MemoryEntry savePromoted(MemoryEntry entry) {
+        writeGuard.lock(entry.getTenantId(), entry.getUserId());
+        // 晋升候选可能已经被用户删除，不能用陈旧实体重新插入。
+        entry = memoryEntryRepository.findByMemoryIdAndTenantIdAndUserId(
+                entry.getMemoryId(), entry.getTenantId(), entry.getUserId())
+                .orElseThrow(() -> new IllegalStateException("记忆晋升来源已失效"));
         entry.setTier(MemoryTier.LONG_TERM);
         entry.setExpiresAt(null);
-        MemoryEntry saved = memoryEntryRepository.saveAndFlush(entry);
+        MemoryEntry saved = memoryEntryRepository.save(entry);
         String content = resolveContent(saved);
         if (StringUtils.hasText(content)) {
-            vectorMemoryService.indexMemory(saved.getMemoryId(), content, saved.getTenantId(), saved.getUserId());
+            scheduleIndex(saved);
             saved.setVectorId(VectorDocumentTypes.MEMORY + ":" + saved.getMemoryId());
             return memoryEntryRepository.save(saved);
         }
@@ -134,8 +154,46 @@ public class LongTermMemory {
         if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(userId) || !StringUtils.hasText(query)) {
             return "";
         }
-        return vectorMemoryService.searchRelevant(
-                query, topK, DEFAULT_MIN_SCORE, tenantId, userId, java.util.List.of(VectorDocumentTypes.MEMORY));
+        List<EmbeddingMatch<TextSegment>> matches = vectorMemoryService.searchMatches(
+                query, topK, DEFAULT_MIN_SCORE, tenantId, userId, List.of(VectorDocumentTypes.MEMORY));
+        if (matches.isEmpty()) {
+            return "";
+        }
+        // 向量索引是异步投影：主库决定记忆是否仍存在、有效且属于当前用户。
+        List<String> ids = matches.stream().map(this::sourceId)
+                .filter(StringUtils::hasText).distinct().toList();
+        if (ids.isEmpty()) {
+            return "";
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, MemoryEntry> current = memoryEntryRepository
+                .findActiveLongTermByIds(ids, tenantId, userId, now).stream()
+                .collect(Collectors.toMap(MemoryEntry::getMemoryId, entry -> entry));
+        Map<String, String> evidence = new LinkedHashMap<>();
+        for (EmbeddingMatch<TextSegment> match : matches) {
+            String id = sourceId(match);
+            MemoryEntry entry = current.get(id);
+            if (entry == null) {
+                continue;
+            }
+            String content = resolveContent(entry);
+            String indexed = match.embedded().text();
+            String fragment = indexed.startsWith("记忆: ") ? indexed.substring("记忆: ".length()) : indexed;
+            // 修改后尚未重建的旧片段不能继续作为当前记忆证据。
+            if (StringUtils.hasText(content) && StringUtils.hasText(fragment) && content.contains(fragment)) {
+                evidence.putIfAbsent(id, "[memoryId=" + id + " | 相关度:"
+                        + String.format(Locale.ROOT, "%.2f", match.score()) + "] 记忆: " + fragment);
+            }
+        }
+        return String.join("\n\n", evidence.values());
+    }
+
+    private String sourceId(EmbeddingMatch<TextSegment> match) {
+        return match.embedded().metadata().getString(VectorMetadataKeys.SOURCE_ID);
+    }
+
+    private void scheduleIndex(MemoryEntry entry) {
+        indexTasks.enqueue(IndexTask.Kind.MEMORY, entry.getTenantId(), entry.getUserId(), entry.getMemoryId());
     }
 
     /**
@@ -145,8 +203,9 @@ public class LongTermMemory {
      * @param userId 用户 ID
      * @return 画像证据记忆
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<MemoryEntry> listProfileEvidence(String tenantId, String userId) {
+        // 当前读避免外层事务的旧快照在重置后重新生成旧画像；调用方先持有用户写锁。
         return memoryEntryRepository.findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc(
                 tenantId,
                 userId,
@@ -194,8 +253,8 @@ public class LongTermMemory {
                 continue;
             }
             entry.setDecayWeight(roundWeight(entry.getDecayWeight() * memoryProperties.getLongTermDecayRate()));
-            memoryEntryRepository.save(entry);
-            updatedCount++;
+            // 扫描后可能发生画像重置；维护只能更新原记录，不能把已删除的依据重新插入。
+            updatedCount += memoryEntryRepository.updateLongTermDecayIfUnchanged(entry);
         }
         return new MemoryDecayResult(updatedCount, 0);
     }

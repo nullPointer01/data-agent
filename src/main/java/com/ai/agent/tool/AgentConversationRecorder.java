@@ -2,17 +2,16 @@ package com.ai.agent.tool;
 
 import com.ai.agent.durable.AgentDurableRunStore;
 import com.ai.mcp.TokenMonitor;
-import com.ai.memory.ConversationMemoryCaptureService;
+import com.ai.memory.MemoryCaptureMode;
 import com.ai.model.AnalysisRequest;
 import com.ai.model.ConversationSession;
-import com.ai.security.SecurityContextHelper;
 import com.ai.service.SessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 持久化 Agent 对话记录并索引长期记忆。
+ * 持久化 Agent 对话记录，并按请求计划调度记忆捕获。
  *
  * @author data-agent
  */
@@ -20,67 +19,24 @@ import org.springframework.stereotype.Component;
 public class AgentConversationRecorder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentConversationRecorder.class);
-    private static final String ANONYMOUS_SESSION_ID = "anonymous";
-    private static final String REACT_SKILL_NAME = "react-agent";
     private static final String WAITING_APPROVAL_MESSAGE = "工具操作已提交审批，审批通过后会继续执行。";
 
     private final TokenMonitor tokenMonitor;
     private final AgentDurableRunStore durableRunStore;
     private final SessionManager sessionManager;
-    private final SecurityContextHelper securityContextHelper;
-    private final ConversationMemoryCaptureService conversationMemoryCaptureService;
 
     public AgentConversationRecorder(TokenMonitor tokenMonitor,
             AgentDurableRunStore durableRunStore,
-            SessionManager sessionManager,
-            SecurityContextHelper securityContextHelper,
-            ConversationMemoryCaptureService conversationMemoryCaptureService) {
+            SessionManager sessionManager) {
         this.tokenMonitor = tokenMonitor;
         this.durableRunStore = durableRunStore;
         this.sessionManager = sessionManager;
-        this.securityContextHelper = securityContextHelper;
-        this.conversationMemoryCaptureService = conversationMemoryCaptureService;
     }
 
     /**
-     * 记录已完成的 ReAct 对话。
+     * 记录完整的分析会话，并同事务提交精选记忆提取任务。
      *
-     * @param session 会话对象
-     * @param request 原始请求
-     * @param result 最终回答
-     * @param modelId 选中的模型 ID
-     * @param runId 本次 Agent Run 编号
-     */
-    public void recordReActConversation(ConversationSession session, AnalysisRequest request, String result,
-            String modelId, String runId) {
-        if (!persistConversation(session, request, result, REACT_SKILL_NAME, modelId, runId, true)) {
-            return;
-        }
-        captureConversationMemory(session, request, result, modelId);
-    }
-
-    /**
-     * 记录会话范围内的命令或技能对话，不进行原始对话的向量索引。
-     *
-     * @param session 会话对象
-     * @param request 原始请求
-     * @param result 最终回答
-     * @param skillUsed 使用的技能或命令名称
-     * @param modelId 选中的模型 ID
-     * @param runId 本次 Agent Run 编号
-     */
-    public void recordSessionConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId, String runId) {
-        if (persistConversation(session, request, result, skillUsed, modelId, runId, false)) {
-            captureConversationMemory(session, request, result, modelId);
-        }
-    }
-
-    /**
-     * 记录完整的分析会话，并同事务提交后台向量索引任务。
-     *
-     * <p>该入口用于默认编排链和配置化 Agent 路由，确保分析结果不仅落到会话历史，
-     * 还会进入后续可检索的长期记忆。</p>
+     * <p>完整问答只保存于主库；长期记忆由请求计划调度、提取器准入。</p>
      *
      * @param session 会话对象
      * @param request 原始请求
@@ -88,13 +44,12 @@ public class AgentConversationRecorder {
      * @param skillUsed 使用的技能或 Agent 名称
      * @param modelId 选中的模型 ID
      * @param runId 本次 Agent Run 编号
+     * @param captureMode 本轮长期记忆提取调度
+     * @param memoryRevision 请求开始时的记忆修订快照
      */
     public void recordAnalysisConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId, String runId) {
-        if (!persistConversation(session, request, result, skillUsed, modelId, runId, true)) {
-            return;
-        }
-        captureConversationMemory(session, request, result, modelId);
+            String skillUsed, String modelId, String runId, MemoryCaptureMode captureMode, long memoryRevision) {
+        persistConversation(session, request, result, skillUsed, modelId, runId, captureMode, memoryRevision);
     }
 
     /**
@@ -111,7 +66,8 @@ public class AgentConversationRecorder {
             String skillUsed,
             String modelId,
             String runId) {
-        persistConversation(session, request, WAITING_APPROVAL_MESSAGE, skillUsed, modelId, runId, false);
+        persistConversation(session, request, WAITING_APPROVAL_MESSAGE, skillUsed, modelId, runId,
+                MemoryCaptureMode.SKIP, 0L);
     }
 
     /**
@@ -135,23 +91,23 @@ public class AgentConversationRecorder {
                     content,
                     skillUsed,
                     modelId,
-                    tokenMonitor.estimateTokens(content, modelId), null));
+                    tokenMonitor.estimateTokens(content, modelId)));
         } catch (Exception e) {
             LOGGER.warn("更新 Agent Run 会话状态失败，run: {}", runId, e);
         }
     }
 
-    /** 恢复成功回答必须先保存；主库和索引任务失败时让恢复流程进入失败状态。 */
-    public void recordResumedConversation(String runId, String question, String answer, String modelId) {
+    /** 恢复成功回答必须先保存，主库失败时让恢复流程进入失败状态。 */
+    public void recordResumedConversation(String runId, String answer, String modelId) {
         var run = durableRunStore.find(runId).orElseThrow(() -> new IllegalStateException("待恢复 Run 不存在"));
         if (!sessionManager.updateRunAssistantMessage(run.getSessionId(), run.getTenantId(), run.getUserId(),
-                runId, answer, null, modelId, tokenMonitor.estimateTokens(answer, modelId), question)) {
+                runId, answer, null, modelId, tokenMonitor.estimateTokens(answer, modelId))) {
             throw new IllegalStateException("恢复回答生成成功，但会话保存失败");
         }
     }
 
     private boolean persistConversation(ConversationSession session, AnalysisRequest request, String result,
-            String skillUsed, String modelId, String runId, boolean indexConversation) {
+            String skillUsed, String modelId, String runId, MemoryCaptureMode captureMode, long memoryRevision) {
         if (session == null) {
             throw new IllegalStateException("会话缺失，回答未保存");
         }
@@ -164,7 +120,7 @@ public class AgentConversationRecorder {
                     modelId,
                     tokenMonitor.estimateTokens(request.getQuestion(), modelId),
                     tokenMonitor.estimateTokens(result, modelId),
-                    runId, indexConversation);
+                    runId, captureMode, memoryRevision);
             if (saved) {
                 session.addUserMessage(request.getQuestion());
                 session.addAssistantMessage(result);
@@ -174,20 +130,6 @@ public class AgentConversationRecorder {
             LOGGER.warn("持久化 Agent 对话失败，session: {}", session.getSessionId(), e);
             throw new IllegalStateException("回答生成成功，但会话保存失败，请稍后重试", e);
         }
-    }
-
-    private void captureConversationMemory(
-            ConversationSession session, AnalysisRequest request, String result, String modelId) {
-        try {
-            conversationMemoryCaptureService.captureCompletedConversation(
-                    resolveSessionId(session), request.getQuestion(), result, modelId);
-        } catch (Exception e) {
-            LOGGER.warn("捕获对话记忆失败", e);
-        }
-    }
-
-    private String resolveSessionId(ConversationSession session) {
-        return session != null ? session.getSessionId() : ANONYMOUS_SESSION_ID;
     }
 
 }

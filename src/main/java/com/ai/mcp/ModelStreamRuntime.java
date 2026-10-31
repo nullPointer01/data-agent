@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import com.ai.agent.runtime.AgentRunControl;
 
 /** 模型流用共享定时器检查取消/超时，完成动作交给独立有界执行器，不占线程等待网络。 */
@@ -32,11 +33,11 @@ public class ModelStreamRuntime {
     }
 
     /** 应用停止时让所有未完成的模型流进入终态，不能只停掉超时检查。 */
-    synchronized ModelResponseStream open(Consumer<String> consumer, AgentRunControl control) {
+    synchronized ModelResponseStream open(Consumer<String> consumer, AgentRunControl control, Consumer<ChatResponse> lateResponse) {
         if (closed) {
             throw new CancellationException("模型流运行时已关闭");
         }
-        ModelResponseStream stream = new ModelResponseStream(consumer, control, scheduler);
+        ModelResponseStream stream = new ModelResponseStream(consumer, control, scheduler, lateResponse);
         activeStreams.add(stream);
         stream.completion().whenComplete((response, error) -> activeStreams.remove(stream));
         return stream;

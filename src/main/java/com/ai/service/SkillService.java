@@ -1,7 +1,8 @@
 package com.ai.service;
 
-import com.ai.skill.dto.SkillHistoryListResponse;
-import com.ai.skill.dto.SkillListResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.skill.dto.SkillResponse;
+import com.ai.skill.dto.SkillHistoryResponse;
 import com.ai.skill.dto.SkillMutationResponse;
 import com.ai.skill.dto.SkillRequest;
 
@@ -25,7 +26,7 @@ public interface SkillService {
      *
      * @return 技能列表
      */
-    SkillListResponse listSkills();
+    ListPageResponse<SkillResponse> listSkills(int page, int size, String query);
 
     /**
      * 删除技能。
@@ -58,7 +59,7 @@ public interface SkillService {
      * @param skillId 技能编号
      * @return 历史记录列表
      */
-    SkillHistoryListResponse listHistory(String skillId);
+    ListPageResponse<SkillHistoryResponse> listHistory(String skillId, int page, int size);
 
     /**
      * 将技能提示词回滚到历史版本。

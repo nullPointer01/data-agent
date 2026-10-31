@@ -36,6 +36,10 @@ public class AgentDurableRuntimeProperties {
     @NotNull
     private Duration scanInterval = Duration.ofSeconds(15);
 
+    /** MQ 漏投、失租恢复与审批过期的低频补偿；租约续租仍使用 scanInterval。 */
+    @NotNull
+    private Duration recoveryInterval = Duration.ofMinutes(1);
+
     @NotNull
     private Duration terminalRetention = Duration.ofDays(30);
 
@@ -52,6 +56,7 @@ public class AgentDurableRuntimeProperties {
         return isPositive(approvalTtl)
                 && isPositive(leaseDuration)
                 && isPositive(scanInterval)
+                && isPositive(recoveryInterval)
                 && isPositive(terminalRetention);
     }
 
@@ -104,6 +109,14 @@ public class AgentDurableRuntimeProperties {
 
     public void setScanInterval(Duration scanInterval) {
         this.scanInterval = scanInterval;
+    }
+
+    public Duration getRecoveryInterval() {
+        return recoveryInterval;
+    }
+
+    public void setRecoveryInterval(Duration recoveryInterval) {
+        this.recoveryInterval = recoveryInterval;
     }
 
     public Duration getTerminalRetention() {

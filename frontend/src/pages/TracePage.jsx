@@ -1,6 +1,7 @@
 import { Eye, RefreshCw } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
+import { useState } from 'react';
+import { Badge, DataTable, EmptyState, Field, ListLoadError, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
+import { useDebouncedValue, useServerList } from '../hooks/useServerList.js';
 import { formatTime, truncate } from '../utils/format.js';
 
 function statusTone(success) {
@@ -30,35 +31,13 @@ function parseJson(value, fallback) {
 
 /** 运行追踪列表：筛选 Agent Run 并进入单次运行的证据详情。 */
 export function TracePage({ api, initialUserId = '' }) {
-  const [traces, setTraces] = useState([]);
   const [query, setQuery] = useState('');
   const [userId, setUserId] = useState(initialUserId);
-  const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ limit: '100' });
-      if (userId.trim()) {
-        params.set('userId', userId.trim());
-      }
-      const response = await api.get(`/api/v1/agent-traces?${params.toString()}`);
-      setTraces(response.traces || []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return traces;
-    }
-    return traces.filter((trace) => JSON.stringify(trace).toLowerCase().includes(keyword));
-  }, [traces, query]);
+  const keyword = useDebouncedValue(query.trim());
+  const owner = useDebouncedValue(userId.trim());
+  const list = useServerList({ api, url: '/api/v1/agent-traces', filters: { query: keyword, userId: owner } });
+  const traces = list.items;
 
   const openDetail = async (trace) => {
     const response = await api.get(`/api/v1/agent-traces/${trace.traceId}`);
@@ -70,15 +49,16 @@ export function TracePage({ api, initialUserId = '' }) {
       <PageHeader
         title="执行追踪"
         desc="查看请求计划、Run 预算、工具治理、上下文治理和最终状态"
-        actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder="搜索问题、Agent、意图" /><input className="input compact" placeholder="用户 ID" value={userId} onChange={(event) => setUserId(event.target.value)} /><button className="btn" onClick={load}><RefreshCw size={16} />刷新</button></>}
+        actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder="搜索全部问题、Agent、意图" /><input className="input compact" placeholder="用户 ID" value={userId} onChange={(event) => setUserId(event.target.value)} /><button className="btn" onClick={() => list.refresh({ reset: true })}><RefreshCw size={16} />刷新</button></>}
       />
       <div className="grid grid-4">
-        <Metric label="轨迹总数" value={traces.length} />
-        <Metric label="成功" value={traces.filter((item) => item.success).length} />
-        <Metric label="失败" value={traces.filter((item) => !item.success).length} />
-        <Metric label="平均耗时" value={averageDuration(traces)} />
+        <Metric label="本页轨迹" value={traces.length} />
+        <Metric label="本页成功" value={traces.filter((item) => item.success).length} />
+        <Metric label="本页失败" value={traces.filter((item) => !item.success).length} />
+        <Metric label="本页平均耗时" value={averageDuration(traces)} />
       </div>
-      <DataTable loading={loading} empty={<EmptyState title="暂无执行轨迹" desc="通过我的 Agent 发起任务后，这里会显示运行模式、工具调用和终态记录。" />} columns={[
+      <ListLoadError error={list.error} onRetry={() => list.refresh()} />
+      {!list.error && <DataTable loading={list.loading} serverPagination={list.pagination} empty={<EmptyState title="暂无匹配执行轨迹" desc="调整筛选条件，或返回上一页查看记录。" />} columns={[
         { key: 'createdAt', title: '时间', render: (item) => formatTime(item.createdAt) },
         { key: 'question', title: '问题', render: (item) => truncate(item.question, 90) },
         { key: 'selectedAgent', title: 'Agent', render: (item) => <><strong>{item.selectedAgent || '-'}</strong><div className="muted">{item.userId || '-'}</div></> },
@@ -88,7 +68,7 @@ export function TracePage({ api, initialUserId = '' }) {
         { key: 'durationMs', title: '耗时', render: (item) => `${item.durationMs || 0} ms` },
         { key: 'success', title: '状态', render: (item) => <Badge tone={statusTone(item.success)}>{item.success ? '成功' : '失败'}</Badge> },
         { key: 'actions', title: '操作', render: (item) => <button className="btn" onClick={() => openDetail(item)}><Eye size={16} />详情</button> }
-      ]} rows={filtered} rowKey="traceId" />
+      ]} rows={traces} rowKey="traceId" />}
       {detail && <TraceDetail trace={detail} api={api} onClose={() => setDetail(null)} />}
     </>
   );
@@ -248,6 +228,9 @@ function TraceEvidence({ contextGovernance, outcomeEvaluation }) {
       <div className="trace-plan-item">
         <strong>上下文治理</strong>
         <p>记录 {eventCount} 次，最近决策：{contextGovernance.latest?.decision || '-'}</p>
+        {contextGovernance.latest?.summary?.summaryCount > 0 && <p>
+          {contextGovernance.latest.summary.summaryCount} 段任务摘要，覆盖 {contextGovernance.latest.summary.coveredMessageCount} 条旧消息
+        </p>}
       </div>
       <div className="trace-plan-item">
         <strong>结果评估</strong>

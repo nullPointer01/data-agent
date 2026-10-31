@@ -1,13 +1,6 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+import java.util.UUID;
 
 import java.time.LocalDateTime;
 
@@ -16,71 +9,73 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "skill_config")
 public class SkillConfig {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String skillId;
 
-    @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(length = 16)
     private String version = "1.0";
 
     // 仅保留旧配置以便显式迁移与清空；官方 Skill 不执行 HTTP，也不向模型暴露这些凭据。
-    @Column(name = "api_url", length = 256)
     private String apiUrl;
 
-    @Column(name = "api_method", length = 8)
     private String apiMethod = "POST";
 
-    @Column(name = "api_headers", columnDefinition = "TEXT")
     private String apiHeaders;
 
     // 官方 Skill.content：激活后由当前 Agent 遵循的 Markdown 指令，不再独立调用模型。
-    @Column(name = "prompt_template", columnDefinition = "TEXT")
     private String promptTemplate;
 
     // 官方 SkillResource：references/steps.md；只读参考资料，不是可执行流程定义。
-    @Column(name = "steps", columnDefinition = "TEXT")
     private String steps;
 
-    @Column(name = "source", length = 32)
+    private String toolDependencies = "";
+    // 学习候选与个人技能始终属于创建者；人工管理的旧技能保持租户共享。
+    private boolean privateSkill;
+    private String reviewStatus = "PUBLISHED";
+    private String sourceRunId;
+    private String evidence;
+
     private String source = "manual";
 
     private Boolean enabled = true;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "created_by", length = 64)
     private String createdBy;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
+        if (skillId == null) {
+            skillId = UUID.randomUUID().toString();
+        }
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 
     public SkillConfig() {
     }
+
+    public String getToolDependencies() { return toolDependencies; }
+    public void setToolDependencies(String value) { toolDependencies = value; }
+    public boolean isPrivateSkill() { return privateSkill; }
+    public void setPrivateSkill(boolean value) { privateSkill = value; }
+    public String getReviewStatus() { return reviewStatus; }
+    public void setReviewStatus(String value) { reviewStatus = value; }
+    public String getSourceRunId() { return sourceRunId; }
+    public void setSourceRunId(String value) { sourceRunId = value; }
+    public String getEvidence() { return evidence; }
+    public void setEvidence(String value) { evidence = value; }
 
     public String getSkillId() {
         return skillId;
@@ -160,10 +155,6 @@ public class SkillConfig {
 
     public void setSource(String source) {
         this.source = source;
-    }
-
-    public Boolean getEnabled() {
-        return enabled;
     }
 
     public boolean isEnabled() {

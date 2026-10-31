@@ -1,5 +1,9 @@
 # Agent 运行时与 Harness
 
+2026-10-10 产品聊天改为 `BackgroundRunController.submit → BackgroundRunStore → MQ/BackgroundRunWorker → AgentRunCoordinator.executeQueued`，独立 GET 事件日志订阅不启动/取消任务。同步入口仍使用下面的准备与执行核心。幂等、租约、V8、游标、保留期及真实验收边界见 [后台 Run 与事件续读](./后台Run与事件续读.md)。
+
+长任务上下文在 2026-10-10 升级为超限时的有证据摘录与完整工具组裁剪，当前问题、未完成协议和 Skill 指令受保护；生成摘要仍受根预算与日配额约束。缓存仅活在当前控制器，审批恢复仍读取原始现场。入口与验收见[长任务上下文摘要](./长任务上下文摘要.md)。
+
 ## 四个核心概念
 
 - `AgentProfile`：一份可复用的 Agent 配置，绑定模型、System Prompt、统一 Capability 身份列表和执行模式。
@@ -56,14 +60,14 @@ Capability 绑定和执行模式共同决定；数据分析、知识检索、报
 
 ## 请求规划与资源准入
 
-当前规划器版本为 `request-planner-v7`（2026-09-23）。完整问句“你是谁/你能做什么/你能干什么/你有哪些能力”
+当前规划器版本为 `request-planner-v8`（2026-10-09）。完整问句“你是谁/你能做什么/你能干什么/你有哪些能力”
 可由本地能力目录回答；带文件或附加任务的请求不走此快捷入口。其他请求由一次结构化 Router 根据原始问题、
 近期会话、文件状态、Agent 职责及已授权能力描述生成计划。文件存在不代表必须使用工具，多个步骤也不代表必须委派。
 
 ```text
 AgentProfile + 当前用户权限 + 固定模式约束
   -> 已绑定可用能力摘要（Tool 描述、Skill 目录、子 Agent 职责）
-  -> 语义 Router：意图、上下文三态、独立检索问题、候选工具名
+  -> 语义 Router：意图、上下文三态、独立检索问题、候选工具名、记忆提取调度
   -> 严格 JSON 合同和候选交集校验
   -> 根据实际候选决定自动模式
   -> Run 内重新授权、预算与 Tool Pipeline
@@ -80,9 +84,14 @@ Router 只选输入目录中的精确工具名，最多 5 个。Skill 候选会�
 模型负责理解用户意图；JSON 是服务之间的传输格式。Router 使用独立、严格的 ObjectReader 直接绑定
 `SemanticRequestRouter.Decision`，不再逐字段读取 JsonNode。关闭隐式类型转换，缺失/null 字段、未知字段、
 枚举序号、重复字段或候选均拒绝；业务层只校验有界长度、置信度和能力集合。
-v7 默认调用 `McpModelService.callModelStructured`，通过 LangChain4j 的 ChatRequest.responseFormat 传递七字段
+当前默认调用 `McpModelService.callModelStructured`，通过 LangChain4j 的 ChatRequest.responseFormat 传递八字段
 JSON Schema，客户端启用 strictJsonSchema。全部字段 required，禁止额外字段，枚举从 Java 定义生成。
 Schema 保持稳定，工具目录仍在输入中，动态权限和长度/置信度/重复候选仍由 Java 校验；结构合法不表示理解正确。
+
+v9 的 `memoryCapture` 只保留 SKIP/BACKGROUND，复用规划调用决定隐式候选提取，与 semanticMemory 读取需求独立。
+显式保存/忘记通过已绑定的 saveMemory/forgetMemory 工具执行，结果先返回模型；后台不接受显式保存候选。
+请求开始快照记忆修订号，后台提交核验来源、修订与消息顺序。聊天与提取任务、长期记忆与索引任务分别同事务保存，
+RabbitMQ 分发任务引用，每分钟补偿漏投和过期租约，详见 [记忆与后台任务技术方案](./记忆与后台任务技术方案.md)。
 统一模型门面按请求选择 TEXT / JSON_OBJECT / JSON_SCHEMA，普通 JSON 调用及后台记忆提取保留 JSON_OBJECT，
 不再为 JSON 另建客户端缓存，YAML 默认模型也能收到格式要求。所有调用继续复用现有配额、重试和预算。
 
@@ -220,9 +229,9 @@ POST /api/v1/analysis/runs/{runId}/cancel
 
 审批型工具在参数、权限、allowlist 和风险策略准入后，不立即消耗工具预算或进入反射执行器。ReAct 把当前可移植消息、单个待审批工具请求、剩余 active timeout 和已用预算写入版本化 Checkpoint，再将 Run 置为 `WAITING_APPROVAL`。同一模型响应包含多个工具请求时，先整体预检；只持久化第一个审批动作，其他动作由恢复后的模型重新规划，避免产生部分副作用或不成对的 tool message。
 
-管理员批准只改变审批决定为 `APPROVED/READY`。后台 worker 通过 Run 状态、版本和过期租约做 CAS 领取，进入 `RESUMING` 后交给独立有界线程池执行，调度线程只负责扫描和续租，不能被模型调用占住。续租失败会取消当前节点 Registry 中的 Run，使后续模型和工具边界停止准入；执行前还会重新读取发起人和审批人的启用状态与 RBAC，并重查 Tool Registry、原 Agent allowlist、审批权限和当前风险策略。任一条件失效都会 fail closed，不会把审批当作权限提升。
+管理员批准将审批决定改为 `APPROVED/READY`，提交后向 RabbitMQ 发送恢复引用。后台 worker 通过 Run 状态、版本和过期租约做 CAS 领取，进入 `RESUMING` 后交给独立有界线程池执行，调度线程只做一分钟补偿与本机活动租约续租，不能被模型调用占住。等待消息与审批单同事务保存，本机原 Run 收尾后补发 READY 提示。续租失败会取消当前节点 Registry 中的 Run，使后续模型和工具边界停止准入；执行前还会重新读取发起人和审批人的启用状态与 RBAC，并重查 Tool Registry、原 Agent allowlist、审批权限和当前风险策略。任一条件失效都会 fail closed，不会把审批当作权限提升。
 
-暂停时冻结的 active timeout 不包含人工等待时间，恢复后以“当前时间 + 剩余 active timeout”重建 deadline；迭代、模型调用、工具调用和 Token 已用量全部延续。审批有效期单独由 `approvalTtl` 控制。旧 SSE 在 `approval_required` 后关闭，恢复结果通过 `GET /api/v1/agent-runs/{runId}` 查询，当前没有事件 replay。
+暂停时冻结的 active timeout 不包含人工等待时间，恢复后以“当前时间 + 剩余 active timeout”重建 deadline；迭代、模型调用、工具调用和 Token 已用量全部延续。审批有效期单独由 `approvalTtl` 控制。旧 SSE 在 `approval_required` 后关闭，页面通过独立审批 SSE 收到刷新提示，再用 `GET /api/v1/agent-runs/{runId}` 查询当前结果；删除每 2.5 秒轮询，仍无持久事件 replay。通知事务、跨实例广播、授权与断线恢复见 [审批事件与状态订阅](./审批事件与状态订阅.md)。
 
 Checkpoint 与原工具请求使用 `APP_ENCRYPTION_KEY` 做 AES-GCM 加密。当前没有 key version，直接更换生产密钥会让等待中的记录不可恢复；密钥轮换前必须另行实现多版本解密和迁移。
 
@@ -251,13 +260,13 @@ risk metadata + lifecycle + availability
 
 统一身份使用 `tool:<name>`、`skill:<skillId>` 和 `agent:<agentId>`。Tool 的风险与权限来自 `@AgentToolPolicy`；Skill 的稳定身份、版本和归属来自 `skill_config`，由 `SkillCatalog` 按绑定/租户/启用状态实时映射官方 Skills；sub Agent 的版本使用 `AgentProfile.updatedAt` 修订标识，风险从当前有效工具集合保守推导。
 
-`GET /api/v1/my/capabilities` 会重新读取持久化用户权限，只返回当前租户可见、当前用户有权限了解的能力。停用但仍可见的能力保留安全原因，供设置页禁选或移除旧绑定。Profile 保存时服务端再次校验三类身份、可用性、自引用和已知引用环，不能依赖前端隐藏防伪造。目录中已经消失的历史绑定只在设置页显示安全占位，允许移除但不能重新选择。
+`GET /api/v1/my/capabilities` 会重新读取持久化用户权限，必填 type=TOOL/SKILL/SUB_AGENT，以 size/after/query 分批读取，只返回当前租户可见、当前用户有权限了解的能力描述符。Skill/专家先在 SQL 限定租户/本人和读取量，再复核权限；候选页可能为空但 hasMore=true。设置页按游标完整读取成功后才允许保存，运行时授权不使用页面游标。停用但仍可见的能力保留安全原因，供设置页禁选或移除旧绑定。Profile 保存时服务端再次校验三类身份、可用性、自引用和已知引用环，不能依赖前端隐藏防伪造。目录中已经消失的历史绑定按原选择器语义处理，不能因其他页尚未加载而误判丢失。
 
 Capability Registry 只负责描述、发现和绑定准入，不保存执行器。Tool 仍只能通过 `AgentToolRegistry -> AgentToolExecutionPipeline` 执行，因此未来 MCP-backed Tool 也必须声明相同权限、风险、timeout 和结果边界，不能获得旁路。
 
 Profile 的唯一组合字段是 `capability_bindings`：显式 `[]` 表示用户选择零能力，`NULL` 或损坏 JSON 直接失败关闭。设置页无损保存 Tool、Skill 和子 Agent 的稳定身份；不可用能力不能新增，已经绑定的不可用项可以移除；能力目录加载失败时禁止保存。默认个人 Agent 首次创建时固化当时可用的 Tool 快照，后续新 Tool 不会自动进入已有配置。
 
-能力字段由 `AgentCapabilityConfigurationCodec` 统一解析，JPA Entity 不持有 ObjectMapper 或吞异常 helper。保存、响应、Registry 风险投影、循环引用检查、请求规划和 Runtime 只复用这一份合同，不再读取或投影 `tools/skill_id/datasource_id`。历史数据通过独立 SQL 审计、显式迁移和收口，启动与读取链路绝不静默补权限。
+能力字段由 `AgentCapabilityConfigurationCodec` 统一解析，持久化模型不持有 ObjectMapper 或吞异常 helper。保存、响应、Registry 风险投影、循环引用检查、请求规划和 Runtime 只复用这一份合同，不再读取或投影 `tools/skill_id/datasource_id`。历史数据通过独立 SQL 审计、显式迁移和收口，启动与读取链路绝不静默补权限。
 
 每层配置化 Agent 开始前都会生成不可变 `AgentCapabilityBindingSnapshot`。Chat 不构造能力规格；ReAct 只加入绑定 Tool 和有效 Skill adapter；Orchestrated 再加入委派 adapter。Skill 先检查当前 Scope 再按稳定 ID 精确执行，不存在的 ID 不会回退默认 Skill。子 Agent 在执行时重新读取自己的 Profile，使用自己的模型、Prompt 和能力快照，同时复用根 `AgentRunContext` 的迭代、模型、Tool、Token 与 deadline 预算。
 

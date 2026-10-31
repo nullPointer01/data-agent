@@ -22,6 +22,8 @@ import com.ai.model.AnalysisResponse;
 import com.ai.model.ConversationSession;
 import com.ai.security.SecurityContextHelper;
 import com.ai.service.AgentExecutionTraceService;
+import com.ai.conversation.ConversationAccessGuard;
+import com.ai.agent.approval.AgentApprovalResumeSignals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -61,6 +63,8 @@ public class AgentRunCoordinator {
     private final AgentToolGovernanceProperties toolGovernanceProperties;
     private final AgentDurableRunStore durableRunStore;
     private final AgentOutcomeEvaluator outcomeEvaluator;
+    private final ConversationAccessGuard conversationAccess;
+    private final AgentApprovalResumeSignals approvalResumeSignals;
     private final Map<AgentExecutionMode, AgentExecutionStrategy> strategies;
 
     public AgentRunCoordinator(AgentRunRouteResolver routeResolver,
@@ -72,6 +76,8 @@ public class AgentRunCoordinator {
             AgentToolGovernanceProperties toolGovernanceProperties,
             AgentDurableRunStore durableRunStore,
             AgentOutcomeEvaluator outcomeEvaluator,
+            ConversationAccessGuard conversationAccess,
+            AgentApprovalResumeSignals approvalResumeSignals,
             @Nullable AgentExecutionTraceService traceService,
             List<AgentExecutionStrategy> executionStrategies) {
         this.routeResolver = routeResolver;
@@ -83,6 +89,8 @@ public class AgentRunCoordinator {
         this.toolGovernanceProperties = toolGovernanceProperties;
         this.durableRunStore = durableRunStore;
         this.outcomeEvaluator = outcomeEvaluator;
+        this.conversationAccess = conversationAccess;
+        this.approvalResumeSignals = approvalResumeSignals;
         this.traceService = traceService;
         this.strategies = indexStrategies(executionStrategies);
     }
@@ -110,23 +118,43 @@ public class AgentRunCoordinator {
 
     /** 普通聊天的网络等待通过完成阶段传递；所有模式共用一次终态提交，不提前移除 Run。 */
     public CompletableFuture<AnalysisResponse> executeAsync(AgentExecutionContext executionContext, AgentEventSink eventSink) {
+        return executePrepared(executionContext, eventSink, null, () -> { });
+    }
+
+    /** 提交时只固定 Agent 与服务端预算，不进行语义规划或调用模型。 */
+    public AgentRunContext prepareSubmission(AgentExecutionContext context) {
+        var profile = routeResolver.resolveProfile(context);
+        context.getRequest().setAgentId(profile.getAgentId());
+        return createRunContext(context, profile, AgentEventSink.noop(), null);
+    }
+
+    /** 仅供持有首次执行租约的 worker 复用提交时 Run ID 与预算。 */
+    public CompletableFuture<AnalysisResponse> executeQueued(AgentExecutionContext context,
+            com.ai.agent.durable.AgentRunStateEntity queued, AgentEventSink sink, Runnable fence) {
+        return executePrepared(context, sink, queued, fence);
+    }
+
+    private CompletableFuture<AnalysisResponse> executePrepared(AgentExecutionContext executionContext,
+            AgentEventSink eventSink, com.ai.agent.durable.AgentRunStateEntity queued, Runnable fence) {
         if (executionContext == null || executionContext.getRequest() == null) {
             throw new IllegalArgumentException("Agent 执行上下文不能为空");
         }
         var profile = routeResolver.resolveProfile(executionContext);
-        AgentRunContext planning = createRunContext(executionContext, profile, eventSink);
-        if (durableRunStore.isEnabled()) {
-            durableRunStore.create(planning);
-        }
-        runRegistry.register(planning);
+        AgentRunContext planning = createRunContext(executionContext, profile, eventSink, queued);
+        planning.control().setExecutionFence(fence);
         AgentRunContext active = planning;
         AgentRunRoute route = null;
         CompletableFuture<AgentExecutionStrategy.Result> execution;
         try {
+            if (queued == null && durableRunStore.isEnabled()) {
+                durableRunStore.create(planning);
+            }
+            conversationAccess.registerRun(planning);
+            conversationAccess.checkRun(planning);
             if (!planning.control().start()) {
                 throw new IllegalStateException("Agent Run 无法启动");
             }
-            if (durableRunStore.isEnabled() && !durableRunStore.transition(planning.runId(),
+            if (queued == null && durableRunStore.isEnabled() && !durableRunStore.transition(planning.runId(),
                     new com.ai.agent.durable.AgentRunTransition(AgentRunStatus.CREATED, AgentRunStatus.RUNNING,
                             AgentRunTerminationReason.NONE, "正在规划请求"))) {
                 throw new IllegalStateException("持久化 Agent Run 无法启动");
@@ -180,6 +208,7 @@ public class AgentRunCoordinator {
             AgentExecutionStrategy.Result strategyResult, Throwable error) {
         AnalysisResponse response = null;
         try {
+            conversationAccess.checkRun(runContext);
             if (error != null) {
                 while (error instanceof CompletionException && error.getCause() != null) {
                     error = error.getCause();
@@ -192,13 +221,13 @@ public class AgentRunCoordinator {
             response = strategyResult == null ? null : strategyResult.response();
             if (runContext.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
                 response = response == null ? AnalysisResponse.ok(null) : response;
-                recordConversation(runContext, response, runContext.snapshot());
+                // 等待消息已经与审批单同事务保存，此处不能再次写回覆盖即时恢复的回答。
             } else if (response == null) {
                 runContext.control().fail("Agent 执行结果为空");
                 response = AnalysisResponse.fail("Agent 执行结果为空");
             } else if (response.isSuccess()) {
                 runContext.control().ensureActive();
-                recordConversation(runContext, response, runContext.snapshot());
+                recordConversation(runContext, route, response, runContext.snapshot());
                 runContext.control().complete();
             } else {
                 runContext.control().fail(sanitize(response.getError()));
@@ -221,6 +250,13 @@ public class AgentRunCoordinator {
                 response = finalizeRun(runContext, route, strategyResult, response);
             } finally {
                 runRegistry.remove(runContext);
+                if (runContext.snapshot().status() == AgentRunStatus.WAITING_APPROVAL) {
+                    try {
+                        approvalResumeSignals.wakeReady(runContext.runId());
+                    } catch (RuntimeException failure) {
+                        LOGGER.warn("审批收尾唤醒失败，等待主库补偿: runId={}", runContext.runId());
+                    }
+                }
             }
         }
         return response;
@@ -235,6 +271,8 @@ public class AgentRunCoordinator {
                 : null;
         if (!durableRunStore.synchronizeTerminal(context.runId(), context.snapshot(), resultSummary)) {
             LOGGER.warn("Agent Run 持久化终态未更新，可能已被并发操作处理: runId={}", context.runId());
+            durableRunStore.find(context.runId()).filter(run -> run.getStatus().isTerminal()).ifPresent(run ->
+                    context.control().adoptDurableTerminal(run.getStatus(), run.getTerminationReason(), run.getErrorSummary()));
         }
     }
 
@@ -285,10 +323,12 @@ public class AgentRunCoordinator {
     }
 
     private AgentRunContext createRunContext(AgentExecutionContext executionContext, com.ai.model.AgentProfile profile,
-            AgentEventSink eventSink) {
+            AgentEventSink eventSink, com.ai.agent.durable.AgentRunStateEntity queued) {
         AnalysisRequest request = executionContext.getRequest();
         ConversationSession session = executionContext.getSession();
-        AgentRunControl control = new AgentRunControl(runtimeProperties.toLimits());
+        AgentRunControl control = new AgentRunControl(queued == null ? runtimeProperties.toLimits()
+                : new AgentRunLimits(java.time.Duration.ofMillis(queued.getTimeoutMs()), queued.getMaxIterations(),
+                        queued.getMaxModelCalls(), queued.getMaxToolCalls(), queued.getMaxTokens()));
         AgentEventSink delegate = eventSink == null ? AgentEventSink.noop() : eventSink;
         AgentEventSink guardedSink = delegate instanceof GuardedAgentEventSink
                 ? delegate
@@ -297,7 +337,7 @@ public class AgentRunCoordinator {
         String userId = securityContextHelper.getCurrentUserId();
         AgentToolAuthorizationSnapshot authorization = toolAuthorizationService.resolve(userId, tenantId);
         return new AgentRunContext(
-                UUID.randomUUID().toString(),
+                queued == null ? UUID.randomUUID().toString() : queued.getRunId(),
                 tenantId,
                 userId,
                 session != null ? session.getSessionId() : request.getSessionId(),
@@ -331,6 +371,7 @@ public class AgentRunCoordinator {
         payload.put("confidence", route.requestPlan().confidence());
         payload.put("modelRequired", route.requestPlan().modelRequired());
         payload.put("contextPlan", route.requestPlan().contextPlan().toEvidence());
+        payload.put("memoryCapture", route.requestPlan().memoryCapture().name());
         payload.put("planning", route.requestPlan().planningEvidence().toEvidence());
         payload.put("candidateToolCount", route.requestPlan().candidateTools().size());
         payload.put("candidateTools", route.requestPlan().candidateTools());
@@ -441,24 +482,20 @@ public class AgentRunCoordinator {
                         journalComplete));
     }
 
-    private void recordConversation(AgentRunContext context, AnalysisResponse response,
+    private void recordConversation(AgentRunContext context, AgentRunRoute route, AnalysisResponse response,
             AgentRunSnapshot snapshot) {
         if (!context.executionContext().getOrigin().isConversationPersistenceEnabled()) {
             return;
         }
         ConversationSession session = context.executionContext().getSession();
         AnalysisRequest request = context.executionContext().getRequest();
-        String modelId = request.hasModel() ? request.getModelId() : null;
-        if (snapshot.status() == AgentRunStatus.WAITING_APPROVAL) {
-            conversationRecorder.recordWaitingApprovalConversation(
-                    session, request, response.getSkillUsed(), modelId, context.runId());
-            return;
-        }
+        String modelId = request.hasModel() ? request.getModelId() : route.profile().getModelId();
         if (snapshot.status() != AgentRunStatus.RUNNING || !response.isSuccess()) {
             return;
         }
         conversationRecorder.recordAnalysisConversation(session, request, response.getResult(),
-                response.getSkillUsed(), modelId, context.runId());
+                response.getSkillUsed(), modelId, context.runId(), route.requestPlan().memoryCapture(),
+                route.requestPlan().memoryRevision());
     }
 
     private void recordTrace(AgentRunContext context, AgentRunRoute route, AnalysisResponse response) {

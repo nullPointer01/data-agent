@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.agent.durable.AgentRunStateRepository">
+    <!-- agent_run_state：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO agent_run_state (run_id,
+            tenant_id,
+            user_id,
+            session_id,
+            agent_id,
+            mode,
+            status,
+            termination_reason,
+            version,
+            checkpoint_ciphertext,
+            checkpoint_schema_version,
+            timeout_ms,
+            max_iterations,
+            max_model_calls,
+            max_tool_calls,
+            max_tokens,
+            used_iterations,
+            used_model_calls,
+            used_tool_calls,
+            used_tokens,
+            token_usage_estimated,
+            remaining_active_timeout_ms,
+            resume_attempts,
+            lease_owner,
+            lease_until,
+            approval_id,
+            approval_expires_at,
+            result_summary,
+            error_summary,
+            created_at,
+            updated_at,
+            completed_at)
+        VALUES (#{runId},
+            #{tenantId},
+            #{userId},
+            #{sessionId},
+            #{agentId},
+            #{mode},
+            #{status},
+            #{terminationReason},
+            #{version},
+            #{checkpointCiphertext},
+            #{checkpointSchemaVersion},
+            #{timeoutMs},
+            #{maxIterations},
+            #{maxModelCalls},
+            #{maxToolCalls},
+            #{maxTokens},
+            #{usedIterations},
+            #{usedModelCalls},
+            #{usedToolCalls},
+            #{usedTokens},
+            #{tokenUsageEstimated},
+            #{remainingActiveTimeoutMs},
+            #{resumeAttempts},
+            #{leaseOwner},
+            #{leaseUntil},
+            #{approvalId},
+            #{approvalExpiresAt},
+            #{resultSummary},
+            #{errorSummary},
+            #{createdAt},
+            #{updatedAt},
+            #{completedAt})
+    </insert>
+    <update id="update">
+        UPDATE agent_run_state SET tenant_id = #{tenantId},
+            user_id = #{userId},
+            session_id = #{sessionId},
+            agent_id = #{agentId},
+            mode = #{mode},
+            status = #{status},
+            termination_reason = #{terminationReason},
+            version = version + 1,
+            checkpoint_ciphertext = #{checkpointCiphertext},
+            checkpoint_schema_version = #{checkpointSchemaVersion},
+            timeout_ms = #{timeoutMs},
+            max_iterations = #{maxIterations},
+            max_model_calls = #{maxModelCalls},
+            max_tool_calls = #{maxToolCalls},
+            max_tokens = #{maxTokens},
+            used_iterations = #{usedIterations},
+            used_model_calls = #{usedModelCalls},
+            used_tool_calls = #{usedToolCalls},
+            used_tokens = #{usedTokens},
+            token_usage_estimated = #{tokenUsageEstimated},
+            remaining_active_timeout_ms = #{remainingActiveTimeoutMs},
+            resume_attempts = #{resumeAttempts},
+            lease_owner = #{leaseOwner},
+            lease_until = #{leaseUntil},
+            approval_id = #{approvalId},
+            approval_expires_at = #{approvalExpiresAt},
+            result_summary = #{resultSummary},
+            error_summary = #{errorSummary},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt},
+            completed_at = #{completedAt}
+        WHERE run_id = #{runId} AND version = #{version}
+    </update>
+    <select id="findById" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state WHERE run_id = #{id}
+    </select>
+    <select id="findForUpdate" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state WHERE run_id=#{id} FOR UPDATE
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_run_state WHERE run_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state
+    </select>
+    <select id="findAllById" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                run_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM agent_run_state WHERE run_id = #{id}
+    </delete>
+    <update id="bindMode">
+        update agent_run_state r set r.mode = #{mode}, r.version = r.version + 1 where r.run_id = #{runId} and r.mode = 'PLANNING' and r.status = 'RUNNING'
+    </update>
+    <select id="findByRunIdAndTenantIdAndUserId" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state WHERE run_id = #{runId} AND tenant_id = #{tenantId} AND user_id = #{userId}
+    </select>
+    <select id="findByStatusAndLeaseUntilBeforeOrderByUpdatedAtAsc" resultType="com.ai.agent.durable.AgentRunStateEntity">
+        SELECT * FROM agent_run_state WHERE status = #{status} AND lease_until &lt; #{leaseUntil} ORDER BY updated_at ASC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <update id="transition">
+        update agent_run_state r
+        set r.status = #{targetStatus},
+        r.termination_reason = #{reason},
+        r.error_summary = #{detail},
+        r.completed_at = #{completedAt},
+        r.updated_at = #{updatedAt},
+        r.lease_owner = null,
+        r.lease_until = null,
+        r.version = r.version + 1
+        where r.run_id = #{runId}
+        and r.status = #{expectedStatus}
+        and r.version = #{expectedVersion}
+    </update>
+    <update id="terminate">
+        update agent_run_state r
+        set r.status = #{targetStatus},
+        r.termination_reason = #{reason},
+        r.error_summary = #{detail},
+        r.result_summary = #{resultSummary},
+        r.used_iterations = #{usedIterations},
+        r.used_model_calls = #{usedModelCalls},
+        r.used_tool_calls = #{usedToolCalls},
+        r.used_tokens = #{usedTokens},
+        r.token_usage_estimated = #{tokenUsageEstimated},
+        r.remaining_active_timeout_ms = #{remainingActiveTimeoutMs},
+        r.completed_at = #{completedAt},
+        r.updated_at = #{updatedAt},
+        r.lease_owner = null,
+        r.lease_until = null,
+        r.version = r.version + 1
+        where r.run_id = #{runId}
+        and r.status = #{expectedStatus}
+        and r.version = #{expectedVersion}
+    </update>
+    <update id="suspendForApproval">
+        update agent_run_state r
+        set r.status = 'WAITING_APPROVAL',
+        r.termination_reason = 'NONE',
+        r.checkpoint_ciphertext = #{checkpointCiphertext},
+        r.checkpoint_schema_version = #{checkpointSchemaVersion},
+        r.used_iterations = #{usedIterations},
+        r.used_model_calls = #{usedModelCalls},
+        r.used_tool_calls = #{usedToolCalls},
+        r.used_tokens = #{usedTokens},
+        r.token_usage_estimated = #{tokenUsageEstimated},
+        r.remaining_active_timeout_ms = #{remainingActiveTimeoutMs},
+        r.approval_id = #{approvalId},
+        r.approval_expires_at = #{approvalExpiresAt},
+        r.updated_at = #{updatedAt},
+        r.lease_owner = null,
+        r.lease_until = null,
+        r.version = r.version + 1
+        where r.run_id = #{runId}
+        and r.status = #{expectedStatus}
+        and r.version = #{expectedVersion}
+    </update>
+    <update id="claimLease">
+        update agent_run_state r
+        set r.status = 'RESUMING',
+        r.lease_owner = #{leaseOwner},
+        r.lease_until = #{leaseUntil},
+        r.resume_attempts = r.resume_attempts + 1,
+        r.updated_at = #{now},
+        r.version = r.version + 1
+        where r.run_id = #{runId}
+        and
+        <choose><when test="claimableStatuses != null and !claimableStatuses.isEmpty()">r.status IN <foreach collection="claimableStatuses" item="value" open="(" close=")" separator=",">#{value}</foreach>
+        </when><otherwise>1 = 0</otherwise></choose>
+        and (r.lease_until is null or r.lease_until &lt; #{now})
+        and r.version = #{expectedVersion}
+    </update>
+    <update id="renewLease">
+        update agent_run_state r
+        set r.lease_until = #{leaseUntil},
+        r.updated_at = #{now},
+        r.version = r.version + 1
+        where r.run_id = #{runId}
+        and r.status = 'RESUMING'
+        and r.lease_owner = #{leaseOwner}
+        and r.version = #{expectedVersion}
+    </update>
+</mapper>

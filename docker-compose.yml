@@ -1,4 +1,21 @@
 services:
+  rabbitmq:
+    container_name: data-agent-rabbitmq
+    image: rabbitmq:4.2-management
+    environment:
+      RABBITMQ_DEFAULT_USER: data_agent
+      RABBITMQ_DEFAULT_PASS: data_agent_local
+      RABBITMQ_DEFAULT_VHOST: /data-agent
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   etcd:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.18
@@ -102,6 +119,7 @@ services:
       retries: 3
 
 volumes:
+  rabbitmq_data:
   etcd_data:
   minio_data:
   milvus_data:

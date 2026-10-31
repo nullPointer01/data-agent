@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.TokenUsageRepository">
+    <!-- 唯一写入口由 TokenQuotaService 在日账本事务内调用；禁止旁路 CRUD 造成余额与明细分离。 -->
+    <insert id="upsertAccounting">
+        INSERT INTO token_usage(user_id, tenant_id, model_id, model_name, skill_id, skill_name,
+            prompt_tokens, completion_tokens, total_tokens, session_id, created_at,
+            invocation_id, quota_date, accounting_status)
+        VALUES(#{userId}, #{tenantId}, #{modelId}, #{modelName}, #{skillId}, #{skillName},
+            #{promptTokens}, #{completionTokens}, #{totalTokens}, #{sessionId}, #{createdAt},
+            #{invocationId}, #{quotaDate}, #{accountingStatus})
+        ON DUPLICATE KEY UPDATE prompt_tokens = VALUES(prompt_tokens), completion_tokens = VALUES(completion_tokens),
+            total_tokens = VALUES(total_tokens), accounting_status = VALUES(accounting_status)
+    </insert>
+    <select id="countByTenantId" resultType="long">
+        SELECT COUNT(*) FROM token_usage WHERE tenant_id = #{tenantId}
+    </select>
+    <select id="selectUsagePage" resultType="com.ai.model.TokenUsage">
+        SELECT * FROM token_usage WHERE tenant_id = #{tenantId} ORDER BY created_at DESC, id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="sumTotalTokensByTenantId" resultType="java.lang.Long">
+        SELECT SUM(t.total_tokens) FROM token_usage t WHERE t.tenant_id = #{tenantId}
+    </select>
+    <select id="sumTotalTokensByOwner" resultType="java.lang.Long">
+        SELECT SUM(t.total_tokens) FROM token_usage t WHERE t.tenant_id = #{tenantId} AND t.user_id = #{userId}
+    </select>
+    <select id="sumTokensByModelGroupedByTenantRows" resultType="map">
+        SELECT t.model_name AS label, SUM(t.total_tokens) AS total_value FROM token_usage t WHERE t.tenant_id = #{tenantId} GROUP BY t.model_name
+    </select>
+    <select id="sumTokensBySkillGroupedByTenantRows" resultType="map">
+        SELECT t.skill_name AS label, SUM(t.total_tokens) AS total_value FROM token_usage t WHERE t.tenant_id = #{tenantId} GROUP BY t.skill_name
+    </select>
+</mapper>

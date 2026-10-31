@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.token.TokenQuotaMapper">
+    <select id="findUser" resultType="com.ai.token.TokenQuotaMapper$QuotaUser">
+        SELECT enabled, daily_token_limit FROM sys_user WHERE tenant_id = #{tenant} AND id = #{user}
+    </select>
+    <insert id="ensureDaily">
+        INSERT INTO token_daily_quota(tenant_id, user_id, quota_date) VALUES(#{tenant}, #{user}, #{day})
+        ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
+    </insert>
+    <select id="lockDaily" resultType="com.ai.token.TokenQuotaMapper$Daily">
+        SELECT charged_tokens, reserved_tokens, uncertain_tokens FROM token_daily_quota
+        WHERE tenant_id = #{tenant} AND user_id = #{user} AND quota_date = #{day} FOR UPDATE
+    </select>
+    <insert id="insertReservation">
+        INSERT INTO token_reservation(invocation_id, tenant_id, user_id, quota_date,
+            estimated_input_tokens, reserved_tokens, max_output_tokens, model_id, model_name,
+            session_id, run_id, state, charged_tokens, expires_at)
+        VALUES(#{ticket.invocationId}, #{ticket.tenantId}, #{ticket.userId}, #{ticket.quotaDate},
+            #{ticket.estimatedInputTokens}, #{ticket.reservedTokens}, #{ticket.maxOutputTokens},
+            #{ticket.modelId}, #{ticket.modelName}, #{ticket.sessionId}, #{ticket.runId}, 'PENDING', 0,
+            TIMESTAMPADD(SECOND, #{ttlSeconds}, CURRENT_TIMESTAMP(6)))
+    </insert>
+    <sql id="reservationColumns">
+        invocation_id, tenant_id, user_id, quota_date, estimated_input_tokens, reserved_tokens,
+        max_output_tokens, model_id, model_name, session_id, run_id, state, charged_tokens
+    </sql>
+    <select id="lockReservation" resultType="com.ai.token.TokenReservation">
+        SELECT <include refid="reservationColumns"/> FROM token_reservation
+        WHERE invocation_id = #{id} FOR UPDATE
+    </select>
+    <update id="markDispatched">
+        UPDATE token_reservation SET state = 'DISPATCHED', updated_at = CURRENT_TIMESTAMP(6)
+        WHERE invocation_id = #{id} AND state = 'PENDING' AND expires_at > CURRENT_TIMESTAMP(6)
+    </update>
+    <select id="findExpired" resultType="com.ai.token.TokenReservation">
+        SELECT <include refid="reservationColumns"/> FROM token_reservation
+        WHERE tenant_id = #{tenant} AND user_id = #{user}
+            AND state IN ('PENDING', 'DISPATCHED') AND expires_at &lt;= CURRENT_TIMESTAMP(6)
+        ORDER BY quota_date, invocation_id LIMIT 25
+    </select>
+    <update id="finishReservation">
+        UPDATE token_reservation SET state = #{state}, charged_tokens = #{charged}, updated_at = CURRENT_TIMESTAMP(6)
+        WHERE invocation_id = #{id}
+    </update>
+    <update id="adjustDaily">
+        UPDATE token_daily_quota SET charged_tokens = charged_tokens + #{chargedDelta},
+            reserved_tokens = reserved_tokens + #{reservedDelta},
+            uncertain_tokens = uncertain_tokens + #{uncertainDelta}, updated_at = CURRENT_TIMESTAMP(6)
+        WHERE tenant_id = #{tenant} AND user_id = #{user} AND quota_date = #{day}
+            AND charged_tokens + #{chargedDelta} >= 0 AND reserved_tokens + #{reservedDelta} >= 0
+            AND uncertain_tokens + #{uncertainDelta} >= 0
+    </update>
+</mapper>

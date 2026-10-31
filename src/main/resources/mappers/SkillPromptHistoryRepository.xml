@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.SkillPromptHistoryRepository">
+    <!-- skill_prompt_history：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO skill_prompt_history (skill_id, version, prompt_template, steps, tool_dependencies, remark, tenant_id, created_at)
+        VALUES (#{skillId}, #{version}, #{promptTemplate}, #{steps}, #{toolDependencies}, #{remark}, #{tenantId}, #{createdAt})
+    </insert>
+    <update id="update">
+        UPDATE skill_prompt_history SET skill_id = #{skillId},
+            version = #{version},
+            prompt_template = #{promptTemplate},
+            steps = #{steps},
+            tool_dependencies = #{toolDependencies},
+            remark = #{remark},
+            tenant_id = #{tenantId},
+            created_at = #{createdAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM skill_prompt_history WHERE id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history
+    </select>
+    <select id="findAllById" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM skill_prompt_history WHERE id = #{id}
+    </delete>
+    <select id="findHistoryPage" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history WHERE skill_id = #{skillId} AND tenant_id = #{tenantId}
+        ORDER BY version DESC, id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countHistory" resultType="long">
+        SELECT COUNT(*) FROM skill_prompt_history WHERE skill_id = #{skillId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findVersion" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history WHERE skill_id = #{skillId} AND tenant_id = #{tenantId}
+            AND version = #{version} ORDER BY id DESC LIMIT 1
+    </select>
+    <select id="findTopBySkillIdAndTenantIdOrderByVersionDesc" resultType="com.ai.model.SkillPromptHistory">
+        SELECT * FROM skill_prompt_history WHERE skill_id = #{skillId} AND tenant_id = #{tenantId} ORDER BY version DESC LIMIT 1
+    </select>
+</mapper>

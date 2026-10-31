@@ -1,9 +1,9 @@
 package com.ai.controller;
 
-import com.ai.agent.dto.AgentProfileListResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.agent.dto.AgentProfileResponse;
 import com.ai.agent.dto.AgentProfileMutationResponse;
 import com.ai.agent.dto.AgentProfileRequest;
-import com.ai.agent.dto.AgentProfileResponse;
 import com.ai.service.AgentProfileService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,8 +37,10 @@ public class CustomAgentController {
      * @return Agent 配置列表
      */
     @GetMapping
-    public AgentProfileListResponse list(@RequestParam(defaultValue = "false") boolean enabledOnly) {
-        return agentProfileService.listMyAgents(enabledOnly);
+    public ListPageResponse<AgentProfileResponse> list(@RequestParam(defaultValue = "false") boolean enabledOnly,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String query, @RequestParam(required = false) String role) {
+        return agentProfileService.listMyAgents(enabledOnly, page, size, query, role);
     }
 
     /**

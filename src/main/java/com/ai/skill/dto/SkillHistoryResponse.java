@@ -15,6 +15,7 @@ public record SkillHistoryResponse(
         int version,
         String promptTemplate,
         String steps,
+        String toolDependencies,
         String remark,
         String tenantId,
         Date createdAt) {
@@ -26,6 +27,7 @@ public record SkillHistoryResponse(
                 history.getVersion(),
                 history.getPromptTemplate(),
                 history.getSteps(),
+                history.getToolDependencies(),
                 history.getRemark(),
                 history.getTenantId(),
                 history.getCreatedAt());

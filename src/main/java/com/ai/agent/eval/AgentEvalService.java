@@ -1,5 +1,7 @@
 package com.ai.agent.eval;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
 import com.ai.agent.DataAnalysisAgent;
 import com.ai.agent.eval.AgentEvalMetricCalculator.MetricInput;
 import com.ai.agent.eval.dto.AgentEvalReportResponse;
@@ -22,8 +24,6 @@ import com.ai.repository.AgentProfileRepository;
 import com.ai.security.SecurityContextHelper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -49,12 +49,11 @@ import java.util.regex.Pattern;
 public class AgentEvalService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentEvalService.class);
-    private static final int MAX_LIST_LIMIT = 100;
     private static final int MAX_ERROR_LENGTH = 1024;
     private static final Pattern SECRET_PATTERN = Pattern.compile(
             "(?i)(bearer\\s+|api[_-]?key\\s*[=:]\\s*|sk-)[a-z0-9._-]{8,}");
 
-    private final EntityManager entityManager;
+    private final AgentEvalMapper evalMapper;
     private final TransactionTemplate transactionTemplate;
     private final DataAnalysisAgent dataAnalysisAgent;
     private final AgentProfileRepository agentProfileRepository;
@@ -64,12 +63,12 @@ public class AgentEvalService {
     private final SecurityContextHelper securityContextHelper;
     private final ObjectMapper objectMapper;
 
-    public AgentEvalService(EntityManager entityManager, TransactionTemplate transactionTemplate,
+    public AgentEvalService(AgentEvalMapper evalMapper, TransactionTemplate transactionTemplate,
             DataAnalysisAgent dataAnalysisAgent, AgentProfileRepository agentProfileRepository,
             AgentExecutionTraceRepository traceRepository, AgentEvalMetricCalculator metricCalculator,
             AgentRuntimeProperties runtimeProperties, SecurityContextHelper securityContextHelper,
             ObjectMapper objectMapper) {
-        this.entityManager = entityManager;
+        this.evalMapper = evalMapper;
         this.transactionTemplate = transactionTemplate;
         this.dataAnalysisAgent = dataAnalysisAgent;
         this.agentProfileRepository = agentProfileRepository;
@@ -103,7 +102,8 @@ public class AgentEvalService {
             run.setStatus("PENDING");
             run.setTotalSamples(Math.toIntExact(sampleCount));
             run.setCreatedBy(userId);
-            entityManager.persist(run);
+            run.onCreate();
+            evalMapper.insertRun(run);
             return run.getEvalRunId();
         });
         return getReport(evalRunId);
@@ -142,30 +142,27 @@ public class AgentEvalService {
                 run.setStatus("FAILED");
                 run.setErrorSummary(safeText(detail));
                 run.setCompletedAt(Instant.now());
+                evalMapper.saveRun(run);
             }
         });
     }
 
     /** 查询当前租户可执行的 READY 数据集。 */
-    public List<DatasetSummary> listDatasets() {
+    public ListPageResponse<DatasetSummary> listDatasets(int page, int size) {
+        ListPaging.page(page, size);
         String tenantId = requireIdentity(securityContextHelper.getCurrentTenantId(), "租户身份");
-        return transactionTemplate.execute(status -> entityManager.createQuery(
-                        "select d from AgentEvalDatasetEntity d where d.tenantId = :tenantId "
-                                + "and d.status = 'READY' order by d.updatedAt desc",
-                        AgentEvalDatasetEntity.class)
-                .setParameter("tenantId", tenantId)
-                .getResultList().stream().map(dataset -> datasetSummary(dataset, countEnabledSamples(dataset)))
-                .toList());
+        return transactionTemplate.execute(status -> ListPageResponse.fetch(page, size,
+                evalMapper.countReadyDatasets(tenantId), pageable -> evalMapper.listReadyDatasets(tenantId, pageable))
+                .map(dataset -> datasetSummary(dataset, countEnabledSamples(dataset))));
     }
 
     /** 查询最近的评测运行摘要。 */
-    public List<RunSummary> listRuns(int limit) {
+    public ListPageResponse<RunSummary> listRuns(int page, int size) {
+        ListPaging.page(page, size);
         String tenantId = requireIdentity(securityContextHelper.getCurrentTenantId(), "租户身份");
-        return transactionTemplate.execute(status -> entityManager.createQuery(
-                        "select r from AgentEvalRunEntity r where r.tenantId = :tenantId order by r.startedAt desc",
-                        AgentEvalRunEntity.class)
-                .setParameter("tenantId", tenantId).setMaxResults(Math.max(1, Math.min(limit, MAX_LIST_LIMIT)))
-                .getResultList().stream().map(this::runSummary).toList());
+        return transactionTemplate.execute(status -> ListPageResponse.fetch(page, size,
+                evalMapper.countRuns(tenantId), pageable -> evalMapper.listRuns(tenantId, pageable))
+                .map(this::runSummary));
     }
 
     /** 查询评测报告和样本级 Run 证据引用。 */
@@ -175,8 +172,7 @@ public class AgentEvalService {
     }
 
     private EvaluationPlan claim(String evalRunId, String tenantId) {
-        AgentEvalRunEntity run = entityManager.find(AgentEvalRunEntity.class,
-                requireIdentity(evalRunId, "评测运行 ID"), LockModeType.PESSIMISTIC_WRITE);
+        AgentEvalRunEntity run = evalMapper.lockRun(requireIdentity(evalRunId, "评测运行 ID"), tenantId);
         if (run == null || !tenantId.equals(run.getTenantId())) {
             throw new IllegalArgumentException("评测运行不存在或无权限");
         }
@@ -192,6 +188,7 @@ public class AgentEvalService {
         if (samples.size() != run.getTotalSamples()) {
             throw new IllegalStateException("评测数据集在排队期间发生变化，请重新发起评测");
         }
+        evalMapper.saveRun(run);
         return new EvaluationPlan(run.getEvalRunId(), run.getAgentId(), run.getAgentProfileVersion(), samples);
     }
 
@@ -287,52 +284,70 @@ public class AgentEvalService {
     }
 
     private void persistResult(String evalRunId, AgentEvalResultEntity result) {
-        entityManager.persist(result);
-        AgentEvalRunEntity run = entityManager.find(AgentEvalRunEntity.class, evalRunId);
+        result.onCreate();
+        evalMapper.insertResult(result);
+        AgentEvalRunEntity run = evalMapper.findRun(evalRunId, securityContextHelper.getCurrentTenantId());
         run.setCompletedSamples(run.getCompletedSamples() + 1);
         switch (AgentOutcomeStatus.valueOf(result.getOutcomeStatus())) {
             case ACHIEVED -> run.setPassedSamples(run.getPassedSamples() + 1);
             case NOT_ACHIEVED -> run.setFailedSamples(run.getFailedSamples() + 1);
             case NOT_EVALUATED -> run.setNotEvaluatedSamples(run.getNotEvaluatedSamples() + 1);
         }
+        evalMapper.saveRun(run);
     }
 
     private void complete(String evalRunId, AgentEvalReportResponse.Metrics metrics) {
-        AgentEvalRunEntity run = entityManager.find(AgentEvalRunEntity.class, evalRunId);
+        AgentEvalRunEntity run = evalMapper.findRun(evalRunId, securityContextHelper.getCurrentTenantId());
         run.setMetricsJson(writeJson(metrics));
         run.setStatus("COMPLETED");
         run.setCompletedAt(Instant.now());
+        evalMapper.saveRun(run);
     }
 
     private AgentEvalReportResponse buildReport(AgentEvalRunEntity run) {
-        AgentEvalDatasetEntity dataset = entityManager.find(AgentEvalDatasetEntity.class, run.getDatasetId());
-        List<AgentEvalSampleEntity> samples = loadSamples(run.getDatasetId(), run.getDatasetVersion(), run.getTenantId());
-        Map<String, AgentEvalResultEntity> results = new LinkedHashMap<>();
-        entityManager.createQuery("select r from AgentEvalResultEntity r where r.tenantId = :tenantId "
-                        + "and r.evalRunId = :runId order by r.createdAt", AgentEvalResultEntity.class)
-                .setParameter("tenantId", run.getTenantId()).setParameter("runId", run.getEvalRunId())
-                .getResultList().forEach(result -> results.put(result.getSampleId(), result));
-        List<SampleResult> sampleResults = samples.stream().map(sample -> sampleResult(sample, results.get(sample.getSampleId())))
-                .toList();
-        AgentEvalReportResponse.Metrics metrics = readMetrics(run, samples, results);
+        AgentEvalDatasetEntity dataset = evalMapper.findDataset(run.getDatasetId(), run.getTenantId());
         return new AgentEvalReportResponse(!"FAILED".equals(run.getStatus()), run.getEvalRunId(), run.getStatus(),
-                datasetSummary(dataset, samples.size()),
+                datasetSummary(dataset, run.getTotalSamples()),
                 new AgentSnapshot(run.getAgentId(), run.getAgentProfileVersion(), run.getModelId(),
-                        run.getHarnessConfigIdentity()), counts(run), metrics, sampleResults,
+                        run.getHarnessConfigIdentity()), counts(run), readMetrics(run),
                 run.getErrorSummary(), run.getStartedAt(), run.getCompletedAt());
     }
 
-    private AgentEvalReportResponse.Metrics readMetrics(AgentEvalRunEntity run,
-            List<AgentEvalSampleEntity> samples, Map<String, AgentEvalResultEntity> results) {
+    /** 只读取当前页固定样本及其结果；审批、工具、Token 证据语义保持完整。 */
+    public ListPageResponse<SampleResult> listSampleResults(String evalRunId, int page, int size) {
+        ListPaging.page(page, size);
+        String tenant = requireIdentity(securityContextHelper.getCurrentTenantId(), "租户身份");
+        return transactionTemplate.execute(status -> {
+            AgentEvalRunEntity run = findRun(evalRunId, tenant);
+            var samples = ListPageResponse.fetch(page, size,
+                    evalMapper.countEnabledSamples(run.getDatasetId(), run.getDatasetVersion(), tenant),
+                    pageable -> evalMapper.loadSamplePage(run.getDatasetId(), run.getDatasetVersion(), tenant, pageable));
+            Map<String, AgentEvalResultEntity> results = new LinkedHashMap<>();
+            if (!samples.items().isEmpty()) {
+                evalMapper.listPageResults(run.getEvalRunId(), tenant,
+                        samples.items().stream().map(AgentEvalSampleEntity::getSampleId).toList())
+                        .forEach(result -> results.put(result.getSampleId(), result));
+            }
+            return samples.map(sample -> sampleResult(sample, results.get(sample.getSampleId())));
+        });
+    }
+
+    private AgentEvalReportResponse.Metrics readMetrics(AgentEvalRunEntity run) {
         if (!"COMPLETED".equals(run.getStatus())) {
             return metricCalculator.unavailableMetrics(run.getTotalSamples(), "EVAL_RUN_" + run.getStatus());
         }
         try {
-            return objectMapper.readValue(run.getMetricsJson(), AgentEvalReportResponse.Metrics.class);
+            var stored = objectMapper.readValue(run.getMetricsJson(), AgentEvalReportResponse.Metrics.class);
+            if (stored != null) return stored;
         } catch (Exception ignored) {
-            return metricCalculator.calculate(samples.stream()
-                    .map(sample -> toMetricInput(sample, results.get(sample.getSampleId()))).toList());
+            // 仅旧报告没有完整指标快照时按整个固定数据集重算，不能用当前页计算总体指标。
         }
+        var samples = loadSamples(run.getDatasetId(), run.getDatasetVersion(), run.getTenantId());
+        Map<String, AgentEvalResultEntity> results = new LinkedHashMap<>();
+        evalMapper.listResults(run.getEvalRunId(), run.getTenantId())
+                .forEach(result -> results.put(result.getSampleId(), result));
+        return metricCalculator.calculate(samples.stream()
+                .map(sample -> toMetricInput(sample, results.get(sample.getSampleId()))).toList());
     }
 
     private SampleResult sampleResult(AgentEvalSampleEntity sample, AgentEvalResultEntity result) {
@@ -377,8 +392,7 @@ public class AgentEvalService {
     }
 
     private AgentEvalDatasetEntity requireReadyDataset(String datasetId, String tenantId) {
-        AgentEvalDatasetEntity dataset = entityManager.find(AgentEvalDatasetEntity.class,
-                requireIdentity(datasetId, "数据集 ID"));
+        AgentEvalDatasetEntity dataset = evalMapper.findDataset(requireIdentity(datasetId, "数据集 ID"), tenantId);
         if (dataset == null || !tenantId.equals(dataset.getTenantId()) || !"READY".equals(dataset.getStatus())) {
             throw new IllegalArgumentException("评测数据集不存在、不可用或无权限");
         }
@@ -403,8 +417,7 @@ public class AgentEvalService {
     }
 
     private AgentEvalRunEntity findRun(String evalRunId, String tenantId) {
-        AgentEvalRunEntity run = entityManager.find(AgentEvalRunEntity.class,
-                requireIdentity(evalRunId, "评测运行 ID"));
+        AgentEvalRunEntity run = evalMapper.findRun(requireIdentity(evalRunId, "评测运行 ID"), tenantId);
         if (run == null || !tenantId.equals(run.getTenantId())) {
             throw new IllegalArgumentException("评测运行不存在或无权限");
         }
@@ -412,18 +425,11 @@ public class AgentEvalService {
     }
 
     private List<AgentEvalSampleEntity> loadSamples(String datasetId, int version, String tenantId) {
-        return entityManager.createQuery("select s from AgentEvalSampleEntity s where s.tenantId = :tenantId "
-                        + "and s.datasetId = :datasetId and s.datasetVersion = :version and s.enabled = true "
-                        + "order by s.sortOrder, s.sampleKey", AgentEvalSampleEntity.class)
-                .setParameter("tenantId", tenantId).setParameter("datasetId", datasetId)
-                .setParameter("version", version).getResultList();
+        return evalMapper.loadSamples(datasetId, version, tenantId);
     }
 
     private long countEnabledSamples(AgentEvalDatasetEntity dataset) {
-        return entityManager.createQuery("select count(s) from AgentEvalSampleEntity s where s.tenantId = :tenantId "
-                        + "and s.datasetId = :datasetId and s.datasetVersion = :version and s.enabled = true", Long.class)
-                .setParameter("tenantId", dataset.getTenantId()).setParameter("datasetId", dataset.getDatasetId())
-                .setParameter("version", dataset.getDatasetVersion()).getSingleResult();
+        return evalMapper.countEnabledSamples(dataset.getDatasetId(), dataset.getDatasetVersion(), dataset.getTenantId());
     }
 
     private DatasetSummary datasetSummary(AgentEvalDatasetEntity dataset, long sampleCount) {

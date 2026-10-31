@@ -1,5 +1,7 @@
+import { useServerList } from '../hooks/useServerList.js';
 import { AlertTriangle, Bot, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadAgentConfigurationOptions } from '../api/listOptions.js';
 import {
   activeCapabilityPacks,
   availablePackBindings,
@@ -7,7 +9,7 @@ import {
   PERSONAL_CAPABILITY_PACKS
 } from '../agent/capabilityPacks.js';
 import { CapabilityPackPicker } from '../components/CapabilityPackPicker.jsx';
-import { Badge, ConfirmDialog, EmptyState, Field, LoadingState, Modal, PageHeader, Pagination, usePagination } from '../components/ui.jsx';
+import { Badge, ConfirmDialog, EmptyState, Field, LoadingState, Modal, PageHeader, ServerPagination, ListLoadError } from '../components/ui.jsx';
 
 const EXPERT_PRESETS = [
   { id: 'knowledge', label: '知识研究', packIds: ['knowledge'] },
@@ -21,14 +23,21 @@ function presetBindings(preset, capabilities) {
     .flatMap((pack) => availablePackBindings(pack, capabilities)));
 }
 
+/** 区分配置目录加载失败与模型已停用，避免错误暗示已切换默认模型。 */
+function modelLabel(modelId, names, ready) {
+  if (!modelId) return '跟随系统默认模型';
+  if (!ready) return '模型信息暂不可用';
+  return names.get(modelId) || '已配置模型（已停用或不可选）';
+}
+
 /** 专家助手页：管理非默认 Agent Profile，供个人 Agent 显式绑定后委派。 */
 export function ExpertsPage({ api, toast }) {
-  const [experts, setExperts] = useState([]);
   const [parentBindings, setParentBindings] = useState([]);
   const [models, setModels] = useState([]);
   const [capabilities, setCapabilities] = useState([]);
   const [capabilityDirectoryReady, setCapabilityDirectoryReady] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const directoryRequest = useRef(null);
   const [loadError, setLoadError] = useState('');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
@@ -36,41 +45,44 @@ export function ExpertsPage({ api, toast }) {
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const list = useServerList({ api, url: '/api/v1/my/agents', mode: 'offset', filters: { role: 'EXPERT' } });
+  const experts = list.items;
+  const loading = directoryLoading || list.loading;
+
+  const loadDirectory = useCallback(async () => {
+    directoryRequest.current?.abort();
+    const controller = new AbortController();
+    directoryRequest.current = controller;
+    setDirectoryLoading(true);
     setLoadError('');
     setCapabilityDirectoryReady(false);
     try {
-      const [agentResponse, modelResponse, capabilityResponse] = await Promise.all([
-        api.get('/api/v1/my/agents'),
-        api.get('/api/v1/my/models').catch(() => ({ models: [] })),
-        api.get('/api/v1/my/capabilities').catch(() => null)
+      const [agentResponse, options] = await Promise.all([
+        api.get('/api/v1/my/agents?role=PRIMARY&page=0&size=1', { signal: controller.signal }),
+        loadAgentConfigurationOptions(api, null, ['TOOL', 'SKILL'], controller.signal)
       ]);
-      const agents = agentResponse.agents || [];
+      if (controller.signal.aborted) return;
+      if (agentResponse.success !== true) throw new Error(agentResponse.message || '主 Agent 加载失败');
+      const agents = agentResponse.items || [];
       const defaultAgent = agents.find((item) => item.defaultAgent);
-      setExperts(agents.filter((item) => !item.defaultAgent));
       setParentBindings(normalizeCapabilityBindings(defaultAgent?.capabilityBindings));
-      setModels(modelResponse.models || []);
-      setCapabilities((capabilityResponse?.capabilities || [])
-        .filter((item) => item.type === 'TOOL' || item.type === 'SKILL'));
-      setCapabilityDirectoryReady(capabilityResponse?.success === true);
-      if (capabilityResponse?.success !== true) {
-        setLoadError('能力目录暂不可用。当前可以查看专家，但不能修改配置。');
-      }
+      setModels(options.models);
+      setCapabilities(options.capabilities);
+      setCapabilityDirectoryReady(true);
     } catch (requestError) {
-      setLoadError(requestError.message || '专家助手加载失败，请刷新后重试');
+      if (!controller.signal.aborted) setLoadError(requestError.message || '配置选项加载失败，暂不能修改专家');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setDirectoryLoading(false);
     }
   }, [api]);
 
-  useEffect(() => { load(); }, [load]);
+  const load = () => Promise.all([list.refresh(), loadDirectory()]);
+  useEffect(() => { loadDirectory(); return () => directoryRequest.current?.abort(); }, [loadDirectory]);
 
   const modelNames = useMemo(() => new Map(models.map((item) => [
     item.modelId,
     item.displayName || item.modelName || item.name
   ])), [models]);
-  const expertPagination = usePagination(experts, { initialPageSize: 10, keyField: 'agentId' });
 
   const openCreate = () => {
     if (!capabilityDirectoryReady) {
@@ -177,6 +189,7 @@ export function ExpertsPage({ api, toast }) {
         actions={<button className="btn primary" disabled={!capabilityDirectoryReady} onClick={openCreate}><Plus size={16} />新建专家</button>}
       />
 
+      <ListLoadError error={list.error} onRetry={list.refresh} />
       {loadError && <div className="alert danger expert-load-error" role="alert"><AlertTriangle size={16} />{loadError}</div>}
       {loading && <LoadingState label="加载专家助手" />}
       {!loading && experts.length === 0 && (
@@ -189,7 +202,7 @@ export function ExpertsPage({ api, toast }) {
       {!loading && experts.length > 0 && (
         <div className="paginated-list">
           <div className="expert-grid">
-          {expertPagination.pageItems.map((expert) => {
+          {experts.map((expert) => {
             const packs = activeCapabilityPacks(expert.capabilityBindings, capabilities);
             const connected = parentBindings.includes(`agent:${expert.agentId}`);
             return (
@@ -198,7 +211,7 @@ export function ExpertsPage({ api, toast }) {
                   <span className="expert-icon"><Bot size={19} /></span>
                   <div>
                     <strong>{expert.name}</strong>
-                    <span>{modelNames.get(expert.modelId) || '跟随系统默认模型'}</span>
+                    <span>{modelLabel(expert.modelId, modelNames, capabilityDirectoryReady)}</span>
                   </div>
                   <Badge tone={!expert.enabled ? 'gray' : connected ? 'green' : 'amber'}>
                     {!expert.enabled ? '已停用' : connected ? '已接入' : '未接入'}
@@ -218,22 +231,18 @@ export function ExpertsPage({ api, toast }) {
             );
           })}
           </div>
-          <Pagination
-            page={expertPagination.page}
-            pageSize={expertPagination.pageSize}
-            total={expertPagination.total}
-            onPageChange={expertPagination.setPage}
-            onPageSizeChange={expertPagination.setPageSize}
-          />
+
         </div>
       )}
+
+      <ServerPagination {...list.pagination} count={experts.length} />
 
       {form && (
         <Modal
           title={editing ? '编辑专家助手' : '新建专家助手'}
           size="lg"
           onClose={() => setForm(null)}
-          actions={<><button className="btn" onClick={() => setForm(null)}>取消</button><button className="btn primary" disabled={saving} onClick={save}>{saving ? '保存中...' : '保存'}</button></>}
+          actions={<><button className="btn" onClick={() => setForm(null)}>取消</button><button className="btn primary" disabled={saving || !capabilityDirectoryReady} onClick={save}>{saving ? '保存中...' : '保存'}</button></>}
         >
           <div className="expert-preset-strip">
             <span><Sparkles size={15} />快速开始</span>
@@ -248,6 +257,8 @@ export function ExpertsPage({ api, toast }) {
             <Field label="模型">
               <select className="select" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
                 <option value="">跟随系统默认模型</option>
+                {form.modelId && !models.some((item) => item.modelId === form.modelId)
+                  && <option value={form.modelId}>已配置模型（已停用或不可选）</option>}
                 {models.map((item) => <option key={item.modelId} value={item.modelId}>{item.displayName}</option>)}
               </select>
             </Field>

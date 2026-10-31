@@ -1,82 +1,73 @@
 package com.ai.repository;
 
 import com.ai.model.ConversationSessionEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 持久化对话会话仓储。
- *
- * @author data-agent
- */
-public interface ConversationSessionRepository extends JpaRepository<ConversationSessionEntity, String> {
+/** ConversationSessionEntity 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface ConversationSessionRepository {
 
-    /** 保存一轮消息时锁定所属会话，串行更新计数并保证同一 Run 重放不重复追加。 */
-    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("SELECT s FROM ConversationSessionEntity s WHERE s.sessionId = :sessionId AND s.userId = :userId AND s.tenantId = :tenantId")
-    Optional<ConversationSessionEntity> findOwnedForUpdate(
-            @org.springframework.data.repository.query.Param("sessionId") String sessionId,
-            @org.springframework.data.repository.query.Param("userId") String userId,
-            @org.springframework.data.repository.query.Param("tenantId") String tenantId);
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default ConversationSessionEntity save(ConversationSessionEntity entity) {
+        boolean creating = entity.getSessionId() == null || !existsById(entity.getSessionId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            entity.onUpdate();
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+        }
+        return entity;
+    }
 
-    /**
-     * 查询某个用户拥有的会话。
-     *
-     * @param userId 用户 ID
-     * @return 会话实体列表
-     */
-    List<ConversationSessionEntity> findByUserIdOrderByLastAccessAtDesc(String userId);
+    int insert(ConversationSessionEntity entity);
+    int update(ConversationSessionEntity entity);
+    Optional<ConversationSessionEntity> findById(@Param("id") String id);
+    boolean existsById(@Param("id") String id);
+    List<ConversationSessionEntity> findAll();
+    List<ConversationSessionEntity> findAllById(@Param("ids") Collection<String> ids);
+    void deleteById(@Param("id") String id);
 
-    /**
-     * 按用户和状态查询会话，按最后访问时间倒序。
-     */
-    List<ConversationSessionEntity> findByUserIdAndStatusOrderByLastAccessAtDesc(String userId, String status);
+    default void delete(ConversationSessionEntity entity) {
+        deleteById(entity.getSessionId());
+    }
 
-    /**
-     * 查询某个租户拥有的会话。
-     *
-     * @param tenantId 租户 ID
-     * @return 会话实体列表
-     */
-    List<ConversationSessionEntity> findByTenantIdOrderByLastAccessAtDesc(String tenantId);
+    @Transactional
+    default List<ConversationSessionEntity> saveAll(Iterable<ConversationSessionEntity> entities) {
+        List<ConversationSessionEntity> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
 
-    /**
-     * 按状态查询用户会话。
-     *
-     * @param userId 用户 ID
-     * @param status 会话状态
-     * @return 会话实体列表
-     */
-    List<ConversationSessionEntity> findByUserIdAndStatus(String userId, String status);
+    Optional<ConversationSessionEntity> findOwnedForUpdate(@Param("sessionId") String sessionId,
+            @Param("userId") String userId,
+            @Param("tenantId") String tenantId);
 
-    /**
-     * 查询某个用户拥有的一个会话。
-     *
-     * @param sessionId 会话 ID
-     * @param userId 用户 ID
-     * @return 匹配的会话
-     */
-    Optional<ConversationSessionEntity> findBySessionIdAndUserId(String sessionId, String userId);
+    List<ConversationSessionEntity> findByUserIdOrderByLastAccessAtDesc(@Param("userId") String userId);
 
-    /**
-     * 查询某个用户在某个租户中的一个会话。
-     *
-     * @param sessionId 会话 ID
-     * @param userId 用户 ID
-     * @param tenantId 租户 ID
-     * @return 匹配的会话
-     */
-    Optional<ConversationSessionEntity> findBySessionIdAndUserIdAndTenantId(String sessionId, String userId,
-            String tenantId);
+    List<ConversationSessionEntity> findByUserIdAndStatusOrderByLastAccessAtDesc(@Param("userId") String userId, @Param("status") String status);
 
-    /**
-     * 统计某个用户拥有的会话数。
-     *
-     * @param userId 用户 ID
-     * @return 会话数
-     */
-    long countByUserId(String userId);
+    List<ConversationSessionEntity> findByTenantIdOrderByLastAccessAtDesc(@Param("tenantId") String tenantId);
 
+    List<ConversationSessionEntity> findByUserIdAndStatus(@Param("userId") String userId, @Param("status") String status);
+
+    Optional<ConversationSessionEntity> findBySessionIdAndUserId(@Param("sessionId") String sessionId, @Param("userId") String userId);
+
+    Optional<ConversationSessionEntity> findBySessionIdAndUserIdAndTenantId(@Param("sessionId") String sessionId,
+            @Param("userId") String userId,
+            @Param("tenantId") String tenantId);
+
+    long countByUserId(@Param("userId") String userId);
 }

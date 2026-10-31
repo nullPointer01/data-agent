@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.AgentExecutionTraceRepository">
+    <!-- agent_execution_trace：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO agent_execution_trace (trace_id,
+            tenant_id,
+            user_id,
+            session_id,
+            selected_agent,
+            selected_type,
+            intent,
+            complexity,
+            success,
+            fallback_used,
+            task_count,
+            duration_ms,
+            question,
+            reason,
+            error,
+            plan_json,
+            task_results_json,
+            shared_context_json,
+            created_at)
+        VALUES (#{traceId},
+            #{tenantId},
+            #{userId},
+            #{sessionId},
+            #{selectedAgent},
+            #{selectedType},
+            #{intent},
+            #{complexity},
+            #{success},
+            #{fallbackUsed},
+            #{taskCount},
+            #{durationMs},
+            #{question},
+            #{reason},
+            #{error},
+            #{planJson},
+            #{taskResultsJson},
+            #{sharedContextJson},
+            #{createdAt})
+    </insert>
+    <update id="update">
+        UPDATE agent_execution_trace SET trace_id = #{traceId},
+            tenant_id = #{tenantId},
+            user_id = #{userId},
+            session_id = #{sessionId},
+            selected_agent = #{selectedAgent},
+            selected_type = #{selectedType},
+            intent = #{intent},
+            complexity = #{complexity},
+            success = #{success},
+            fallback_used = #{fallbackUsed},
+            task_count = #{taskCount},
+            duration_ms = #{durationMs},
+            question = #{question},
+            reason = #{reason},
+            error = #{error},
+            plan_json = #{planJson},
+            task_results_json = #{taskResultsJson},
+            shared_context_json = #{sharedContextJson},
+            created_at = #{createdAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT * FROM agent_execution_trace WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_execution_trace WHERE id = #{id})
+    </select>
+    <select id="findCursorPage" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT trace_id, tenant_id, user_id, session_id, selected_agent, selected_type, intent,
+            complexity, success, fallback_used, task_count, duration_ms, question, reason, error, created_at
+        FROM agent_execution_trace WHERE tenant_id = #{tenantId}
+        <if test="userId != null and userId != ''">AND user_id = #{userId}</if>
+        <if test="query != null and query != ''">
+            AND LOCATE(LOWER(#{query}), LOWER(CONCAT_WS(' ', question, selected_agent, selected_type,
+                intent, user_id, trace_id, reason, error))) &gt; 0
+        </if>
+        <if test="cursor != null">
+            <choose>
+                <when test="cursor.time != null">
+                    AND (created_at &lt; #{cursor.time} OR (created_at = #{cursor.time}
+                        AND trace_id &lt; #{cursor.id}) OR created_at IS NULL)
+                </when>
+                <otherwise>AND created_at IS NULL AND trace_id &lt; #{cursor.id}</otherwise>
+            </choose>
+        </if>
+        ORDER BY created_at DESC, trace_id DESC LIMIT #{limit}
+    </select>
+    <select id="findAll" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT * FROM agent_execution_trace
+    </select>
+    <select id="findAllById" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT * FROM agent_execution_trace WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM agent_execution_trace WHERE id = #{id}
+    </delete>
+    <select id="findByTenantIdOrderByCreatedAtDesc" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT * FROM agent_execution_trace WHERE tenant_id = #{tenantId} ORDER BY created_at DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findByTraceIdAndTenantId" resultType="com.ai.model.AgentExecutionTrace">
+        SELECT * FROM agent_execution_trace WHERE trace_id = #{traceId} AND tenant_id = #{tenantId}
+    </select>
+</mapper>

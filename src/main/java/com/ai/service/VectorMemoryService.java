@@ -34,8 +34,6 @@ public class VectorMemoryService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(VectorMemoryService.class);
     private static final double DEFAULT_MIN_SCORE = 0.5D;
-    private static final String USER_LABEL = "用户: ";
-    private static final String ASSISTANT_LABEL = "\n助手: ";
     private static final String FILE_LABEL_PREFIX = "文件[";
     private static final String FILE_LABEL_SUFFIX = "] ";
     private static final String MEMORY_LABEL_PREFIX = "记忆: ";
@@ -71,15 +69,6 @@ public class VectorMemoryService {
         return vectorStoreGateway.isAvailable();
     }
 
-
-    /** 按 Run 身份重放一轮对话索引；异常必须向持久任务传播，不能记为成功。 */
-    public void indexConversationTurn(String runId, String question, String answer, String tenantId, String userId) {
-        VectorIdentity identity = identityNormalizer.normalize(tenantId, userId);
-        requireVectorStoreAvailable(VectorDocumentTypes.CONVERSATION, runId);
-        removeFromStore(VectorDocumentTypes.CONVERSATION, runId, identity.tenantId());
-        vectorDocumentIndexer.index(USER_LABEL + question + ASSISTANT_LABEL + answer,
-                VectorDocumentTypes.CONVERSATION, runId, runId, identity.tenantId(),identity.userId());
-    }
 
     /** 接收同一次分块结果；空列表也删除原记录，不能让向量侧再计算另一套边界。 */
     public void replaceDocumentChunks(String type, String source, String title, List<VectorChunk> chunks,

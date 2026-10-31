@@ -1,6 +1,7 @@
 package com.ai.controller;
 
-import com.ai.datasource.dto.DataSourceListResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.datasource.dto.DataSourceResponse;
 import com.ai.datasource.dto.DataSourceMutationResponse;
 import com.ai.datasource.dto.DataSourcePreviewResponse;
 import com.ai.datasource.dto.DataSourceRequest;
@@ -42,8 +43,9 @@ public class DataSourceController {
      * @return 数据源列表
      */
     @GetMapping("/list")
-    public DataSourceListResponse list() {
-        return dataSourceService.list();
+    public ListPageResponse<DataSourceResponse> list(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String query) {
+        return dataSourceService.list(page, size, query);
     }
 
     /**

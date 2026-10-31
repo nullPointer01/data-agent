@@ -89,6 +89,9 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
         if (decision == null) {
             throw new IllegalArgumentException("Router 决策不能为空");
         }
+        if (decision.memoryCapture() == null) {
+            throw new IllegalArgumentException("Router 缺少记忆提取决策");
+        }
         double confidence = decision.confidence();
         if (!Double.isFinite(confidence) || confidence < properties.getMinimumConfidence() || confidence > 1D) {
             throw new IllegalArgumentException("Router 置信度未达到门槛或越界");
@@ -137,11 +140,28 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
                 REQUIRED 表示首次回答前预加载；OPTIONAL 表示需要时通过检索工具查询；OFF 表示不使用。
                 知识库是用户个人文档，不是互联网搜索。通用概念不自动检索私有知识。
                 明确依赖私有资料或过去个人事实时选择对应 REQUIRED；可能需要再查时选 OPTIONAL。
+                memoryCapture 控制回答完成后是否提取新的长期个人记忆，和 semanticMemory 的读取决策无关。
+                只能选 SKIP、BACKGROUND；不确定时选 SKIP。本决策只调度后台提取，不直接授权保存。
+                SKIP：普通知识问答、问候、回忆提问、引用或示例、假设或否定的个人事实、仅本次任务的格式要求。
+                BACKGROUND：用户本轮实际新陈述了值得跨会话保留的稳定个人事实、偏好或个人结论。
+                用户明确要求保存/纠正记忆时，memoryCapture 选 SKIP，并从已授权目录选择 saveMemory；
+                用户要求忘记记忆时选 forgetMemory；缺少精确 ID 时先选 searchMemory，且 semanticMemory=OPTIONAL。
+                用户真实表达跨任务复用的操作方法时，可选择已授权 proposeSkill 提议待确认技能；
+                多工具任务适合沉淀通用流程时，也可选择 proposeSkill，让执行模型在真实工具成功后按需提议，
+                不要对所有普通问答自动选择学习；选择这个工具不代表已有成功经验。
+                普通事实和偏好仍走个人记忆，不把临时步骤、引用或假设当作长期方法。
+                proposeSkill 不能发布技能，也不能替用户授权新工具；未绑定时不调用。
+                未授权相应工具时不能假装保存或用后台提取绕过绑定；仅解释“记住”含义不调用保存工具。
+                例如“什么是 SSE”“我之前说的职业是什么”“假如我是医生”“这次用表格”均选 SKIP；
+                “我是 Java 开发，平时喜欢简洁回答”选 BACKGROUND；明确“记住”长期偏好选择已授权保存工具。
+                同一句包含稳定事实和临时要求时，可选择提取，但不得把临时要求作为长期记忆。
+                只依据当前 question 判断写入候选；recentConversation、助手回复和工具描述不构成新个人事实。
                 candidateTools 必须从 authorizedTools.name 原样选取，最多 5 个；无需工具时返回 []。
                 只根据工具描述和任务需要选择；对操作的解释、否定或引用不表示要求执行该操作。
                 文件内容已可用时可直接阅读；只有需要额外处理才选择工具。
                 使用技能时选择 activate_skill 和 read_skill_resource；委派时选择 delegateToAgent，
-                Skill 是当前 Agent 的操作指引，不会替你调用其他工具；需要工具执行的任务也要选择相应业务工具，
+                Skill 是当前 Agent 的操作指引；声明的业务工具依赖由服务端在激活后按授权开放，
+                不用提前选择技能内部所有工具；技能之外的动作仍选择相应业务工具，
                 并检查其 targets 描述确实适合任务；不因为任务多步骤就强制委派。
                 searchMemory/searchKnowledge 仅在对应上下文为 OPTIONAL 时选择，
                 OPTIONAL 也必须存在对应已授权工具；无工具时依证据需要选 REQUIRED 或 OFF。
@@ -150,7 +170,8 @@ public class ModelSemanticRequestRouter implements SemanticRequestRouter {
                 confidence 必须为 0 到 1 的数字；reason 是最多 200 字的简短原因，不引用敏感原文。
                 格式（所有字段必填，不要输出 mode 或额外字段）：
                 {"intent":"GENERAL_CONVERSATION","semanticMemory":"OFF","knowledgeBase":"OFF",
-                 "retrievalQuery":"完整检索问题","confidence":0.9,"reason":"直接回答即可","candidateTools":[]}
+                 "memoryCapture":"SKIP","retrievalQuery":"完整检索问题","confidence":0.9,
+                 "reason":"直接回答即可","candidateTools":[]}
                 输入：
                 %s
                 """.formatted(properties.getMaxQueryChars(), payload);

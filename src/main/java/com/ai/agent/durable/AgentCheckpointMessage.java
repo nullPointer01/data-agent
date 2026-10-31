@@ -15,13 +15,22 @@ public record AgentCheckpointMessage(
         String content,
         String toolCallId,
         String toolName,
-        String argumentsJson) {
+        String argumentsJson,
+        String activatedSkill) {
+
+    public AgentCheckpointMessage(Role role, String content, String toolCallId, String toolName, String argumentsJson) {
+        this(role, content, toolCallId, toolName, argumentsJson, null);
+    }
 
     public AgentCheckpointMessage {
         if (role == null) {
             throw new IllegalArgumentException("Checkpoint message role 不能为空");
         }
         content = content == null ? "" : content;
+        if (activatedSkill != null && (role != Role.TOOL || !"activate_skill".equals(toolName)
+                || !activatedSkill.matches("[A-Za-z0-9_-]{1,128}"))) {
+            throw new IllegalArgumentException("Checkpoint Skill 激活属性不合法");
+        }
     }
 
     public enum Role {

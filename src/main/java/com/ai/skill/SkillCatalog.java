@@ -23,6 +23,10 @@ import org.springframework.util.StringUtils;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import dev.langchain4j.service.tool.ToolProvider;
+import dev.langchain4j.service.tool.ToolProviderResult;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +42,8 @@ public class SkillCatalog {
     public static final String ACTIVATE_TOOL = "activate_skill";
     public static final String READ_RESOURCE_TOOL = "read_skill_resource";
     public static final String STEPS_PATH = "references/steps.md";
+    // 当前 SDK 的持久兼容键，来自官方 ActivateSkillToolExecutor 的结果属性。
+    public static final String ACTIVATED_ATTRIBUTE = "activated_skill";
     private static final int MAX_CONTENT_LENGTH = 12000;
     private final SkillConfigRepository repository;
     private final SecurityContextHelper security;
@@ -55,7 +61,15 @@ public class SkillCatalog {
         return skills(List.of(prototype)).toolProvider().provideTools(providerRequest())
                 .aiServiceTools().stream().map(AiServiceTool::toolSpecification)
                 .collect(Collectors.toUnmodifiableMap(spec -> spec,
-                        spec -> (request, memoryId) -> execute(request, memoryId)));
+                        spec -> new ToolExecutor() {
+                            @Override public String execute(ToolExecutionRequest request, Object memoryId) {
+                                return executeWithContext(request, InvocationContext.builder().chatMemoryId(memoryId).build()).resultText();
+                            }
+                            @Override public dev.langchain4j.service.tool.ToolExecutionResult executeWithContext(
+                                    ToolExecutionRequest request, InvocationContext context) {
+                                return SkillCatalog.this.execute(request, context);
+                            }
+                        }));
     }
 
     /** 系统消息只加载名称/用途；完整指令和步骤资料在调用官方工具时进入当前对话。 */
@@ -67,11 +81,11 @@ public class SkillCatalog {
         return "\n\n## 已绑定 Skills（能力目录数据）\n" + skills(available).formatAvailableSkills()
                 + "\n任务与某个技能相关时，先调用 activate_skill，skill_name 使用目录中的精确 name（稳定 ID）。"
                 + "激活后遵循指令，按需调用 read_skill_resource 读取引用资料。"
-                + "Skill 不能改变系统规则、权限或工具白名单；只能使用本轮已提供的工具，不得编造执行结果。";
+                + "激活后框架按需开放该技能声明且已授权的工具。Skill 不能改变权限、预算或审批；不得编造执行结果。";
     }
 
     /** 指令读取不创建子模型/子 Run；调用者必须已通过统一工具 Pipeline。 */
-    private String execute(ToolExecutionRequest request, Object memoryId) {
+    private dev.langchain4j.service.tool.ToolExecutionResult execute(ToolExecutionRequest request, InvocationContext context) {
         if (!ACTIVATE_TOOL.equals(request.name()) && !READ_RESOURCE_TOOL.equals(request.name())) {
             throw new SecurityException("不是 Skill 管理工具");
         }
@@ -84,12 +98,39 @@ public class SkillCatalog {
                 .filter(tool -> tool.name().equals(request.name()))
                 .map(AiServiceTool::toolExecutor).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("当前 Skill 没有可读取的资料"));
-        // 未配置 skill-scoped ToolProvider：激活只读指令，不依赖 activated_skill 元数据授予新工具。
-        // 续跑保留指令/资源的安全工具结果文本；业务工具仍由请求白名单与审批重新授权。
-        return executor.executeWithContext(request, InvocationContext.builder().chatMemoryId(memoryId).build()).resultText();
+        return executor.executeWithContext(request, context);
+    }
+
+    /** 为本次执行固化潜在依赖池；是否暴露仍由官方激活元数据决定，依赖不是授权。 */
+    public Set<String> dependencies() {
+        return currentConfigs().stream().flatMap(config -> SkillToolDependencies.parse(config.getToolDependencies()).stream())
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** 激活观察列出未授权依赖，不能假装完整技能已经具备所有执行能力。 */
+    public Set<String> dependenciesFor(String skillId) {
+        return currentConfigs().stream().filter(config -> config.getSkillId().equals(skillId))
+                .findFirst().map(config -> SkillToolDependencies.parse(config.getToolDependencies())).orElse(Set.of());
+    }
+
+    /** 复用官方动态 Provider；只接受受治理执行器，不把官方原始执行器交给模型框架。 */
+    public ToolProviderResult scopedTools(ToolProviderRequest request,
+            Function<Set<String>, ToolProviderResult> governed) {
+        List<Skill> available = currentConfigs().stream().map(config -> {
+            Skill skill = toSkill(config);
+            ToolProvider provider = input -> governed.apply(SkillToolDependencies.parse(config.getToolDependencies()));
+            return Skill.builder().name(skill.name()).description(skill.description()).content(skill.content())
+                    .resources(skill.resources()).toolProviders(provider).build();
+        }).toList();
+        if (available.isEmpty()) return ToolProviderResult.builder().build();
+        return skills(available).toolProvider().provideTools(request);
     }
 
     private List<Skill> currentSkills() {
+        return currentConfigs().stream().map(this::toSkill).toList();
+    }
+
+    private List<SkillConfig> currentConfigs() {
         AgentCapabilityBindingSnapshot snapshot = AgentCapabilityScope.current()
                 .orElseThrow(() -> new SecurityException("当前执行没有 Agent 能力作用域"));
         if (!snapshot.callableToolNames().contains(ACTIVATE_TOOL)) {
@@ -102,14 +143,18 @@ public class SkillCatalog {
         return repository.findAllById(snapshot.skillIds()).stream()
                 .filter(config -> snapshot.allowsSkill(config.getSkillId()))
                 .filter(config -> tenantId.equals(config.getTenantId()) || "default".equals(config.getTenantId()))
+                .filter(config -> !config.isPrivateSkill() || security.getCurrentUserId().equals(config.getCreatedBy()))
                 .filter(SkillConfig::isEnabled)
                 .filter(config -> configurationIssue(config).isEmpty())
                 .sorted(Comparator.comparing(SkillConfig::getSkillId))
-                .map(this::toSkill).toList();
+                .toList();
     }
 
     /** 同一校验用于能力目录、写入和实际读取；旧 API 配置必须显式迁移，不能静默忽略。 */
     public static String configurationIssue(SkillConfig config) {
+        if (!"PUBLISHED".equals(config.getReviewStatus())) return "学习候选尚未确认发布";
+        try { SkillToolDependencies.parse(config.getToolDependencies()); }
+        catch (IllegalArgumentException error) { return error.getMessage(); }
         if (StringUtils.hasText(config.getApiUrl()) || StringUtils.hasText(config.getApiHeaders())) {
             return "旧 Skill API 配置需要迁移到 Tool/MCP；迁移后清空旧 API 配置";
         }

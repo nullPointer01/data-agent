@@ -3,236 +3,136 @@ package com.ai.repository;
 import com.ai.memory.MemoryEntry;
 import com.ai.memory.MemoryTier;
 import com.ai.memory.MemoryType;
+import com.ai.api.RecordCursor;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 持久化记忆条目仓储。
- *
- * @author data-agent
- */
-public interface MemoryEntryRepository extends JpaRepository<MemoryEntry, String> {
+/** MemoryEntry 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface MemoryEntryRepository {
 
-    /**
-     * 查询指定会话下仍有效的短期记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param sessionId 会话 ID
-     * @param now 当前时间
-     * @param pageable 分页参数
-     * @return 会话记忆
-     */
-    @Query("""
-            SELECT m FROM MemoryEntry m
-            WHERE m.tenantId = :tenantId
-              AND m.userId = :userId
-              AND m.sessionId = :sessionId
-              AND (m.expiresAt IS NULL OR m.expiresAt > :now)
-            ORDER BY m.createdAt DESC
-            """)
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default MemoryEntry save(MemoryEntry entity) {
+        boolean creating = entity.getMemoryId() == null || !existsById(entity.getMemoryId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            entity.onUpdate();
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+        }
+        return entity;
+    }
+
+    int insert(MemoryEntry entity);
+    int update(MemoryEntry entity);
+
+    /** 维护只更新仍存在且未变化的长期记忆，禁止陈旧实体走 save 后重新插入。 */
+    int updateLongTermDecayIfUnchanged(MemoryEntry entity);
+
+    Optional<MemoryEntry> findById(@Param("id") String id);
+    boolean existsById(@Param("id") String id);
+    List<MemoryEntry> findAll();
+    /** 个人记忆列表使用不可变创建时间和 ID 游标，不受画像更新或后台衰减挤页影响。 */
+    List<MemoryEntry> findCursorPage(@Param("tenantId") String tenantId, @Param("userId") String userId,
+            @Param("tier") MemoryTier tier, @Param("cursor") RecordCursor cursor, @Param("limit") int limit);
+    List<MemoryEntry> findAllById(@Param("ids") Collection<String> ids);
+
+    /** 异步向量召回后批量核验主库；身份、层级与有效期在 SQL 中约束。 */
+    List<MemoryEntry> findActiveLongTermByIds(@Param("ids") Collection<String> ids,
+            @Param("tenantId") String tenantId, @Param("userId") String userId,
+            @Param("now") LocalDateTime now);
+
+    void deleteById(@Param("id") String id);
+
+    default void delete(MemoryEntry entity) {
+        deleteById(entity.getMemoryId());
+    }
+
+    @Transactional
+    default void deleteAll(Iterable<MemoryEntry> entities) {
+        entities.forEach(this::delete);
+    }
+
+    @Transactional
+    default List<MemoryEntry> saveAll(Iterable<MemoryEntry> entities) {
+        List<MemoryEntry> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
+
     List<MemoryEntry> findActiveByTenantUserAndSession(@Param("tenantId") String tenantId,
             @Param("userId") String userId,
             @Param("sessionId") String sessionId,
             @Param("now") LocalDateTime now,
-            Pageable pageable);
+            @Param("pageable") Pageable pageable);
 
-    /**
-     * 查询指定租户用户的全部记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param pageable 分页参数
-     * @return 记忆条目
-     */
-    List<MemoryEntry> findByTenantIdAndUserIdOrderByCreatedAtDesc(String tenantId, String userId, Pageable pageable);
-
-    /**
-     * 查询指定租户用户和层级下的全部记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param tier 记忆层级
-     * @param pageable 分页参数
-     * @return 记忆条目
-     */
-    List<MemoryEntry> findByTenantIdAndUserIdAndTierOrderByCreatedAtDesc(String tenantId, String userId,
-            MemoryTier tier, Pageable pageable);
-
-    /**
-     * 查询当前用户指定层级和类型的记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param tier 记忆层级
-     * @param type 记忆类型
-     * @param pageable 分页参数
-     * @return 按更新时间倒序排列的记忆
-     */
-    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeOrderByUpdatedAtDesc(
-            String tenantId, String userId, MemoryTier tier, MemoryType type, Pageable pageable);
-
-    /**
-     * 查询用于构建用户画像的长期语义记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param tier 记忆层级
-     * @param types 语义类型集合
-     * @param pageable 分页参数
-     * @return 按更新时间倒序排列的语义记忆
-     */
-    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc(
-            String tenantId, String userId, MemoryTier tier, List<MemoryType> types, Pageable pageable);
-
-    /**
-     * 根据稳定语义键查找可覆盖的记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param type 记忆类型
-     * @param semanticKey 语义键
-     * @return 已存在的语义记忆
-     */
-    Optional<MemoryEntry> findByTenantIdAndUserIdAndTypeAndSemanticKey(
-            String tenantId, String userId, MemoryType type, String semanticKey);
-
-    /**
-     * 查询指定层级下需要进行衰减维护的记忆。
-     *
-     * @param tier 记忆层级
-     * @param pageable 分页参数
-     * @return 记忆列表
-     */
-    List<MemoryEntry> findByTierOrderByUpdatedAtAsc(MemoryTier tier, Pageable pageable);
-
-    /**
-     * 查询超过用户配额时应优先淘汰的低价值记忆。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param pageable 分页参数
-     * @return 低价值记忆列表
-     */
-    @Query("""
-            SELECT m FROM MemoryEntry m
-            WHERE m.tenantId = :tenantId
-              AND m.userId = :userId
-            ORDER BY m.decayWeight ASC, m.lastAccessedAt ASC, m.createdAt ASC
-            """)
-    List<MemoryEntry> findPrunableMemories(@Param("tenantId") String tenantId,
+    List<MemoryEntry> findByTenantIdAndUserIdOrderByCreatedAtDesc(@Param("tenantId") String tenantId,
             @Param("userId") String userId,
-            Pageable pageable);
+            @Param("pageable") Pageable pageable);
 
-    /**
-     * 查询可以从短期晋升为长期的高价值记忆。
-     *
-     * @param minDecayWeight 最小衰减权重
-     * @param minAccessCount 最小访问次数
-     * @param now 当前时间
-     * @param pageable 分页参数
-     * @return 候选记忆
-     */
-    @Query("""
-            SELECT m FROM MemoryEntry m
-            WHERE m.tier = com.ai.memory.MemoryTier.SHORT_TERM
-              AND m.decayWeight >= :minDecayWeight
-              AND m.accessCount >= :minAccessCount
-              AND (m.expiresAt IS NULL OR m.expiresAt > :now)
-            ORDER BY m.decayWeight DESC, m.accessCount DESC, m.lastAccessedAt DESC
-            """)
+    List<MemoryEntry> findByTenantIdAndUserIdAndTierOrderByCreatedAtDesc(@Param("tenantId") String tenantId,
+            @Param("userId") String userId,
+            @Param("tier") MemoryTier tier,
+            @Param("pageable") Pageable pageable);
+
+    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeOrderByUpdatedAtDesc(@Param("tenantId") String tenantId,
+            @Param("userId") String userId,
+            @Param("tier") MemoryTier tier,
+            @Param("type") MemoryType type,
+            @Param("pageable") Pageable pageable);
+
+    List<MemoryEntry> findByTenantIdAndUserIdAndTierAndTypeInOrderByUpdatedAtDesc(@Param("tenantId") String tenantId,
+            @Param("userId") String userId,
+            @Param("tier") MemoryTier tier,
+            @Param("types") List<MemoryType> types,
+            @Param("pageable") Pageable pageable);
+
+    /** 分批读取本人结构化画像的依据；范围与画像投影共用稳定键，保留其他长期记忆。 */
+    List<MemoryEntry> findProfileEvidenceForReset(@Param("tenantId") String tenantId,
+            @Param("userId") String userId, @Param("keys") List<String> keys,
+            @Param("prefixes") List<String> prefixes, @Param("limit") int limit);
+
+    Optional<MemoryEntry> findByTenantIdAndUserIdAndTypeAndSemanticKey(@Param("tenantId") String tenantId,
+            @Param("userId") String userId,
+            @Param("type") MemoryType type,
+            @Param("semanticKey") String semanticKey);
+
+    List<MemoryEntry> findByTierOrderByUpdatedAtAsc(@Param("tier") MemoryTier tier, @Param("pageable") Pageable pageable);
+
+    List<MemoryEntry> findPrunableMemories(@Param("tenantId") String tenantId, @Param("userId") String userId, @Param("pageable") Pageable pageable);
+
     List<MemoryEntry> findPromotionCandidates(@Param("minDecayWeight") double minDecayWeight,
             @Param("minAccessCount") int minAccessCount,
             @Param("now") LocalDateTime now,
-            Pageable pageable);
+            @Param("pageable") Pageable pageable);
 
-    /**
-     * 查询指定租户用户拥有的一条记忆。
-     *
-     * @param memoryId 记忆 ID
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @return 记忆条目
-     */
-    Optional<MemoryEntry> findByMemoryIdAndTenantIdAndUserId(String memoryId, String tenantId, String userId);
+    Optional<MemoryEntry> findByMemoryIdAndTenantIdAndUserId(@Param("memoryId") String memoryId,
+            @Param("tenantId") String tenantId,
+            @Param("userId") String userId);
 
-    /**
-     * 统计指定租户用户拥有的记忆数量。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @return 记忆数量
-     */
-    long countByTenantIdAndUserId(String tenantId, String userId);
+    long countByTenantIdAndUserId(@Param("tenantId") String tenantId, @Param("userId") String userId);
 
-    /**
-     * 统计指定租户用户和层级下的记忆数量。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param tier 记忆层级
-     * @return 记忆数量
-     */
-    long countByTenantIdAndUserIdAndTier(String tenantId, String userId, MemoryTier tier);
+    long countByTenantIdAndUserIdAndTier(@Param("tenantId") String tenantId, @Param("userId") String userId, @Param("tier") MemoryTier tier);
 
-    /**
-     * 统计当前租户用户指定类型的记忆数量。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @param type 记忆类型
-     * @return 记忆数量
-     */
-    long countByTenantIdAndUserIdAndType(String tenantId, String userId, MemoryType type);
+    long countByTenantIdAndUserIdAndType(@Param("tenantId") String tenantId, @Param("userId") String userId, @Param("type") MemoryType type);
 
-    /**
-     * 汇总指定租户用户记忆写入前的原始文本长度。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @return 原始文本字符数
-     */
-    @Query("""
-            SELECT COALESCE(SUM(m.sourceContentLength), 0)
-            FROM MemoryEntry m
-            WHERE m.tenantId = :tenantId
-              AND m.userId = :userId
-            """)
     long sumSourceContentLengthByTenantUser(@Param("tenantId") String tenantId, @Param("userId") String userId);
 
-    /**
-     * 汇总指定租户用户记忆实际存储的文本长度。
-     *
-     * @param tenantId 租户 ID
-     * @param userId 用户 ID
-     * @return 实际存储字符数
-     */
-    @Query("""
-            SELECT COALESCE(SUM(m.storedContentLength), 0)
-            FROM MemoryEntry m
-            WHERE m.tenantId = :tenantId
-              AND m.userId = :userId
-            """)
     long sumStoredContentLengthByTenantUser(@Param("tenantId") String tenantId, @Param("userId") String userId);
 
-    /**
-     * 查询已经过期的记忆。
-     *
-     * @param now 当前时间
-     * @param pageable 分页参数
-     * @return 过期记忆
-     */
-    @Query("""
-            SELECT m FROM MemoryEntry m
-            WHERE m.expiresAt IS NOT NULL
-              AND m.expiresAt <= :now
-            ORDER BY m.expiresAt ASC
-            """)
-    List<MemoryEntry> findExpiredMemories(@Param("now") LocalDateTime now, Pageable pageable);
+    List<MemoryEntry> findExpiredMemories(@Param("now") LocalDateTime now, @Param("pageable") Pageable pageable);
 }

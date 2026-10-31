@@ -13,6 +13,7 @@ import dev.langchain4j.guardrail.OutputGuardrail;
 import dev.langchain4j.guardrail.OutputGuardrailResult;
 import dev.langchain4j.guardrail.config.OutputGuardrailsConfig;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.model.chat.ChatModel;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,8 +34,13 @@ public class StructuredAssistantFactory {
     /** 每个助手绑定本次模型与预算作用域，无会话窗口，不缓存用户输入。 */
     public <T> T create(Class<T> assistantType, Class<?> resultType, String modelId,
             boolean governRun, boolean nativeSchema) {
+        return bind(assistantType, resultType, modelService.structuredChatModel(modelId, governRun, nativeSchema));
+    }
+
+    /** 将同一严格合同绑定到显式受治理的模型适配器，不反向注入模型网关形成依赖环。 */
+    public static <T> T bind(Class<T> assistantType, Class<?> resultType, ChatModel model) {
         return AiServices.builder(assistantType)
-                .chatModel(modelService.structuredChatModel(modelId, governRun, nativeSchema))
+                .chatModel(model)
                 .outputGuardrailsConfig(OutputGuardrailsConfig.builder().maxRetries(0).build())
                 .outputGuardrails(new OutputGuardrail() {
                     @Override

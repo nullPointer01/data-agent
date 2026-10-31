@@ -31,23 +31,25 @@ public class AgentChatToolService {
     private final ErrorRecoveryAdvisor recovery;
     private final ReActStreamEventWriter events;
     private final ReActWorkingMemoryService memory;
+    private final com.ai.skill.SkillCatalog skills;
 
     public AgentChatToolService(AgentChatService chat, AgentToolInvoker invoker,
             AgentApprovalSuspensionService approvals, ErrorRecoveryAdvisor recovery,
-            ReActStreamEventWriter events, ReActWorkingMemoryService memory) {
+            ReActStreamEventWriter events, ReActWorkingMemoryService memory, com.ai.skill.SkillCatalog skills) {
         this.chat = chat;
         this.invoker = invoker;
         this.approvals = approvals;
         this.recovery = recovery;
         this.events = events;
         this.memory = memory;
+        this.skills = skills;
     }
 
     /** 同步助手调用，审批只转成暂停结果，其他异常继续交给 Coordinator。 */
     public ReActExecutionResult run(List<ChatMessage> messages, List<ToolSpecification> specs,
             String modelId, String sessionId, String question, List<AnalysisResponse.ThinkingStep> steps,
             AgentToolInvocationContext invocation, AgentToolChoice choice) {
-        var session = open(specs, steps, null, invocation, choice);
+        var session = open(specs, steps, null, invocation, choice, modelId);
         memory.recordStart(sessionId, question);
         try {
             return finish(chat.chat(messages, modelId, session), null, sessionId, question);
@@ -61,7 +63,7 @@ public class AgentChatToolService {
             String modelId, String sessionId, String question, List<AnalysisResponse.ThinkingStep> steps,
             Consumer<String> emitter, AgentToolInvocationContext invocation, AgentToolChoice choice) {
         var context = TaskContextSnapshot.capture();
-        var session = open(specs, steps, emitter, invocation, choice);
+        var session = open(specs, steps, emitter, invocation, choice, modelId);
         memory.recordStart(sessionId, question);
         return chat.stream(messages, modelId, token -> events.emitToken(emitter, token), session)
                 .handle((answer, error) -> context.call(() -> finish(answer, error, sessionId, question)));
@@ -69,8 +71,8 @@ public class AgentChatToolService {
 
     /** 每次初始执行或审批续跑创建隔离的治理状态，预算继续使用当前根 Run。 */
     public GovernedToolSession open(List<ToolSpecification> specs, List<AnalysisResponse.ThinkingStep> steps,
-            Consumer<String> emitter, AgentToolInvocationContext invocation, AgentToolChoice choice) {
-        return new GovernedToolSession(invoker, approvals, recovery, events, memory, invocation, specs, steps, emitter, choice);
+            Consumer<String> emitter, AgentToolInvocationContext invocation, AgentToolChoice choice, String modelId) {
+        return new GovernedToolSession(invoker, approvals, recovery, events, memory, invocation, specs, steps, emitter, choice, modelId, skills);
     }
 
     /** 普通助手与持久化续跑共用终态转换，不把等待审批误写成成功或失败。 */

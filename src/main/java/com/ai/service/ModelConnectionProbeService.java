@@ -4,6 +4,11 @@ import com.ai.mcp.ModelClientFactory;
 import com.ai.mcp.ModelEndpointResolver;
 import com.ai.mcp.ModelProviderCatalog;
 import com.ai.mcp.ResolvedModelEndpoint;
+import com.ai.mcp.TokenMonitor;
+import com.ai.mcp.TokenQuotaGuard;
+import com.ai.mcp.TokenUsageRecorder;
+import com.ai.exception.QuotaExceededException;
+import com.ai.token.TokenAccountingException;
 import com.ai.model.ModelConfig;
 import com.ai.modelconfig.dto.ModelProbeRequest;
 import com.ai.modelconfig.dto.ModelProbeResponse;
@@ -16,6 +21,8 @@ import dev.langchain4j.exception.TimeoutException;
 import dev.langchain4j.exception.UnresolvedModelServerException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,7 +32,6 @@ import org.springframework.util.StringUtils;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 
 /** 使用短生命周期客户端执行一次最小真实 Chat 调用。 */
@@ -39,15 +45,22 @@ public class ModelConnectionProbeService {
     private final ModelConfigService modelConfigService;
     private final ModelEndpointResolver endpointResolver;
     private final ModelClientFactory clientFactory;
+    private final TokenQuotaGuard quotaGuard;
+    private final TokenUsageRecorder usageRecorder;
+    private final TokenMonitor tokenMonitor;
     private final Duration timeout;
 
     public ModelConnectionProbeService(ModelConfigService modelConfigService,
             ModelEndpointResolver endpointResolver,
             ModelClientFactory clientFactory,
+            TokenQuotaGuard quotaGuard, TokenUsageRecorder usageRecorder, TokenMonitor tokenMonitor,
             @Value("${langchain4j.open-ai.timeout:30000}") Integer timeoutMillis) {
         this.modelConfigService = modelConfigService;
         this.endpointResolver = endpointResolver;
         this.clientFactory = clientFactory;
+        this.quotaGuard = quotaGuard;
+        this.usageRecorder = usageRecorder;
+        this.tokenMonitor = tokenMonitor;
         this.timeout = Duration.ofMillis(timeoutMillis);
     }
 
@@ -59,7 +72,7 @@ public class ModelConnectionProbeService {
             endpoint = endpointResolver.resolve(probeConfig);
             var model = clientFactory.createChatModel(endpoint, probeConfig.getTemperature(),
                     PROBE_MAX_TOKENS, timeout);
-            ChatResponse response = model.chat(List.of(UserMessage.from(PROBE_PROMPT)));
+            ChatResponse response = callProbe(model);
             String finishReason = response.finishReason() == null ? null : response.finishReason().name();
             return ModelProbeResponse.success(elapsedMillis(startedAt), endpoint.providerKey(),
                     endpoint.baseUrl(), endpoint.modelName(), finishReason);
@@ -72,6 +85,28 @@ public class ModelConnectionProbeService {
                     endpoint == null ? null : endpoint.providerKey(),
                     endpoint == null ? null : endpoint.baseUrl(),
                     endpoint == null ? null : endpoint.modelName());
+        }
+    }
+
+    /** 临时探测不缓存客户端或正文，但真实请求同样需要预占和结算，不能成为配额旁路。 */
+    private ChatResponse callProbe(ChatModel model) {
+        var message = UserMessage.from(PROBE_PROMPT);
+        var request = ChatRequest.builder().messages(message).maxOutputTokens(PROBE_MAX_TOKENS).build();
+        var attempt = quotaGuard.reserve(request, tokenMonitor.estimateMessage(message, null),
+                PROBE_MAX_TOKENS, null, "连接探测");
+        try {
+            quotaGuard.dispatch(attempt.ticket());
+            var response = model.chat(attempt.request());
+            usageRecorder.complete(attempt, response, null);
+            return response;
+        } catch (RuntimeException | Error error) {
+            try {
+                usageRecorder.failed(attempt, null);
+            } catch (RuntimeException accounting) {
+                accounting.addSuppressed(error);
+                throw accounting;
+            }
+            throw error;
         }
     }
 
@@ -103,6 +138,8 @@ public class ModelConnectionProbeService {
     }
 
     private String classify(Throwable exception) {
+        if (hasCause(exception, TokenAccountingException.class)) return "ACCOUNTING";
+        if (hasCause(exception, QuotaExceededException.class)) return "DAILY_QUOTA";
         if (hasCause(exception, AuthenticationException.class)
                 || messageContains(exception, "api key 不能为空")) {
             return "AUTHENTICATION";
@@ -134,6 +171,8 @@ public class ModelConnectionProbeService {
 
     private String safeMessage(String errorCode) {
         return switch (errorCode) {
+            case "ACCOUNTING" -> "Token 预占或结算暂不可用，请查询配额状态后再试";
+            case "DAILY_QUOTA" -> "今日可用 Token 不足，连接探测未发送";
             case "AUTHENTICATION" -> "认证失败，请使用目标端点自己签发且已启用的 API Key";
             case "MODEL_NOT_FOUND" -> "模型不存在或当前账号无权访问";
             case "RATE_LIMITED" -> "厂商限流或额度不足，请稍后重试";

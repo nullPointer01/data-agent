@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.FileMetadataRepository">
+    <!-- file_metadata：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO file_metadata (file_id,
+            filename,
+            content_type,
+            size,
+            path,
+            content,
+            processing_status,
+            processing_error,
+            processed_at,
+            tenant_id,
+            uploaded_by,
+            uploaded_at,
+            content_hash)
+        VALUES (#{fileId},
+            #{filename},
+            #{contentType},
+            #{size},
+            #{path},
+            #{content},
+            #{processingStatus},
+            #{processingError},
+            #{processedAt},
+            #{tenantId},
+            #{uploadedBy},
+            #{uploadedAt},
+            #{contentHash})
+    </insert>
+    <update id="update">
+        UPDATE file_metadata SET filename = #{filename},
+            content_type = #{contentType},
+            size = #{size},
+            path = #{path},
+            content = #{content},
+            processing_status = #{processingStatus},
+            processing_error = #{processingError},
+            processed_at = #{processedAt},
+            tenant_id = #{tenantId},
+            uploaded_by = #{uploadedBy},
+            uploaded_at = #{uploadedAt},
+            content_hash = #{contentHash}
+        WHERE file_id = #{fileId}
+    </update>
+    <select id="findById" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE file_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM file_metadata WHERE file_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata
+    </select>
+    <select id="findAllById" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                file_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM file_metadata WHERE file_id = #{id}
+    </delete>
+    <select id="findByTenantIdAndUploadedBy" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE tenant_id = #{tenantId} AND uploaded_by = #{uploadedBy}
+    </select>
+    <select id="findByFileIdAndTenantId" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE file_id = #{fileId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findByFileIdAndTenantIdAndUploadedBy" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE file_id = #{fileId} AND tenant_id = #{tenantId} AND uploaded_by = #{uploadedBy}
+    </select>
+    <select id="findFirstByContentHashAndTenantIdAndProcessingStatus" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE content_hash = #{contentHash} AND tenant_id = #{tenantId} AND processing_status = #{status} LIMIT 1
+    </select>
+    <select id="findFirstByContentHashAndTenantIdAndUploadedByAndProcessingStatus" resultType="com.ai.model.FileMetadata">
+        SELECT * FROM file_metadata WHERE content_hash = #{contentHash} AND tenant_id = #{tenantId} AND uploaded_by = #{uploadedBy} AND processing_status = #{status} LIMIT 1
+    </select>
+</mapper>

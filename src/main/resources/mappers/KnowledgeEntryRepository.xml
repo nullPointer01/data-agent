@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.KnowledgeEntryRepository">
+    <!-- knowledge_entry：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO knowledge_entry (knowledge_id,
+            name,
+            description,
+            source_type,
+            source_filename,
+            content,
+            chunk_count,
+            content_length,
+            tenant_id,
+            created_by,
+            created_at,
+            updated_at)
+        VALUES (#{knowledgeId},
+            #{name},
+            #{description},
+            #{sourceType},
+            #{sourceFilename},
+            #{content},
+            #{chunkCount},
+            #{contentLength},
+            #{tenantId},
+            #{createdBy},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE knowledge_entry SET name = #{name},
+            description = #{description},
+            source_type = #{sourceType},
+            source_filename = #{sourceFilename},
+            content = #{content},
+            chunk_count = #{chunkCount},
+            content_length = #{contentLength},
+            tenant_id = #{tenantId},
+            created_by = #{createdBy},
+            updated_at = #{updatedAt}
+        WHERE knowledge_id = #{knowledgeId}
+    </update>
+    <select id="findById" resultType="com.ai.model.KnowledgeEntry">
+        SELECT * FROM knowledge_entry WHERE knowledge_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM knowledge_entry WHERE knowledge_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.KnowledgeEntry">
+        SELECT * FROM knowledge_entry
+    </select>
+    <select id="findAllById" resultType="com.ai.model.KnowledgeEntry">
+        SELECT * FROM knowledge_entry WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                knowledge_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM knowledge_entry WHERE knowledge_id = #{id}
+    </delete>
+    <select id="findByKnowledgeIdAndTenantId" resultType="com.ai.model.KnowledgeEntry">
+        SELECT * FROM knowledge_entry WHERE knowledge_id = #{knowledgeId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findByKnowledgeIdAndTenantIdAndCreatedBy" resultType="com.ai.model.KnowledgeEntry">
+        SELECT * FROM knowledge_entry WHERE knowledge_id = #{knowledgeId} AND tenant_id = #{tenantId} AND created_by = #{createdBy}
+    </select>
+    <sql id="listFilter">
+        (tenant_id = #{filter.tenantId}<if test="filter.includeShared"> OR tenant_id = 'default'</if>)
+        <if test="filter.ownerId != null and filter.ownerId != ''">AND created_by = #{filter.ownerId}</if>
+        <if test="filter.query != ''">
+            AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(description, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(source_filename, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(source_type, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findListPage" resultType="com.ai.model.KnowledgeEntry">
+        SELECT knowledge_id, name, description, source_type, source_filename, chunk_count, content_length, tenant_id, created_by, created_at, updated_at FROM knowledge_entry WHERE <include refid="listFilter"/>
+        ORDER BY created_at DESC, knowledge_id DESC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM knowledge_entry WHERE <include refid="listFilter"/>
+    </select>
+    <select id="totals" resultType="com.ai.repository.KnowledgeEntryRepository$KnowledgeTotals">
+        SELECT COUNT(*) AS count, COALESCE(SUM(chunk_count), 0) AS chunks,
+            COALESCE(SUM(content_length), 0) AS characters
+        FROM knowledge_entry WHERE tenant_id = #{tenantId} AND created_by = #{userId}
+    </select>
+</mapper>

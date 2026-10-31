@@ -1,12 +1,5 @@
 package com.ai.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
-
 import java.time.LocalDateTime;
 
 /**
@@ -14,56 +7,48 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "conversation_session")
 public class ConversationSessionEntity {
 
-    @Id
-    @Column(length = 64)
     private String sessionId;
 
-    @Column(name = "user_id", length = 64)
     private String userId;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "model_id", length = 64)
     private String modelId;
 
-    @Column(name = "skill_id", length = 64)
     private String skillId;
 
-    @Column(length = 256)
     private String title;
 
-    @Column(length = 16)
     private String status = "ACTIVE";
 
-    @Column(name = "message_count")
     private int messageCount = 0;
 
-    @Column(name = "total_tokens")
     private long totalTokens = 0;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "last_access_at")
     private LocalDateTime lastAccessAt;
 
-    @PrePersist
-    protected void onCreate() {
+    private LocalDateTime archivedAt;
+
+    private LocalDateTime deletedAt;
+
+    public LocalDateTime getArchivedAt() { return archivedAt; }
+    public void setArchivedAt(LocalDateTime archivedAt) { this.archivedAt = archivedAt; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         lastAccessAt = LocalDateTime.now();
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
         lastAccessAt = LocalDateTime.now();
     }

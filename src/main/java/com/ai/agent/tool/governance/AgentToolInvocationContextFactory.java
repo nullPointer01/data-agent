@@ -43,7 +43,11 @@ public class AgentToolInvocationContextFactory {
         Set<String> names = specifications == null ? Set.of() : specifications.stream()
                 .map(ToolSpecification::name)
                 .collect(Collectors.toUnmodifiableSet());
-        return fromNames(executorId, names);
+        var allowed = fromNames(executorId, names).allowedToolNames();
+        Set<String> initial = specifications == null ? Set.of() : specifications.stream()
+                .filter(spec -> !Boolean.TRUE.equals(spec.metadata().get(com.ai.skill.SkillToolDependencies.SCOPED_ONLY)))
+                .map(ToolSpecification::name).filter(allowed::contains).collect(Collectors.toUnmodifiableSet());
+        return new AgentToolInvocationContext(executorId, allowed, initial);
     }
 
     private AgentToolInvocationContext fromNames(String executorId, Collection<String> requestedNames) {

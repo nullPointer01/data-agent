@@ -1,7 +1,7 @@
 package com.ai.agent.runtime.dto;
 
 /**
- * 节点内 Agent Run 取消结果，不暴露其他用户的运行信息。
+ * 主库 Agent Run 取消结果，不暴露其他用户的运行信息。
  *
  * @param success 是否找到当前用户拥有的活跃 Run
  * @param runId 请求取消的运行编号

@@ -21,7 +21,7 @@ public class AgentApprovalExpirationScheduler {
         this.approvalService = approvalService;
     }
 
-    @Scheduled(fixedDelayString = "${app.agent.durable.scan-interval:PT15S}")
+    @Scheduled(fixedDelayString = "${app.agent.durable.recovery-interval:PT1M}")
     public void expirePendingApprovals() {
         try {
             int expired = approvalService.expireDue();

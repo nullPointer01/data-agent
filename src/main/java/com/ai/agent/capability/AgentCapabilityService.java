@@ -5,10 +5,13 @@ import com.ai.agent.tool.governance.AgentToolAuthorizationSnapshot;
 import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunScope;
+import com.ai.api.CursorPageResponse;
+import com.ai.api.ListPaging;
 import com.ai.model.AgentProfile;
 import com.ai.repository.AgentProfileRepository;
 import com.ai.security.SecurityContextHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -47,16 +50,36 @@ public class AgentCapabilityService {
     }
 
     /**
-     * 查询当前用户可见的能力。
+     * 分批查询当前用户可见能力；游标推进候选集合，不返回未经授权的描述符。
      * 不可用但仍有权查看的能力会保留安全原因，供设置页禁选展示。
      *
      * @param editingAgentId 正在编辑的 Agent，可为空；用于排除递归绑定自身
-     * @return 权限过滤后的目录
+     * @return 权限过滤后的候选页，空页也可能仍有后续候选
      */
-    public CapabilityDirectory currentUserDirectory(String editingAgentId) {
+    @Transactional(readOnly = true)
+    public CursorPageResponse<AgentCapabilityDescriptor> currentUserDirectory(String editingAgentId,
+            AgentCapabilityType type, int size, String after, String query) {
+        ListPaging.size(size);
+        if (type == null) throw new IllegalArgumentException("能力目录必须指定类型");
+        String cursor = after == null ? "" : after.trim();
+        if (cursor.length() > 512) throw new IllegalArgumentException("能力游标过长");
+        String sourceId = cursor.isEmpty() ? "" : type.sourceId(cursor);
+        String keyword = ListPaging.keyword(query);
         CallerContext caller = requireCaller();
-        List<AgentCapabilityDescriptor> capabilities = visibleCapabilities(caller, editingAgentId);
-        return new CapabilityDirectory(true, capabilities);
+        // Skill/专家都要求 app:use；没有基础权限时不读取任何数据库候选。
+        if (type != AgentCapabilityType.TOOL && !caller.authorization().administrator()
+                && !caller.authorization().permissionCodes().contains("*:*")
+                && !caller.authorization().permissionCodes().contains("app:use")) {
+            return new CursorPageResponse<>(true, List.of(), size, false, null);
+        }
+        var candidates = registry.candidates(caller.tenantId(), caller.userId(), type, editingAgentId,
+                keyword, sourceId, size, descriptor -> visibleTo(descriptor, caller)
+                        && hasRequiredPermissions(descriptor, caller.authorization()));
+        List<AgentCapabilityDescriptor> visible = candidates.items().stream()
+                .filter(descriptor -> visibleTo(descriptor, caller))
+                .filter(descriptor -> hasRequiredPermissions(descriptor, caller.authorization()))
+                .filter(descriptor -> !isEditingAgent(descriptor, editingAgentId)).toList();
+        return new CursorPageResponse<>(true, visible, size, candidates.hasMore(), candidates.nextCursor());
     }
 
     /**
@@ -284,6 +307,10 @@ public class AgentCapabilityService {
                 || caller.tenantId().equals(descriptor.tenantId());
         if (!tenantVisible) {
             return false;
+        }
+        if (descriptor.type() == AgentCapabilityType.SKILL
+                && Boolean.TRUE.equals(descriptor.outputContract().get("privateSkill"))) {
+            return caller.userId().equals(descriptor.ownerId());
         }
         if (descriptor.type() != AgentCapabilityType.SUB_AGENT) {
             return true;

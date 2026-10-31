@@ -1,15 +1,19 @@
 import DOMPurify from 'dompurify';
-import { AlertTriangle, BookOpenCheck, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, CircleSlash2, Link2, Pencil, Plus, RefreshCw, Send, Settings2, ShieldCheck, Square, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, BookOpenCheck, Bot, Check, CheckCircle2, ChevronDown, ChevronUp, CircleSlash2, Link2, Pencil, Plus, RefreshCw, Send, Settings2, ShieldCheck, Square, Trash2, X } from 'lucide-react';
 import { marked } from 'marked';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { loadAgentConfigurationOptions } from '../api/listOptions.js';
+import { useApprovalEvents } from '../hooks/useApprovalEvents.js';
+import { useBackgroundRun } from '../hooks/useBackgroundRun.js';
+import { ApprovalConnectionNotice } from '../components/ApprovalConnectionNotice.jsx';
+import { SESSION_PREVIEW_LIMIT, useConversationHistory } from '../conversation/useConversationHistory.js';
 import { activeCapabilityPacks, normalizeCapabilityBindings, subAgentBindings } from '../agent/capabilityPacks.js';
-import { normalizePersistedRunEvidence, reduceRunEvidence } from '../agent/runEvidence.js';
+import { normalizePersistedRunEvidence } from '../agent/runEvidence.js';
 import { CapabilityPackPicker } from '../components/CapabilityPackPicker.jsx';
 import { Badge, ConfirmDialog, EmptyState, Field, LoadingState, Modal, PageHeader } from '../components/ui.jsx';
 import { formatTime } from '../utils/format.js';
 
 const APPROVAL_REFRESH_STATUSES = new Set(['WAITING_APPROVAL', 'RESUMING']);
-const SESSION_PREVIEW_LIMIT = 5;
 const APPROVAL_FAILURE_STATUSES = new Set([
   'FAILED',
   'CANCELLED',
@@ -23,22 +27,15 @@ function initialCapabilityBindings(agent) {
   return normalizeCapabilityBindings(agent?.capabilityBindings);
 }
 
-function resolveStreamErrorMessage(error) {
-  if (error?.name === 'AbortError') {
-    return '已停止生成';
-  }
-  if (error?.message?.startsWith('请求失败')) {
-    return error.message;
-  }
-  return '连接中断：后端流式响应超时、服务重启或网络连接不可用，请稍后重试。';
-}
-
-async function hydrateRunEvidence(api, messages) {
+async function hydrateRunEvidence(api, messages, knownMessages = []) {
   const items = Array.isArray(messages) ? messages : [];
+  // 已知终态不反复查询，翻页/发送后同步历史只补新 Run 或尚未完成的审批。
+  const evidenceByRun = new Map(knownMessages
+    .filter((message) => message.runId && message.runEvidence?.terminal)
+    .map((message) => [message.runId, message.runEvidence]));
   const runIds = [...new Set(items
-    .filter((message) => message.role === 'assistant' && message.runId)
+    .filter((message) => message.role === 'assistant' && message.runId && !evidenceByRun.has(message.runId))
     .map((message) => message.runId))];
-  const evidenceByRun = new Map();
   for (let index = 0; index < runIds.length; index += 4) {
     const batch = runIds.slice(index, index + 4);
     const results = await Promise.all(batch.map(async (runId) => {
@@ -80,8 +77,8 @@ function hasApprovalJourney(message) {
 
 function shouldRefreshApprovalRun(message) {
   return message?.role === 'assistant'
-    && hasApprovalJourney(message)
-    && APPROVAL_REFRESH_STATUSES.has(message?.runEvidence?.status);
+    && (hasApprovalJourney(message) || message.runEvidenceUnavailable)
+    && (!message.runEvidence || APPROVAL_REFRESH_STATUSES.has(message.runEvidence.status));
 }
 
 function approvalNoticeFor(message) {
@@ -89,6 +86,14 @@ function approvalNoticeFor(message) {
   const approvalEvent = events.filter((event) => event.type === 'approval_required').at(-1);
   const resumeEvent = events.filter((event) => event.type === 'resume').at(-1);
   const status = message?.runEvidence?.status || approvalEvent?.status || '';
+
+  if (status === 'WAITING_APPROVAL' && message?.runEvidence?.approvalExecutionStatus === 'READY') {
+    return {
+      tone: 'progress', icon: RefreshCw,
+      title: '审批已通过，等待执行',
+      content: '系统已登记批准结果，恢复任务正在排队。'
+    };
+  }
 
   if (status === 'RESUMING') {
     return {
@@ -103,7 +108,7 @@ function approvalNoticeFor(message) {
       tone: 'success',
       icon: CheckCircle2,
       title: '操作执行成功',
-      content: resumeEvent?.summary || '审批已通过，本次运行已完成。'
+      content: resumeEvent?.status === 'SUCCEEDED' ? resumeEvent.summary : '审批已通过，本次运行已完成。'
     };
   }
   if (APPROVAL_FAILURE_STATUSES.has(status)) {
@@ -128,10 +133,7 @@ function approvalNoticeFor(message) {
 }
 
 /** 个人 Agent 主工作区：配置默认 Agent、管理会话并展示 SSE 运行/审批证据。 */
-export function ChatPage({ api, token, toast, onOpenExperts }) {
-  const [sessions, setSessions] = useState([]);
-  const [sessionId, setSessionId] = useState(localStorage.getItem('chatSessionId') || '');
-  const [messages, setMessages] = useState([]);
+export function ChatPage({ api, toast, onOpenExperts }) {
   const [text, setText] = useState('');
   const [models, setModels] = useState([]);
   const [agent, setAgent] = useState(null);
@@ -142,144 +144,105 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
   const [settingsError, setSettingsError] = useState('');
   const [agentDraft, setAgentDraft] = useState(null);
   const [loading, setLoading] = useState(true);
+  const configurationRequest = useRef(null);
   const [processing, setProcessing] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [renameDraft, setRenameDraft] = useState(null);
-  const [sessionsExpanded, setSessionsExpanded] = useState(false);
-  const abortRef = useRef(null);
-  const activeRunRef = useRef('');
+  const pendingSubmissionRef = useRef(null);
   const scrollRef = useRef(null);
-
-  const loadSessions = useCallback(async () => {
-    const res = await api.get('/api/v1/analysis/sessions');
-    const loadedSessions = res.sessions || [];
-    setSessions(loadedSessions);
-    return loadedSessions;
-  }, [api]);
-
-  const loadMessages = useCallback(async (sid) => {
-    if (!sid) {
-      setMessages([]);
-      return;
-    }
-    const res = await api.get(`/api/v1/analysis/session/${sid}/messages`);
-    setMessages(await hydrateRunEvidence(api, res.messages));
-  }, [api]);
+  const messagesViewportRef = useRef(null);
+  const historyScrollRef = useRef(null);
+  const {
+    sessions, setSessions, sessionId, rememberSession, messages, setMessages, sessionStatus, sessionView,
+    sessionsExpanded, setSessionsExpanded, nextSessionCursor, nextBeforeId,
+    loadingMoreSessions, loadingMessages, loadingEarlier, historyError, mutating,
+    loadSessions, loadMessages, bootHistory, clearSelection, switchSession, changeView,
+    loadMoreSessions, loadEarlier, mutateSession
+  } = useConversationHistory({ api, toast, processing, hydrateMessages: hydrateRunEvidence });
+  const backgroundRun = useBackgroundRun({ api, sessionId, messages, setMessages, loadMessages, loadSessions, toast, setProcessing });
 
   const startNewConversation = useCallback(() => {
     if (processing) return;
-    setSessionId('');
-    setMessages([]);
+    clearSelection();
     setRenameDraft(null);
-    localStorage.removeItem('chatSessionId');
-  }, [processing]);
+    if (sessionView === 'ARCHIVED') changeView('ACTIVE');
+  }, [clearSelection, processing, sessionView, changeView]);
 
   const boot = useCallback(async () => {
+    configurationRequest.current?.abort();
+    const controller = new AbortController();
+    configurationRequest.current = controller;
     setLoading(true);
     setCapabilityDirectoryReady(false);
     try {
-      const [modelRes, agentRes] = await Promise.all([
-        api.get('/api/v1/my/models').catch(() => ({ models: [] })),
-        api.get('/api/v1/my/agents/default').catch(() => null)
-      ]);
-      setModels(modelRes.models || []);
+      const agentRes = await api.get('/api/v1/my/agents/default', { signal: controller.signal });
+      if (controller.signal.aborted) return;
       const loadedAgent = agentRes?.agent || agentRes;
       setAgent(loadedAgent?.agentId ? loadedAgent : null);
       if (!loadedAgent?.agentId) {
         toast(agentRes?.message || '个人 Agent 加载失败', 'error');
-      }
-      const capabilityRes = loadedAgent?.agentId
-        ? await api.get(`/api/v1/my/capabilities?agentId=${encodeURIComponent(loadedAgent.agentId)}`).catch(() => null)
-        : null;
-      const visibleCapabilities = capabilityRes?.capabilities || [];
-      setCapabilities(visibleCapabilities);
-      setCapabilityDirectoryReady(capabilityRes?.success === true);
-      const loadedSessions = await loadSessions();
-      const storedSessionId = localStorage.getItem('chatSessionId') || '';
-      const selectedSession = loadedSessions.find((item) => item.sessionId === storedSessionId)
-        || loadedSessions[0];
-      if (selectedSession?.sessionId) {
-        setSessionId(selectedSession.sessionId);
-        localStorage.setItem('chatSessionId', selectedSession.sessionId);
-        await loadMessages(selectedSession.sessionId);
       } else {
-        setSessionId('');
-        setMessages([]);
-        localStorage.removeItem('chatSessionId');
+        try {
+          const options = await loadAgentConfigurationOptions(api, loadedAgent.agentId, undefined, controller.signal);
+          if (controller.signal.aborted) return;
+          setModels(options.models);
+          setCapabilities(options.capabilities);
+          setCapabilityDirectoryReady(true);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          toast(error.message || '配置选项加载失败，暂不能修改 Agent 设置', 'error');
+        }
       }
+      await bootHistory();
+    } catch (error) {
+      if (!controller.signal.aborted) toast(error.message || '会话加载失败，请刷新重试', 'error');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [api, loadMessages, loadSessions, toast]);
+  }, [api, bootHistory, toast]);
 
-  useEffect(() => { boot(); }, []);
-  useEffect(() => { scrollRef.current?.scrollIntoView({ block: 'end' }); }, [messages]);
+  useEffect(() => { boot(); return () => configurationRequest.current?.abort(); }, []);
+  useLayoutEffect(() => {
+    const previous = historyScrollRef.current;
+    const viewport = messagesViewportRef.current;
+    if (previous && viewport) {
+      viewport.scrollTop = previous.top + viewport.scrollHeight - previous.height;
+      historyScrollRef.current = null;
+    } else {
+      scrollRef.current?.scrollIntoView({ block: 'end' });
+    }
+  }, [messages]);
   const activeApprovalRunKey = [...new Set(messages
     .filter(shouldRefreshApprovalRun)
     .map((message) => message.runId)
     .filter(Boolean))].join(',');
-  useEffect(() => {
-    if (!sessionId || processing || !activeApprovalRunKey) {
-      return undefined;
-    }
-    const runIds = activeApprovalRunKey.split(',');
-    let disposed = false;
-    let requestInFlight = false;
-    const refreshApprovalState = async () => {
-      if (requestInFlight) return;
-      requestInFlight = true;
-      try {
-        const results = await Promise.all(runIds.map(async (runId) => {
-          const response = await api.get(`/api/v1/agent-runs/${encodeURIComponent(runId)}`);
-          return [runId, normalizePersistedRunEvidence(response)];
-        }));
-        if (disposed) return;
-        if (results.some(([, evidence]) => evidence?.terminal)) {
-          await new Promise((resolve) => window.setTimeout(resolve, 400));
-          if (!disposed) await loadMessages(sessionId);
-          return;
-        }
-        const evidenceByRun = new Map(results);
-        setMessages((items) => items.map((message) => (
-          evidenceByRun.has(message.runId)
-            ? attachRunEvidence(message, evidenceByRun.get(message.runId))
-            : message
-        )));
-      } catch {
-        // 保留当前状态并继续轮询，短暂网络异常不应抹掉审批进度。
-      } finally {
-        requestInFlight = false;
+  const approvalConnection = useApprovalEvents({
+    api, sessionId, enabled: !processing && Boolean(activeApprovalRunKey),
+    onChange: async (isDisposed) => {
+      const runIds = activeApprovalRunKey.split(',');
+      const results = await Promise.all(runIds.map(async (runId) => {
+        const response = await api.get(`/api/v1/agent-runs/${encodeURIComponent(runId)}`);
+        const evidence = normalizePersistedRunEvidence(response);
+        if (!evidence) throw new Error('审批状态同步失败');
+        return [runId, evidence];
+      }));
+      if (isDisposed()) return;
+      if (results.some(([, evidence]) => evidence?.terminal)) {
+        await loadMessages(sessionId, { refresh: true });
+        return;
       }
-    };
-    refreshApprovalState();
-    const timer = window.setInterval(refreshApprovalState, 2500);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [activeApprovalRunKey, api, loadMessages, processing, sessionId]);
-
-  const switchSession = async (sid) => {
-    setSessionId(sid);
-    localStorage.setItem('chatSessionId', sid);
-    await loadMessages(sid);
-  };
+      const evidenceByRun = new Map(results);
+      setMessages((items) => items.map((message) => (
+        evidenceByRun.has(message.runId)
+          ? attachRunEvidence(message, evidenceByRun.get(message.runId))
+          : message
+      )));
+    }
+  });
 
   const deleteSession = async (sid) => {
-    try {
-      await api.delete(`/api/v1/analysis/session/${sid}`);
-      if (sid === sessionId) {
-        localStorage.removeItem('chatSessionId');
-        setSessionId('');
-        setMessages([]);
-      }
-      toast('会话已删除', 'success');
-    } catch (e) {
-      toast('删除失败，请重试', 'error');
-    } finally {
-      setConfirm(null);
-      await loadSessions();
-    }
+    await mutateSession(sid, 'delete');
+    setConfirm(null);
   };
 
   const renameSession = async () => {
@@ -306,130 +269,50 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
   };
 
   const send = async () => {
-    if (processing && abortRef.current) {
-      const runId = activeRunRef.current;
-      const cancelRequest = runId
-        ? api.post(`/api/v1/analysis/runs/${runId}/cancel`, {}).catch(() => null)
-        : Promise.resolve();
-      abortRef.current.abort();
-      activeRunRef.current = '';
-      await cancelRequest;
+    if (processing) {
+      if (!backgroundRun.activeRunId) { toast('正在提交任务，请稍候', 'info'); return; }
+      try { await backgroundRun.cancel(); }
+      catch (error) { toast(error.message || '取消失败，请重试', 'error'); }
       return;
     }
+    if (sessionStatus === 'ARCHIVED' || loadingMessages || historyError || mutating) return;
     const question = text.trim();
-    if (!question) {
-      return;
-    }
+    if (!question) return;
     setText('');
-    setMessages((items) => [...items, { role: 'user', content: question }, {
-      role: 'assistant',
-      content: '思考中...'
-    }]);
     setProcessing(true);
-    abortRef.current = new AbortController();
+    let activeSessionId = sessionId;
     try {
-      let activeSessionId = sessionId;
       if (!activeSessionId) {
         const created = await api.post('/api/v1/analysis/session', {});
         activeSessionId = created.sessionId || created.data?.sessionId;
-        if (!created.success || !activeSessionId) {
-          throw new Error(created.message || '创建会话失败');
-        }
-        setSessionId(activeSessionId);
-        localStorage.setItem('chatSessionId', activeSessionId);
+        if (!created.success || !activeSessionId) throw new Error(created.message || '创建会话失败');
+        rememberSession(activeSessionId);
       }
-      const response = await fetch('/api/v1/analysis/analyze/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question, sessionId: activeSessionId }),
-        signal: abortRef.current.signal
-      });
-      if (!response.ok || !response.body) {
-        throw new Error(`请求失败：${response.status}`);
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let answer = '';
-      let responseTraceId = '';
-      let responseSessionId = activeSessionId;
-      let citations = [];
-      let knowledgeChecked = false;
-      let knowledgeAvailable = true;
-      let runEvidence = null;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        lines.forEach((line) => {
-          if (!line.startsWith('data:')) {
-            return;
-          }
-          const payload = line.slice(5).trim();
-          if (!payload) {
-            return;
-          }
-          try {
-            const event = JSON.parse(payload);
-            runEvidence = reduceRunEvidence(runEvidence, event);
-            if (event.type === 'run_started' && event.runId) {
-              activeRunRef.current = event.runId;
-            }
-            if (event.type === 'rag_context') {
-              citations = Array.isArray(event.citations) ? event.citations : [];
-              knowledgeChecked = true;
-              knowledgeAvailable = event.retrievalAvailable !== false;
-            }
-            if (event.type === 'token') {
-              answer += event.content || '';
-            }
-            if (event.type === 'approval_required') {
-              answer = `工具「${event.toolName || '未知工具'}」需要人工审批，审批通过后会继续执行。`;
-            }
-            if (event.type === 'error') {
-              answer = `错误：${event.content || event.message || '未知错误'}`;
-            }
-            if (event.sessionId) {
-              responseSessionId = event.sessionId;
-              setSessionId(event.sessionId);
-              localStorage.setItem('chatSessionId', event.sessionId);
-            }
-            if (event.traceId) {
-              responseTraceId = event.traceId;
-            }
-            if (event.type === 'done') {
-              activeRunRef.current = '';
-            }
-          } catch {
-            return;
-          }
-          setMessages((items) => [...items.slice(0, -1), {
-            role: 'assistant',
-            content: answer || '处理中...',
-            question,
-            sessionId: responseSessionId,
-            traceId: responseTraceId,
-            runId: runEvidence?.runId || '',
-            executionMode: runEvidence?.mode || '',
-            citations,
-            knowledgeChecked,
-            knowledgeAvailable,
-            traceEvents: runEvidence?.events || [],
-            runEvidence
-          }]);
-        });
-      }
-      await loadSessions();
+      const previous = pendingSubmissionRef.current;
+      const requestKey = previous?.question === question && previous.sessionId === activeSessionId
+        ? previous.requestKey : crypto.randomUUID();
+      pendingSubmissionRef.current = { question, sessionId: activeSessionId, requestKey };
+      setMessages((items) => items.some((message) => message.requestKey === requestKey)
+        ? items.map((message) => message.requestKey === requestKey ? { ...message, content: '正在提交任务…' } : message)
+        : [...items, { role: 'user', content: question },
+          { role: 'assistant', content: '正在提交任务…', requestKey }]);
+      const body = { requestKey, request: { question, sessionId: activeSessionId } };
+      // 网络失败时只重试同一提交键；不会通过重新订阅再次执行问题。
+      let submitted;
+      try { submitted = await api.post('/api/v1/agent-runs', body); }
+      catch { submitted = await api.post('/api/v1/agent-runs', body); }
+      if (!submitted.runId) throw new Error(submitted.message || '任务提交失败');
+      pendingSubmissionRef.current = null;
+      setMessages((items) => items.map((message) => message.requestKey === requestKey
+        ? { ...message, runId: submitted.runId, content: '任务已提交，等待执行…' } : message));
+      backgroundRun.start(submitted.runId, activeSessionId);
+      loadSessions().catch(() => {});
     } catch (error) {
-      setMessages((items) => [...items.slice(0, -1), { role: 'assistant', content: resolveStreamErrorMessage(error) }]);
-    } finally {
       setProcessing(false);
-      abortRef.current = null;
-      activeRunRef.current = '';
+      setText(question);
+      toast(error.message || '提交结果暂未确认，请重试；相同请求会复用原任务', 'error');
+      // 即使提交响应丢失，落库占位消息也能找回同一个 Run。
+      if (activeSessionId) loadMessages(activeSessionId, { refresh: true }).catch(() => {});
     }
   };
 
@@ -520,21 +403,29 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
     : activeSession && !sessionPreview.some((item) => item.sessionId === activeSession.sessionId)
       ? [...sessionPreview.slice(0, SESSION_PREVIEW_LIMIT - 1), activeSession]
       : sessionPreview;
-  const canToggleSessions = sessions.length > SESSION_PREVIEW_LIMIT;
+  const canLoadMoreSessions = Boolean(nextSessionCursor) || (!sessionsExpanded && sessions.length > SESSION_PREVIEW_LIMIT);
+  const sessionActionsDisabled = processing || mutating || loadingMessages;
 
   return (
     <>
       <PageHeader
         title="我的 Agent"
         desc={agent?.description || '定义能力，发起任务，并核对每次运行的结果与证据'}
-        actions={<><button className="btn" onClick={boot}><RefreshCw size={16} />刷新</button><button className="btn" onClick={openSettings}><Settings2 size={16} />设置</button><button className="btn primary" onClick={startNewConversation} disabled={processing}><Plus size={16} />新对话</button></>}
+        actions={<><button className="btn" onClick={boot} disabled={sessionActionsDisabled || loading}><RefreshCw size={16} />刷新</button><button className="btn" onClick={openSettings}><Settings2 size={16} />设置</button><button className="btn primary" onClick={startNewConversation} disabled={sessionActionsDisabled}><Plus size={16} />新对话</button></>}
       />
       <div className="chat-layout">
         <div className="chat-sidebar">
-          <div className="panel-title"><strong>会话</strong><Badge tone="gray">{sessions.length}</Badge></div>
+          <div className="panel-title">
+            <strong>{sessionView === 'ARCHIVED' ? '已归档会话' : '会话'}</strong>
+            <button className="btn" disabled={sessionActionsDisabled || loadingMoreSessions}
+              onClick={() => { setRenameDraft(null); changeView(sessionView === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE'); }}>
+              <Archive size={15} />{sessionView === 'ACTIVE' ? '查看归档' : '返回会话'}
+            </button>
+          </div>
           <div className="session-list">
             {loading && <LoadingState label="加载会话" />}
-            {!loading && sessions.length === 0 && <EmptyState title="暂无会话" desc="尚未保存任何对话记录。" />}
+            {!loading && loadingMoreSessions && <LoadingState label="加载会话" />}
+            {!loading && !loadingMoreSessions && sessions.length === 0 && <EmptyState title={sessionView === 'ARCHIVED' ? '暂无归档' : '暂无会话'} desc={sessionView === 'ARCHIVED' ? '归档的会话可以在这里查看和恢复。' : '尚未保存任何对话记录。'} />}
             {!loading && visibleSessions.map((session) => (
               <div className={`session-row ${session.sessionId === sessionId ? 'active' : ''}`} key={session.sessionId}>
                 {renameDraft?.sid === session.sessionId ? (
@@ -558,7 +449,7 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
                     }}
                   />
                 ) : (
-                  <button className="session-item" onClick={() => switchSession(session.sessionId)}>
+                  <button className="session-item" disabled={processing || mutating} onClick={() => switchSession(session.sessionId)}>
                     <strong title={session.title || '新对话'}>{session.title || '新对话'}</strong>
                     <div className="muted">{session.messageCount || 0} 条 · {formatTime(session.lastAccessAt)}</div>
                   </button>
@@ -571,23 +462,28 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
                     </>
                   ) : (
                     <>
-                      <button className="icon-button" onClick={() => setRenameDraft({ sid: session.sessionId, title: session.title || '' })} title="重命名" aria-label="重命名会话"><Pencil size={15} /></button>
-                      <button className="icon-button" onClick={() => setConfirm({ sid: session.sessionId, title: session.title || '新对话' })} title="删除" aria-label="删除会话"><Trash2 size={15} /></button>
+                      <button className="icon-button" disabled={sessionActionsDisabled} onClick={() => setRenameDraft({ sid: session.sessionId, title: session.title || '' })} title="重命名" aria-label="重命名会话"><Pencil size={15} /></button>
+                      <button className="icon-button" disabled={sessionActionsDisabled}
+                        onClick={() => mutateSession(session.sessionId, session.status === 'ARCHIVED' ? 'restore' : 'archive')}
+                        title={session.status === 'ARCHIVED' ? '恢复' : '归档'} aria-label={session.status === 'ARCHIVED' ? '恢复会话' : '归档会话'}>
+                        {session.status === 'ARCHIVED' ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+                      </button>
+                      <button className="icon-button" disabled={sessionActionsDisabled} onClick={() => setConfirm({ sid: session.sessionId, title: session.title || '新对话' })} title="删除" aria-label="删除会话"><Trash2 size={15} /></button>
                     </>
                   )}
                 </div>
               </div>
             ))}
           </div>
-          {!loading && canToggleSessions && (
-            <button
-              type="button"
-              className="session-list-toggle"
-              onClick={() => setSessionsExpanded((expanded) => !expanded)}
-              aria-expanded={sessionsExpanded}
-            >
-              {sessionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              {sessionsExpanded ? '收起' : '加载更多'}
+          {!loading && canLoadMoreSessions && (
+            <button type="button" className="session-list-toggle" onClick={loadMoreSessions}
+              disabled={loadingMoreSessions || sessionActionsDisabled}>
+              <ChevronDown size={16} />{loadingMoreSessions ? '加载中…' : '加载更多'}
+            </button>
+          )}
+          {!loading && sessionsExpanded && sessions.length > SESSION_PREVIEW_LIMIT && (
+            <button type="button" className="session-list-toggle" onClick={() => setSessionsExpanded(false)}>
+              <ChevronUp size={16} />收起
             </button>
           )}
         </div>
@@ -604,26 +500,46 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
             </div>
             <button className="icon-button bordered" onClick={openSettings} title="配置我的 Agent"><Settings2 size={16} /></button>
           </div>
-          <div className="messages">
+          <div className="messages" ref={messagesViewportRef}>
+            {backgroundRun.activeRunId && ['connecting', 'reconnecting'].includes(backgroundRun.connection) && (
+              <div className="notice">正在恢复任务连接，后台执行仍在继续…</div>
+            )}
+            <ApprovalConnectionNotice state={approvalConnection} enabled={!processing && Boolean(activeApprovalRunKey)}
+              onRefresh={() => loadMessages(sessionId, { refresh: true })} />
+            {loadingMessages && <LoadingState label="加载消息" />}
+            {historyError && <EmptyState title="历史消息加载失败" desc={historyError} actions={
+              <button className="btn" disabled={loadingMessages} onClick={() => loadMessages(sessionId).catch(() => {})}>重试</button>
+            } />}
+            {nextBeforeId && <button className="session-list-toggle" disabled={loadingEarlier || processing || loadingMessages}
+              onClick={() => loadEarlier(() => {
+                const viewport = messagesViewportRef.current;
+                if (viewport) historyScrollRef.current = { top: viewport.scrollTop, height: viewport.scrollHeight };
+              })}>
+              <ChevronUp size={16} />{loadingEarlier ? '加载中…' : '加载更早消息'}
+            </button>}
             {messages.length === 0 && <EmptyState title="今天想完成什么？" desc="直接提出问题或任务，我会决定是否检索知识、使用工具或直接回答。" actions={<Bot size={24} />} />}
-            {messages.map((message, index) => <MessageBubble key={`${message.role}-${index}`} message={message} />)}
+            {messages.map((message, index) => <MessageBubble key={message.id || `${message.role}-${index}`} message={message} api={api} toast={toast} />)}
             <div ref={scrollRef} />
           </div>
           <div className="composer">
+            {sessionStatus === 'ARCHIVED' && <div className="panel-title">
+              <span className="muted">此会话已归档，恢复后可继续对话。</span>
+              <button className="btn" disabled={mutating} onClick={() => mutateSession(sessionId, 'restore')}><ArchiveRestore size={15} />恢复会话</button>
+            </div>}
             <div className="composer-input">
-              <textarea className="textarea" rows={3} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send(); }} placeholder="告诉我的 Agent 你想完成什么" />
-              <button className={`btn ${processing ? 'danger' : 'primary'}`} onClick={send}>{processing ? <Square size={16} /> : <Send size={16} />}{processing ? '停止' : '发送'}</button>
+              <textarea className="textarea" rows={3} value={text} disabled={sessionStatus === 'ARCHIVED' || loadingMessages || Boolean(historyError) || mutating} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send(); }} placeholder="告诉我的 Agent 你想完成什么" />
+              <button className={`btn ${processing ? 'danger' : 'primary'}`} disabled={!processing && (sessionStatus === 'ARCHIVED' || loadingMessages || Boolean(historyError) || mutating)} onClick={send}>{processing ? <Square size={16} /> : <Send size={16} />}{processing ? '停止' : '发送'}</button>
             </div>
           </div>
         </div>
       </div>
-      {confirm && <ConfirmDialog title="删除会话" message={`确认删除「${confirm.title}」？`} danger confirmText="删除" onCancel={() => setConfirm(null)} onConfirm={() => deleteSession(confirm.sid)} />}
+      {confirm && <ConfirmDialog title="删除会话" message={`确认删除「${confirm.title}」？删除后无法在页面恢复，尚未执行的任务会被取消；已完成的操作不会撤销。`} danger confirmText={mutating ? '删除中…' : '删除'} onCancel={() => setConfirm(null)} onConfirm={() => deleteSession(confirm.sid)} />}
       {settingsOpen && agentDraft && (
         <Modal
           title="配置我的 Agent"
           size="lg"
           onClose={() => setSettingsOpen(false)}
-          actions={<><button className="btn" onClick={() => setSettingsOpen(false)}>取消</button><button className="btn primary" disabled={savingSettings} onClick={saveSettings}>{savingSettings ? '保存中...' : '保存配置'}</button></>}
+          actions={<><button className="btn" onClick={() => setSettingsOpen(false)}>取消</button><button className="btn primary" disabled={savingSettings || !capabilityDirectoryReady} onClick={saveSettings}>{savingSettings ? '保存中...' : '保存配置'}</button></>}
         >
           <div className="form-grid agent-settings-form">
             <Field label="名称">
@@ -632,6 +548,8 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
             <Field label="模型">
               <select className="select" value={agentDraft.modelId} onChange={(event) => setAgentDraft({ ...agentDraft, modelId: event.target.value })}>
                 <option value="">跟随系统默认模型</option>
+                {agentDraft.modelId && !models.some((item) => item.modelId === agentDraft.modelId)
+                  && <option value={agentDraft.modelId}>已配置模型（已停用或不可选）</option>}
                 {models.map((item) => <option key={item.modelId} value={item.modelId}>{item.displayName}</option>)}
               </select>
             </Field>
@@ -695,13 +613,24 @@ export function ChatPage({ api, token, toast, onOpenExperts }) {
   );
 }
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, api, toast }) {
+  const [learning, setLearning] = useState(false);
+  const learn = async () => {
+    if (learning) return;
+    setLearning(true);
+    try {
+      const result = await api.post(`/api/v1/my/skills/from-run/${encodeURIComponent(message.runId)}`, {});
+      toast(result.reviewStatus === 'PENDING' ? '候选已提炼，请到上下文的技能经验检查并确认' : '此任务已提炼过技能，可到上下文查看');
+    } catch (error) { toast(error.message, 'error'); }
+    finally { setLearning(false); }
+  };
   const html = DOMPurify.sanitize(marked.parse(message.content || ''));
   if (message.role === 'assistant') {
     return (
       <div className="message assistant">
         <div className="markdown-body" dangerouslySetInnerHTML={{ __html: html }} />
         <MessageOutcome message={message} />
+        {message.runId && message.runEvidence?.status === 'COMPLETED' && <button className="btn" disabled={learning} onClick={learn}>{learning ? '提炼中…' : '提炼为技能'}</button>}
       </div>
     );
   }

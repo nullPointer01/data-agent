@@ -1,12 +1,15 @@
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: data_agent
+    password: data_agent_local
+    virtual-host: /data-agent
   datasource:
     url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: zym190457
     driver-class-name: com.mysql.cj.jdbc.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
   data:
     redis:
       repositories:
@@ -20,11 +23,25 @@ langchain4j:
 
 app:
   embedding:
+    # 本机 Ollama 原生运行；复用 LangChain4j OpenAI-compatible 客户端。
+    # 独立版本隔离云端旧向量，历史知识/文件/长期记忆需从原文重建索引。
     dimension: 1024
-    index-version: bge-m3-v1
+    index-version: ollama-bge-m3-v1
     api:
-      base-url: https://api.siliconflow.cn/v1
-      model-name: BAAI/bge-m3
+      base-url: http://localhost:11434/v1
+      api-key: ollama
+      model-name: bge-m3:latest
+      # 冷启动需要加载本地模型，批量规模先按本机保守配置。
+      timeout: 120s
+      batch-size: 8
+      output-dimensions: ""
+      query-prefix: ""
+      document-prefix: ""
+  rag:
+    reranker:
+      # Ollama Embedding 不提供 Cross-Encoder 精排；本地使用现有规则排序。
+      # 避免继续请求已欠费的云端 Rerank；prod 仍保留云端精排。
+      enabled: false
   cors:
     allowed-origins: http://localhost:5173,http://127.0.0.1:5173
   encryption:
@@ -38,10 +55,10 @@ app:
       # 地址、密钥和参数仍由原模型记录管理；切换回答模型不会改变此规划绑定。
       model-id: "6fac3eb2-aea9-4bc7-a61a-ee65e3290e3c"
     context:
-      # 按预算裁剪完整历史轮次，不额外调用模型生成摘要。
+      # 与公共配置一致：超限才生成有原文证据的任务摘要。
       compaction:
         enabled: true
-        model-summary-enabled: false
+        model-summary-enabled: true
     durable:
       # 本地只开放隔离沙箱写工具，便于直接验收审批与恢复链路。
       enabled: true

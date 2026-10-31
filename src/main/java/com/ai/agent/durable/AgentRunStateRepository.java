@@ -1,49 +1,70 @@
 package com.ai.agent.durable;
 
 import com.ai.agent.runtime.AgentRunStatus;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 持久化 Agent Run 仓储。状态写入由 AgentDurableRunStore 统一封装。
- *
- * @author data-agent
- */
-public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEntity, String> {
+/** AgentRunStateEntity 的 MyBatis 仓储，SQL 见同名 Mapper XML。 */
+@Mapper
+public interface AgentRunStateRepository {
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update AgentRunStateEntity r set r.mode = :mode, r.version = r.version + 1 "
-            + "where r.runId = :runId and r.mode = com.ai.agent.runtime.AgentExecutionMode.PLANNING "
-            + "and r.status = com.ai.agent.runtime.AgentRunStatus.RUNNING")
+    /** 明确保存生命周期；MyBatis 写入立即执行，不依赖 ORM 脏检查。 */
+    @Transactional
+    default AgentRunStateEntity save(AgentRunStateEntity entity) {
+        boolean creating = entity.getRunId() == null || !existsById(entity.getRunId());
+        if (creating) {
+            entity.onCreate();
+            insert(entity);
+        } else {
+            entity.onUpdate();
+            if (update(entity) != 1) {
+                throw new OptimisticLockingFailureException("记录已变化，请重新读取后保存");
+            }
+            entity.setVersion(entity.getVersion() + 1);
+        }
+        return entity;
+    }
+
+    int insert(AgentRunStateEntity entity);
+    int update(AgentRunStateEntity entity);
+    Optional<AgentRunStateEntity> findById(@Param("id") String id);
+    Optional<AgentRunStateEntity> findForUpdate(@Param("id") String id);
+    boolean existsById(@Param("id") String id);
+    List<AgentRunStateEntity> findAll();
+    List<AgentRunStateEntity> findAllById(@Param("ids") Collection<String> ids);
+    void deleteById(@Param("id") String id);
+
+    default void delete(AgentRunStateEntity entity) {
+        deleteById(entity.getRunId());
+    }
+
+    @Transactional
+    default List<AgentRunStateEntity> saveAll(Iterable<AgentRunStateEntity> entities) {
+        List<AgentRunStateEntity> saved = new ArrayList<>();
+        entities.forEach(entity -> saved.add(save(entity)));
+        return saved;
+    }
+
     int bindMode(@Param("runId") String runId, @Param("mode") com.ai.agent.runtime.AgentExecutionMode mode);
 
-    Optional<AgentRunStateEntity> findByRunIdAndTenantIdAndUserId(String runId, String tenantId, String userId);
+    Optional<AgentRunStateEntity> findByRunIdAndTenantIdAndUserId(@Param("runId") String runId,
+            @Param("tenantId") String tenantId,
+            @Param("userId") String userId);
 
-    List<AgentRunStateEntity> findByStatusAndLeaseUntilBeforeOrderByUpdatedAtAsc(
-            AgentRunStatus status, Instant leaseUntil, Pageable pageable);
+    List<AgentRunStateEntity> findByStatusAndLeaseUntilBeforeOrderByUpdatedAtAsc(@Param("status") AgentRunStatus status,
+            @Param("leaseUntil") Instant leaseUntil,
+            @Param("pageable") Pageable pageable);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentRunStateEntity r
-               set r.status = :targetStatus,
-                   r.terminationReason = :reason,
-                   r.errorSummary = :detail,
-                   r.completedAt = :completedAt,
-                   r.updatedAt = :updatedAt,
-                   r.leaseOwner = null,
-                   r.leaseUntil = null,
-                   r.version = r.version + 1
-             where r.runId = :runId
-               and r.status = :expectedStatus
-               and r.version = :expectedVersion
-            """)
     int transition(@Param("runId") String runId,
             @Param("expectedStatus") AgentRunStatus expectedStatus,
             @Param("targetStatus") AgentRunStatus targetStatus,
@@ -53,28 +74,6 @@ public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEnti
             @Param("updatedAt") Instant updatedAt,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentRunStateEntity r
-               set r.status = :targetStatus,
-                   r.terminationReason = :reason,
-                   r.errorSummary = :detail,
-                   r.resultSummary = :resultSummary,
-                   r.usedIterations = :usedIterations,
-                   r.usedModelCalls = :usedModelCalls,
-                   r.usedToolCalls = :usedToolCalls,
-                   r.usedTokens = :usedTokens,
-                   r.tokenUsageEstimated = :tokenUsageEstimated,
-                   r.remainingActiveTimeoutMs = :remainingActiveTimeoutMs,
-                   r.completedAt = :completedAt,
-                   r.updatedAt = :updatedAt,
-                   r.leaseOwner = null,
-                   r.leaseUntil = null,
-                   r.version = r.version + 1
-             where r.runId = :runId
-               and r.status = :expectedStatus
-               and r.version = :expectedVersion
-            """)
     int terminate(@Param("runId") String runId,
             @Param("expectedStatus") AgentRunStatus expectedStatus,
             @Param("targetStatus") AgentRunStatus targetStatus,
@@ -91,29 +90,6 @@ public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEnti
             @Param("updatedAt") Instant updatedAt,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentRunStateEntity r
-               set r.status = com.ai.agent.runtime.AgentRunStatus.WAITING_APPROVAL,
-                   r.terminationReason = com.ai.agent.runtime.AgentRunTerminationReason.NONE,
-                   r.checkpointCiphertext = :checkpointCiphertext,
-                   r.checkpointSchemaVersion = :checkpointSchemaVersion,
-                   r.usedIterations = :usedIterations,
-                   r.usedModelCalls = :usedModelCalls,
-                   r.usedToolCalls = :usedToolCalls,
-                   r.usedTokens = :usedTokens,
-                   r.tokenUsageEstimated = :tokenUsageEstimated,
-                   r.remainingActiveTimeoutMs = :remainingActiveTimeoutMs,
-                   r.approvalId = :approvalId,
-                   r.approvalExpiresAt = :approvalExpiresAt,
-                   r.updatedAt = :updatedAt,
-                   r.leaseOwner = null,
-                   r.leaseUntil = null,
-                   r.version = r.version + 1
-             where r.runId = :runId
-               and r.status = :expectedStatus
-               and r.version = :expectedVersion
-            """)
     int suspendForApproval(@Param("runId") String runId,
             @Param("expectedStatus") AgentRunStatus expectedStatus,
             @Param("checkpointCiphertext") String checkpointCiphertext,
@@ -129,20 +105,6 @@ public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEnti
             @Param("updatedAt") Instant updatedAt,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentRunStateEntity r
-               set r.status = com.ai.agent.runtime.AgentRunStatus.RESUMING,
-                   r.leaseOwner = :leaseOwner,
-                   r.leaseUntil = :leaseUntil,
-                   r.resumeAttempts = r.resumeAttempts + 1,
-                   r.updatedAt = :now,
-                   r.version = r.version + 1
-             where r.runId = :runId
-               and r.status in :claimableStatuses
-               and (r.leaseUntil is null or r.leaseUntil < :now)
-               and r.version = :expectedVersion
-            """)
     int claimLease(@Param("runId") String runId,
             @Param("claimableStatuses") List<AgentRunStatus> claimableStatuses,
             @Param("leaseOwner") String leaseOwner,
@@ -150,17 +112,6 @@ public interface AgentRunStateRepository extends JpaRepository<AgentRunStateEnti
             @Param("now") Instant now,
             @Param("expectedVersion") long expectedVersion);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update AgentRunStateEntity r
-               set r.leaseUntil = :leaseUntil,
-                   r.updatedAt = :now,
-                   r.version = r.version + 1
-             where r.runId = :runId
-               and r.status = com.ai.agent.runtime.AgentRunStatus.RESUMING
-               and r.leaseOwner = :leaseOwner
-               and r.version = :expectedVersion
-            """)
     int renewLease(@Param("runId") String runId,
             @Param("leaseOwner") String leaseOwner,
             @Param("leaseUntil") Instant leaseUntil,

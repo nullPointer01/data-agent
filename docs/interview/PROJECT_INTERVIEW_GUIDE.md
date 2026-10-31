@@ -12,7 +12,7 @@ Data Agent 是一个面向企业数据分析场景的智能体平台。用户可
 
 ## 2. 技术栈
 
-- 后端：Spring Boot 3.2、Java 17、Spring MVC、Spring Security、Spring Data JPA
+- 后端：Spring Boot 3.2、Java 17、Spring MVC、Spring Security、MyBatis、Flyway
 - 前端：React、Vite、lucide-react
 - 存储：MySQL 作为业务主库，Redis 用于扩展缓存/限流场景，Milvus 作为向量库
 - AI 框架：LangChain4j，兼容 OpenAI 风格的 Chat Completions API
@@ -367,7 +367,7 @@ Agent 工具包括：
 
 - 文档分块；
 - Milvus 向量检索；
-- JPA/ES 全文检索；
+- Elasticsearch BM25 全文检索（MyBatis 负责业务主库，不承担全文检索）；
 - RRF 融合；
 - 重排；
 - 上下文压缩；

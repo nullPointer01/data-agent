@@ -1,18 +1,19 @@
 package com.ai.service;
 
 import com.ai.model.AuditLog;
+import com.ai.api.CursorPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.RecordCursor;
 import com.ai.repository.AuditLogRepository;
 import com.ai.security.SecurityContextHelper;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.util.List;
 
 /**
  * 租户业务操作审计日志服务。
@@ -23,9 +24,6 @@ import java.util.List;
 public class AuditLogService {
 
     private static final int MAX_AUDIT_MESSAGE_LENGTH = 1024;
-    private static final int DEFAULT_PAGE = 0;
-    private static final int MIN_LIMIT = 1;
-    private static final int MAX_LIMIT = 200;
     private static final String HEADER_X_FORWARDED_FOR = "X-Forwarded-For";
     private static final String IP_DELIMITER = ",";
     private static final String METRIC_AUDIT_EVENTS_TOTAL = "data_agent_audit_events_total";
@@ -70,14 +68,17 @@ public class AuditLogService {
         meterRegistry.counter(METRIC_AUDIT_EVENTS_TOTAL, TAG_ACTION, action, TAG_STATUS, status).increment();
     }
 
+    /** 当前租户的历史日志按游标翻页；用户和关键词过滤在数据库执行。 */
     @Transactional(readOnly = true)
-    public List<AuditLog> listCurrentTenant(int limit, String userId) {
+    public CursorPageResponse<AuditLog> listCurrentTenant(int size, String userId, String query, String after) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        PageRequest page = PageRequest.of(DEFAULT_PAGE, Math.max(MIN_LIMIT, Math.min(limit, MAX_LIMIT)));
-        if (userId != null && !userId.isBlank()) {
-            return auditLogRepository.findByTenantIdAndUserIdOrderByCreatedAtDesc(tenantId, userId, page);
-        }
-        return auditLogRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, page);
+        int pageSize = ListPaging.size(size);
+        var cursor = RecordCursor.decode(after);
+        if (cursor != null && Long.parseLong(cursor.id()) <= 0) throw new IllegalArgumentException("审计游标无效");
+        var entries = auditLogRepository.findCursorPage(tenantId, userId,
+                ListPaging.keyword(query), cursor, pageSize + 1);
+        return CursorPageResponse.fromFetched(entries, pageSize,
+                entry -> new RecordCursor(entry.getCreatedAt(), entry.getId().toString()));
     }
 
     private String resolveClientIp() {

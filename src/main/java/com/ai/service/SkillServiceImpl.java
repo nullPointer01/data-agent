@@ -1,14 +1,17 @@
 package com.ai.service;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.CatalogListFilter;
 import com.ai.model.SkillConfig;
 import com.ai.model.SkillPromptHistory;
 import com.ai.repository.SkillConfigRepository;
 import com.ai.repository.SkillPromptHistoryRepository;
 import com.ai.security.SecurityContextHelper;
 import com.ai.skill.SkillCatalog;
-import com.ai.skill.dto.SkillHistoryListResponse;
+import com.ai.skill.SkillToolDependencies;
+import com.ai.agent.tool.governance.AgentToolRegistry;
 import com.ai.skill.dto.SkillHistoryResponse;
-import com.ai.skill.dto.SkillListResponse;
 import com.ai.skill.dto.SkillMutationResponse;
 import com.ai.skill.dto.SkillRequest;
 import com.ai.skill.dto.SkillResponse;
@@ -18,9 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 技能管理应用服务默认实现。
@@ -31,7 +31,6 @@ import java.util.stream.Collectors;
 public class SkillServiceImpl implements SkillService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SkillServiceImpl.class);
-    private static final String DEFAULT_TENANT_ID = "default";
     private static final String DEFAULT_SKILL_VERSION = "1.0";
     private static final String DEFAULT_API_METHOD = "POST";
     private static final String DEFAULT_SKILL_SOURCE = "manual";
@@ -42,13 +41,15 @@ public class SkillServiceImpl implements SkillService {
     private final SkillConfigRepository skillConfigRepository;
     private final SkillPromptHistoryRepository skillPromptHistoryRepository;
     private final SecurityContextHelper securityContextHelper;
+    private final AgentToolRegistry tools;
 
     public SkillServiceImpl(SkillConfigRepository skillConfigRepository,
             SkillPromptHistoryRepository skillPromptHistoryRepository,
-            SecurityContextHelper securityContextHelper) {
+            SecurityContextHelper securityContextHelper, AgentToolRegistry tools) {
         this.skillConfigRepository = skillConfigRepository;
         this.skillPromptHistoryRepository = skillPromptHistoryRepository;
         this.securityContextHelper = securityContextHelper;
+        this.tools = tools;
     }
 
     @Override
@@ -57,7 +58,7 @@ public class SkillServiceImpl implements SkillService {
         validateCreateRequest(request);
         SkillConfig config = new SkillConfig();
         applyCreateRequest(config, request);
-        config.setEnabled(true);
+        config.setEnabled(request.enabled() == null || request.enabled());
         config.setTenantId(securityContextHelper.getCurrentTenantId());
         config.setCreatedBy(securityContextHelper.getCurrentUserId());
 
@@ -70,15 +71,13 @@ public class SkillServiceImpl implements SkillService {
 
     @Override
     @Transactional(readOnly = true)
-    public SkillListResponse listSkills() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        List<SkillConfig> skills = new ArrayList<>(skillConfigRepository.findByTenantId(tenantId));
-        if (!DEFAULT_TENANT_ID.equals(tenantId)) {
-            skills.addAll(skillConfigRepository.findByTenantId(DEFAULT_TENANT_ID));
-        }
-        return new SkillListResponse(true, skills.stream()
-                .map(SkillResponse::from)
-                .collect(Collectors.toList()));
+    public ListPageResponse<SkillResponse> listSkills(int page, int size, String query) {
+        ListPaging.page(page, size);
+        var filter = new CatalogListFilter(securityContextHelper.getCurrentTenantId(), null,
+                true, false, null, query);
+        String viewer = securityContextHelper.getCurrentUserId();
+        return ListPageResponse.fetch(page, size, skillConfigRepository.countList(filter, viewer),
+                pageable -> skillConfigRepository.findListPage(filter, viewer, pageable)).map(SkillResponse::from);
     }
 
     @Override
@@ -101,17 +100,15 @@ public class SkillServiceImpl implements SkillService {
 
     @Override
     @Transactional(readOnly = true)
-    public SkillHistoryListResponse listHistory(String skillId) {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        if (findMutableSkill(skillId, tenantId) == null) {
-            return new SkillHistoryListResponse(false, List.of());
+    public ListPageResponse<SkillHistoryResponse> listHistory(String skillId, int page, int size) {
+        ListPaging.page(page, size);
+        String tenant = securityContextHelper.getCurrentTenantId();
+        if (findMutableSkill(skillId, tenant) == null) {
+            throw new IllegalArgumentException(MESSAGE_NOT_FOUND_OR_DENIED);
         }
-        List<SkillHistoryResponse> history = skillPromptHistoryRepository
-                .findBySkillIdAndTenantIdOrderByVersionDesc(skillId, tenantId)
-                .stream()
-                .map(SkillHistoryResponse::from)
-                .collect(Collectors.toList());
-        return new SkillHistoryListResponse(true, history);
+        return ListPageResponse.fetch(page, size, skillPromptHistoryRepository.countHistory(skillId, tenant),
+                pageable -> skillPromptHistoryRepository.findHistoryPage(skillId, tenant, pageable))
+                .map(SkillHistoryResponse::from);
     }
 
     @Override
@@ -123,11 +120,7 @@ public class SkillServiceImpl implements SkillService {
             return SkillMutationResponse.failure(MESSAGE_NOT_FOUND_OR_DENIED);
         }
 
-        List<SkillPromptHistory> history = skillPromptHistoryRepository
-                .findBySkillIdAndTenantIdOrderByVersionDesc(skillId, tenantId);
-        var targetHistory = history.stream()
-                .filter(item -> item.getVersion() == version)
-                .findFirst();
+        var targetHistory = skillPromptHistoryRepository.findVersion(skillId, tenantId, version);
         if (targetHistory.isEmpty()) {
             return SkillMutationResponse.failure("版本不存在");
         }
@@ -136,6 +129,7 @@ public class SkillServiceImpl implements SkillService {
         SkillPromptHistory target = targetHistory.get();
         config.setPromptTemplate(target.getPromptTemplate());
         config.setSteps(target.getSteps());
+        config.setToolDependencies(target.getToolDependencies());
         validateInstructions(config);
         skillConfigRepository.save(config);
 
@@ -146,7 +140,7 @@ public class SkillServiceImpl implements SkillService {
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse deleteSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        var existingOptional = skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId);
+        var existingOptional = java.util.Optional.ofNullable(findMutableSkill(skillId, tenantId));
         if (existingOptional.isEmpty()) {
             return SkillMutationResponse.failure(MESSAGE_NOT_FOUND_OR_DENIED);
         }
@@ -161,7 +155,7 @@ public class SkillServiceImpl implements SkillService {
     @Transactional(rollbackFor = Exception.class)
     public SkillMutationResponse toggleSkill(String skillId) {
         String tenantId = securityContextHelper.getCurrentTenantId();
-        var existingOptional = skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId);
+        var existingOptional = java.util.Optional.ofNullable(findMutableSkill(skillId, tenantId));
         if (existingOptional.isEmpty()) {
             return SkillMutationResponse.failure(MESSAGE_NOT_FOUND_OR_DENIED);
         }
@@ -181,6 +175,7 @@ public class SkillServiceImpl implements SkillService {
         validateLegacyApiRequest(request);
         config.setPromptTemplate(request.promptTemplate());
         config.setSteps(request.steps());
+        config.setToolDependencies(SkillToolDependencies.normalize(request.toolDependencies()));
         config.setSource(StringUtils.hasText(request.source()) ? request.source().trim() : DEFAULT_SKILL_SOURCE);
     }
 
@@ -197,6 +192,9 @@ public class SkillServiceImpl implements SkillService {
         }
         if (request.steps() != null) {
             config.setSteps(request.steps());
+        }
+        if (request.toolDependencies() != null) {
+            config.setToolDependencies(SkillToolDependencies.normalize(request.toolDependencies()));
         }
         if (request.apiUrl() != null) {
             config.setApiUrl(request.apiUrl());
@@ -219,6 +217,7 @@ public class SkillServiceImpl implements SkillService {
         history.setVersion(nextVersion);
         history.setPromptTemplate(config.getPromptTemplate());
         history.setSteps(config.getSteps());
+        history.setToolDependencies(config.getToolDependencies());
         history.setRemark(remark);
         history.setTenantId(tenantId);
         skillPromptHistoryRepository.save(history);
@@ -227,6 +226,8 @@ public class SkillServiceImpl implements SkillService {
 
     private SkillConfig findMutableSkill(String skillId, String tenantId) {
         return skillConfigRepository.findBySkillIdAndTenantId(skillId, tenantId)
+                .filter(config -> !config.isPrivateSkill()
+                        || securityContextHelper.getCurrentUserId().equals(config.getCreatedBy()))
                 .orElse(null);
     }
 
@@ -247,6 +248,9 @@ public class SkillServiceImpl implements SkillService {
     }
 
     private void validateInstructions(SkillConfig config) {
+        if (!tools.registeredToolNames().containsAll(SkillToolDependencies.parse(config.getToolDependencies()))) {
+            throw new IllegalArgumentException("技能依赖包含未注册工具，请先接入 Tool/MCP");
+        }
         if (config.isEnabled()) {
             String reason = SkillCatalog.configurationIssue(config);
             if (!reason.isEmpty()) {

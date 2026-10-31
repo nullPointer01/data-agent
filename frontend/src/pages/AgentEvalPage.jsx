@@ -1,3 +1,5 @@
+import { loadListOptions } from '../api/listOptions.js';
+import { useServerList } from '../hooks/useServerList.js';
 import {
   Activity,
   CheckCircle2,
@@ -10,8 +12,8 @@ import {
   ShieldCheck,
   Wrench
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, DataTable, EmptyState, Field, Modal, PageHeader } from '../components/ui.jsx';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Badge, DataTable, EmptyState, ListLoadError, Field, Modal, PageHeader } from '../components/ui.jsx';
 import { TraceDetail } from './TracePage.jsx';
 import { formatTime, truncate } from '../utils/format.js';
 
@@ -69,7 +71,6 @@ function booleanText(value) {
 export function AgentEvalPage({ api, toast }) {
   const [datasets, setDatasets] = useState([]);
   const [agents, setAgents] = useState([]);
-  const [runs, setRuns] = useState([]);
   const [datasetId, setDatasetId] = useState('');
   const [agentId, setAgentId] = useState('');
   const [report, setReport] = useState(null);
@@ -80,28 +81,20 @@ export function AgentEvalPage({ api, toast }) {
   const [traceLoading, setTraceLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const load = async () => {
+  const runList = useServerList({ api, url: '/api/v1/agent-evals/runs', mode: 'offset' });
+  const runs = runList.items;
+  const loadOptions = async () => {
     setLoading(true);
     setError('');
     try {
-      const [datasetResponse, runResponse, agentResponse] = await Promise.all([
-        api.get('/api/v1/agent-evals/datasets'),
-        api.get('/api/v1/agent-evals/runs?limit=50'),
-        api.get('/api/v1/agents?enabledOnly=true')
+      const [nextDatasets, nextAgents] = await Promise.all([
+        loadListOptions(api, '/api/v1/agent-evals/datasets'),
+        loadListOptions(api, '/api/v1/agents', { enabledOnly: 'true' })
       ]);
-      const nextDatasets = Array.isArray(datasetResponse) ? datasetResponse : [];
-      const nextRuns = Array.isArray(runResponse) ? runResponse : [];
-      const nextAgents = Array.isArray(agentResponse.agents) ? agentResponse.agents : [];
       setDatasets(nextDatasets);
-      setRuns(nextRuns);
       setAgents(nextAgents);
       setDatasetId((current) => current || nextDatasets[0]?.datasetId || '');
       setAgentId((current) => current || nextAgents[0]?.agentId || '');
-      if (!report && nextRuns[0]?.evalRunId) {
-        const latest = await api.get(`/api/v1/agent-evals/runs/${encodeURIComponent(nextRuns[0].evalRunId)}`);
-        if (!latest.evalRunId) throw new Error(latest.message || '最新评测报告加载失败');
-        setReport(latest);
-      }
     } catch (requestError) {
       setError(requestError.message || 'Agent Eval 加载失败');
     } finally {
@@ -109,25 +102,41 @@ export function AgentEvalPage({ api, toast }) {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  const load = () => Promise.all([runList.refresh(), loadOptions()]);
+  useEffect(() => { loadOptions(); }, [api]);
+  useEffect(() => {
+    if (report || !runs[0]?.evalRunId) return undefined;
+    let active = true;
+    api.get(`/api/v1/agent-evals/runs/${encodeURIComponent(runs[0].evalRunId)}`)
+      .then((latest) => {
+        if (active && latest.evalRunId) setReport(latest);
+        else if (active) setError(latest.message || '最新评测报告加载失败');
+      }).catch((failure) => { if (active) setError(failure.message); });
+    return () => { active = false; };
+  }, [api, runList.response, report]);
 
   useEffect(() => {
     if (!report?.evalRunId || !['PENDING', 'RUNNING'].includes(report.status)) return undefined;
-    const timer = window.setInterval(async () => {
+    let active = true;
+    let timer;
+    const poll = async () => {
       try {
         const next = await api.get(`/api/v1/agent-evals/runs/${encodeURIComponent(report.evalRunId)}`);
+        if (!active) return;
         if (!next.evalRunId) throw new Error(next.message || '评测状态刷新失败');
         setReport(next);
         if (!['PENDING', 'RUNNING'].includes(next.status)) {
-          const nextRuns = await api.get('/api/v1/agent-evals/runs?limit=50');
-          setRuns(Array.isArray(nextRuns) ? nextRuns : []);
+          await runList.refresh();
         }
       } catch (requestError) {
-        setError(requestError.message || '评测状态刷新失败');
+        if (active) setError(requestError.message || '评测状态刷新失败');
+      } finally {
+        if (active) timer = window.setTimeout(poll, 2000);
       }
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [api, report?.evalRunId, report?.status]);
+    };
+    timer = window.setTimeout(poll, 2000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [api, report?.evalRunId, report?.status, runList.refresh]);
 
   const datasetNames = useMemo(
     () => Object.fromEntries(datasets.map((item) => [item.datasetId, item.name])),
@@ -142,16 +151,7 @@ export function AgentEvalPage({ api, toast }) {
       const response = await api.post('/api/v1/agent-evals/runs', { datasetId, agentId });
       if (response.success === false) throw new Error(response.message || '评测启动失败');
       setReport(response);
-      setRuns((items) => [{
-        evalRunId: response.evalRunId,
-        status: response.status,
-        datasetId: response.dataset?.datasetId,
-        datasetVersion: response.dataset?.datasetVersion,
-        agentId: response.agent?.agentId,
-        modelId: response.agent?.modelId,
-        counts: response.counts,
-        startedAt: response.startedAt
-      }, ...items.filter((item) => item.evalRunId !== response.evalRunId)]);
+      await runList.refresh({ reset: true });
       toast?.('Agent Eval 已进入队列', 'success');
     } catch (requestError) {
       setError(requestError.message || '评测启动失败');
@@ -239,7 +239,8 @@ export function AgentEvalPage({ api, toast }) {
 
       <section className="eval-section">
         <div className="eval-section-head"><div><strong>评测运行</strong><span>固定输入与版本快照</span></div></div>
-        <DataTable loading={loading} empty={<EmptyState title="暂无评测运行" desc="创建 READY 数据集后可发起第一轮回归评测。" />} columns={[
+        <ListLoadError error={runList.error} onRetry={runList.refresh} />
+        <DataTable serverPagination={runList.pagination} loading={runList.loading} empty={<EmptyState title="暂无评测运行" desc="创建 READY 数据集后可发起第一轮回归评测。" />} columns={[
           { key: 'startedAt', title: '开始时间', render: (item) => formatTime(item.startedAt) },
           { key: 'datasetId', title: '数据集', render: (item) => <><strong>{datasetNames[item.datasetId] || truncate(item.datasetId, 16)}</strong><div className="muted">v{item.datasetVersion}</div></> },
           { key: 'agentId', title: 'Agent / 模型', render: (item) => <><span className="mono">{truncate(item.agentId, 18)}</span><div className="muted">{item.modelId || '默认模型'}</div></> },
@@ -277,15 +278,7 @@ export function AgentEvalPage({ api, toast }) {
           </div>
 
           <div className="eval-section-head"><div><strong>样本证据</strong><span>{report.counts?.completed || 0} 条已执行，Run 与 Trace 可继续下钻</span></div></div>
-          <DataTable loading={false} empty={<EmptyState title="暂无样本结果" desc="评测运行开始后将逐条写入样本证据。" />} columns={[
-            { key: 'sampleKey', title: '样本', render: (item) => <><strong>{item.sampleKey}</strong><div className="muted">{truncate(item.question, 54)}</div></> },
-            { key: 'outcomeStatus', title: 'Outcome', render: (item) => <Badge tone={statusTone(item.outcomeStatus)}>{statusText(item.outcomeStatus)}</Badge> },
-            { key: 'tools', title: '工具', render: (item) => item.observedTools == null ? '无证据' : (item.observedTools.join(', ') || '未调用') },
-            { key: 'approvalObserved', title: '审批', render: (item) => booleanText(item.approvalObserved) },
-            { key: 'invalidLoopObserved', title: '无效循环', render: (item) => booleanText(item.invalidLoopObserved) },
-            { key: 'usage', title: '消耗', render: (item) => item.durationMs == null ? '无证据' : <>{item.durationMs} ms<div className="muted">{item.tokenUsage || 0} Token</div></> },
-            { key: 'actions', title: '操作', render: (item) => <button className="icon-button bordered" title="查看样本证据" aria-label={`查看样本 ${item.sampleKey} 证据`} onClick={() => setSample(item)}><Eye size={16} /></button> }
-          ]} rows={report.samples || []} rowKey="sampleId" />
+          <EvalSamples api={api} runId={report.evalRunId} status={report.status} onSample={setSample} />
         </section>
       )}
 
@@ -329,4 +322,38 @@ function SampleEvidenceModal({ sample, traceLoading, onTrace, onClose }) {
       </section>
     </Modal>
   );
+}
+
+/** 报告轮询仅拉取摘要；样本证据按当前页独立刷新。 */
+function EvalSamples({ api, runId, status, onSample }) {
+  const list = useServerList({ api, url: `/api/v1/agent-evals/runs/${encodeURIComponent(runId)}/samples`, mode: 'offset' });
+  const previous = useRef({ runId, status });
+  useEffect(() => {
+    const statusChanged = previous.current.runId === runId && previous.current.status !== status;
+    previous.current = { runId, status };
+    if (!['PENDING', 'RUNNING'].includes(status)) {
+      if (statusChanged) list.refresh();
+      return undefined;
+    }
+    let active = true;
+    let timer;
+    const poll = async () => {
+      await list.refresh();
+      if (active) timer = window.setTimeout(poll, 3000);
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [runId, status, list.refresh]);
+  return <>
+    <ListLoadError error={list.error} onRetry={list.refresh} />
+          <DataTable serverPagination={list.pagination} loading={list.loading} empty={<EmptyState title="暂无样本结果" desc="评测运行开始后将逐条写入样本证据。" />} columns={[
+            { key: 'sampleKey', title: '样本', render: (item) => <><strong>{item.sampleKey}</strong><div className="muted">{truncate(item.question, 54)}</div></> },
+            { key: 'outcomeStatus', title: 'Outcome', render: (item) => <Badge tone={statusTone(item.outcomeStatus)}>{statusText(item.outcomeStatus)}</Badge> },
+            { key: 'tools', title: '工具', render: (item) => item.observedTools == null ? '无证据' : (item.observedTools.join(', ') || '未调用') },
+            { key: 'approvalObserved', title: '审批', render: (item) => booleanText(item.approvalObserved) },
+            { key: 'invalidLoopObserved', title: '无效循环', render: (item) => booleanText(item.invalidLoopObserved) },
+            { key: 'usage', title: '消耗', render: (item) => item.durationMs == null ? '无证据' : <>{item.durationMs} ms<div className="muted">{item.tokenUsage || 0} Token</div></> },
+            { key: 'actions', title: '操作', render: (item) => <button className="icon-button bordered" title="查看样本证据" aria-label={`查看样本 ${item.sampleKey} 证据`} onClick={() => onSample(item)}><Eye size={16} /></button> }
+          ]} rows={list.items} rowKey="sampleId" />
+  </>;
 }

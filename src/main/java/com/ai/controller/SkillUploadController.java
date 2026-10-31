@@ -1,7 +1,9 @@
 package com.ai.controller;
 
-import com.ai.skill.dto.SkillHistoryListResponse;
-import com.ai.skill.dto.SkillListResponse;
+import org.springframework.web.bind.annotation.RequestParam;
+import com.ai.api.ListPageResponse;
+import com.ai.skill.dto.SkillResponse;
+import com.ai.skill.dto.SkillHistoryResponse;
 import com.ai.skill.dto.SkillMutationResponse;
 import com.ai.skill.dto.SkillRequest;
 import com.ai.service.SkillGenerator;
@@ -53,8 +55,9 @@ public class SkillUploadController {
 
     /** 查询指定 Skill 的版本历史。 */
     @GetMapping("/{skillId}/history")
-    public SkillHistoryListResponse getHistory(@PathVariable String skillId) {
-        return skillService.listHistory(skillId);
+    public ListPageResponse<SkillHistoryResponse> getHistory(@PathVariable String skillId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return skillService.listHistory(skillId, page, size);
     }
 
     /** 将 Skill 配置回滚到指定历史版本。 */
@@ -64,7 +67,7 @@ public class SkillUploadController {
     }
 
     /**
-     * 由管理员手工提交样例数据和目标，调用模型生成可编辑的 Skill 草稿。
+     * 由管理员手工提交样例数据和目标，调用模型生成未保存、未启用的可编辑 Skill 草稿。
      *
      * <p>该接口不会在文件上传、普通对话或评分后自动触发。</p>
      */
@@ -78,8 +81,9 @@ public class SkillUploadController {
 
     /** 列出当前租户的 Skill 配置。 */
     @GetMapping("/list")
-    public SkillListResponse listSkills() {
-        return skillService.listSkills();
+    public ListPageResponse<SkillResponse> listSkills(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String query) {
+        return skillService.listSkills(page, size, query);
     }
 
     /** 删除 Skill 配置；历史记录保留审计，运行时不再能够激活已删除技能。 */

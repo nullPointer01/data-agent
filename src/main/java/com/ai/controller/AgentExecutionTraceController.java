@@ -1,6 +1,6 @@
 package com.ai.controller;
 
-import com.ai.agent.dto.AgentExecutionTraceListResponse;
+import com.ai.api.CursorPageResponse;
 import com.ai.agent.dto.AgentExecutionTraceResponse;
 import com.ai.service.AgentExecutionTraceService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/agent-traces")
 public class AgentExecutionTraceController {
 
-    private static final int DEFAULT_LIMIT = 50;
 
     private final AgentExecutionTraceService traceService;
 
@@ -29,15 +28,19 @@ public class AgentExecutionTraceController {
     /**
      * 查询当前租户下的执行轨迹。
      *
-     * @param limit 返回条数
+     * @param size 每页数量
      * @param userId 可选用户编号
+     * @param query 可选搜索内容
+     * @param after 上一页游标
      * @return 执行轨迹列表
      */
     @GetMapping
-    public AgentExecutionTraceListResponse listTraces(
-            @RequestParam(value = "limit", defaultValue = "" + DEFAULT_LIMIT) int limit,
-            @RequestParam(value = "userId", required = false) String userId) {
-        return traceService.listCurrentTenant(limit, userId);
+    public CursorPageResponse<AgentExecutionTraceResponse> listTraces(
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String after) {
+        return traceService.listCurrentTenant(size, userId, query, after);
     }
 
     /**

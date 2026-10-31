@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.security.rbac.SysPermissionRepository">
+    <!-- sys_permission 是平台级 RBAC 配置；普通字段使用驼峰自动映射。 -->
+    <sql id="listFilter">
+        <if test="query != ''">
+            AND (LOCATE(LOWER(#{query}), LOWER(permission_code)) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(name, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(description, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(resource_type, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(action, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findListPage" resultType="com.ai.security.rbac.SysPermission">
+        SELECT * FROM sys_permission WHERE 1 = 1 <include refid="listFilter"/>
+        ORDER BY permission_code ASC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM sys_permission WHERE 1 = 1 <include refid="listFilter"/>
+    </select>
+    <insert id="insert">
+        INSERT INTO sys_permission (permission_code, name, description, resource_type, action, enabled, created_at, updated_at)
+        VALUES (#{permissionCode}, #{name}, #{description}, #{resourceType}, #{action}, #{enabled}, #{createdAt}, #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE sys_permission SET name = #{name},
+            description = #{description},
+            resource_type = #{resourceType},
+            action = #{action},
+            enabled = #{enabled},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE permission_code = #{permissionCode}
+    </update>
+    <select id="findById" resultType="com.ai.security.rbac.SysPermission">
+        SELECT * FROM sys_permission WHERE permission_code = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM sys_permission WHERE permission_code = #{id})
+    </select>
+    <select id="findAllById" resultType="com.ai.security.rbac.SysPermission">
+        SELECT * FROM sys_permission WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                permission_code IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM sys_permission WHERE permission_code = #{id}
+    </delete>
+    <select id="findByEnabledTrueOrderByPermissionCodeAsc" resultType="com.ai.security.rbac.SysPermission">
+        SELECT * FROM sys_permission WHERE enabled = true ORDER BY permission_code ASC
+    </select>
+    <select id="findByPermissionCodeIn" resultType="com.ai.security.rbac.SysPermission">
+        SELECT * FROM sys_permission WHERE
+        <choose><when test="permissionCodes != null and !permissionCodes.isEmpty()">permission_code IN <foreach collection="permissionCodes" item="value" open="(" close=")" separator=",">#{value}</foreach>
+        </when><otherwise>1 = 0</otherwise></choose>
+    </select>
+    <select id="findPermissionsByRoleCode" resultType="com.ai.security.rbac.SysPermission">SELECT p.* FROM sys_permission p JOIN sys_role_permission rp ON rp.permission_code = p.permission_code WHERE rp.role_code = #{roleCode}</select>
+</mapper>

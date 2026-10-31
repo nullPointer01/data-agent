@@ -6,13 +6,14 @@ import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.runtime.AgentRunTerminationReason;
 import com.ai.agent.tool.AgentConversationRecorder;
 import com.ai.security.SecurityContextHelper;
+import com.ai.conversation.ConversationAccessGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
 /**
- * 面向当前认证所有者的持久化 Run 查询与等待态取消服务。
+ * 面向当前认证所有者的持久化 Run 查询与取消服务。
  *
  * @author data-agent
  */
@@ -25,15 +26,17 @@ public class AgentDurableRunService {
     private final AgentToolApprovalRepository approvalRepository;
     private final SecurityContextHelper securityContextHelper;
     private final AgentConversationRecorder conversationRecorder;
+    private final ConversationAccessGuard conversationAccess;
 
     public AgentDurableRunService(AgentDurableRunStore runStore,
             AgentToolApprovalRepository approvalRepository,
             SecurityContextHelper securityContextHelper,
-            AgentConversationRecorder conversationRecorder) {
+            AgentConversationRecorder conversationRecorder, ConversationAccessGuard conversationAccess) {
         this.runStore = runStore;
         this.approvalRepository = approvalRepository;
         this.securityContextHelper = securityContextHelper;
         this.conversationRecorder = conversationRecorder;
+        this.conversationAccess = conversationAccess;
     }
 
     @Transactional(readOnly = true)
@@ -43,22 +46,25 @@ public class AgentDurableRunService {
     }
 
     @Transactional
-    public AgentDurableRunResponse cancelWaitingOwned(String runId) {
+    public AgentDurableRunResponse cancelOwned(String runId) {
         AgentRunStateEntity entity = findOwned(runId);
-        if (entity.getStatus() != AgentRunStatus.WAITING_APPROVAL) {
+        if (entity.getStatus().isTerminal()) {
             return toResponse(entity);
         }
+        conversationAccess.lockActive(entity.getSessionId(), entity.getTenantId(), entity.getUserId());
+        entity = runStore.lock(runId);
+        if (entity.getStatus().isTerminal()) return toResponse(entity);
         boolean cancelled = runStore.transition(
                 runId,
                 new AgentRunTransition(
-                        AgentRunStatus.WAITING_APPROVAL,
+                        entity.getStatus(),
                         AgentRunStatus.CANCELLED,
                         AgentRunTerminationReason.CANCELLED,
-                        "用户取消等待审批的运行"));
+                        "用户取消运行"));
         if (cancelled) {
-            approvalRepository.cancelPendingByRun(entity.getTenantId(), runId, Instant.now());
+            approvalRepository.cancelUnfinishedByRun(entity.getTenantId(), runId, Instant.now());
             conversationRecorder.updateRunConversation(
-                    entity.getRunId(), "已取消等待审批，工具操作未执行。", null, null);
+                    entity.getRunId(), "任务已取消。已发出的模型请求或正在执行的操作可能仍会结束，请确认操作结果。", null, null);
         }
         return toResponse(findOwned(runId));
     }
@@ -67,11 +73,15 @@ public class AgentDurableRunService {
         if (!runStore.isEnabled()) {
             throw new IllegalArgumentException(NOT_FOUND_OR_DENIED);
         }
-        return runStore.findOwned(
+        AgentRunStateEntity run = runStore.findOwned(
                         runId,
                         securityContextHelper.getCurrentTenantId(),
                         securityContextHelper.getCurrentUserId())
                 .orElseThrow(() -> new IllegalArgumentException(NOT_FOUND_OR_DENIED));
+        if (run.getSessionId() != null && !run.getSessionId().isBlank()) {
+            conversationAccess.requireReadable(run.getSessionId(), run.getTenantId(), run.getUserId());
+        }
+        return run;
     }
 
     private AgentDurableRunResponse toResponse(AgentRunStateEntity entity) {

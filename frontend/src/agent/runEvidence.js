@@ -40,7 +40,13 @@ function normalizeContextEvidence(value) {
     modelWindowTokens: numberOrZero(value.modelWindowTokens),
     runRemainingTokens: numberOrZero(value.runRemainingTokens),
     inputTokenLimit: numberOrZero(value.inputTokenLimit),
-    tokenEstimateUsed: value.tokenEstimateUsed !== false
+    tokenEstimateUsed: value.tokenEstimateUsed !== false,
+    summary: value.summary && typeof value.summary === 'object' ? {
+      outcome: safeText(value.summary.outcome, 40),
+      summaryCount: numberOrZero(value.summary.summaryCount),
+      coveredMessageCount: numberOrZero(value.summary.coveredMessageCount),
+      summaryTokens: numberOrZero(value.summary.summaryTokens)
+    } : null
   };
 }
 
@@ -161,7 +167,7 @@ function timelineEvent(event) {
         status: evidence?.decision || common.status,
         title: rejected ? '上下文被拒绝' : reduced ? '上下文已压缩' : '上下文未压缩',
         summary: evidence
-          ? `Token ${evidence.estimatedTokensBefore} -> ${evidence.estimatedTokensAfter} · 保留 ${evidence.retainedMessageCount}/${evidence.originalMessageCount} 条消息`
+          ? `Token ${evidence.estimatedTokensBefore} -> ${evidence.estimatedTokensAfter} · 送模 ${evidence.retainedMessageCount}/${evidence.originalMessageCount} 条消息${evidence.summary?.summaryCount ? ` · ${evidence.summary.summaryCount} 段摘要覆盖 ${evidence.summary.coveredMessageCount} 条旧消息` : ''}`
           : '上下文治理已完成',
         details: evidence
       };
@@ -245,6 +251,7 @@ export function normalizePersistedRunEvidence(value) {
     runId: safeText(value.runId, 80),
     traceId: safeText(value.traceId, 80),
     approvalId: safeText(value.approvalId, 80),
+    approvalExecutionStatus: safeText(value.approvalExecutionStatus, 32),
     mode: safeText(value.executionMode, 48),
     status,
     terminationReason: safeText(value.terminationReason, 80),
@@ -257,6 +264,7 @@ export function normalizePersistedRunEvidence(value) {
     source: 'history',
     evidenceSource: safeText(value.evidenceSource, 48),
     eventHistoryComplete: value.eventHistoryComplete === true,
+    backgroundExecution: value.backgroundExecution === true,
     taskContractPresent: value.taskContractPresent === true,
     outcomeEvaluation: normalizeOutcomeEvaluation(value.outcomeEvaluation),
     contextEvidence: events.filter((event) => event.type === 'context_governed' && event.details).at(-1)?.details || null,
@@ -277,7 +285,7 @@ export function reduceRunEvidence(current, event) {
   const base = eventRunId && currentRunId && eventRunId !== currentRunId ? {} : (current || {});
   const usage = normalizeUsage(event.usage, base.usage);
   const status = event.status || usage.status || base.status || '';
-  const terminal = event.type === 'done' && TERMINAL_STATUSES.has(status);
+  const terminal = TERMINAL_STATUSES.has(status) && (event.type === 'done' || event.type === 'run_state' || base.terminal === true);
   const waitingApproval = status === 'WAITING_APPROVAL';
   const outcomeEvaluation = normalizeOutcomeEvaluation(event.outcomeEvaluation) || base.outcomeEvaluation || null;
   const eventContextEvidence = event.type === 'context_governed'
@@ -299,6 +307,7 @@ export function reduceRunEvidence(current, event) {
     waitingApproval,
     terminal,
     source: 'live',
+    backgroundExecution: base.backgroundExecution === true,
     taskContractPresent: event.taskContractPresent === true
       || base.taskContractPresent === true
       || (outcomeEvaluation != null && outcomeEvaluation.reasonCode !== 'TASK_CONTRACT_MISSING'),

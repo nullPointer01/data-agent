@@ -57,7 +57,6 @@ public class CryptoUtil {
             LOGGER.warn("app.encryption.key 未配置，使用开发环境临时密钥。"
                     + "请为生产环境设置 APP_ENCRYPTION_KEY 环境变量。");
         }
-        EncryptedStringConverter.setCryptoUtil(this);
     }
 
     public String encrypt(String plainText) {

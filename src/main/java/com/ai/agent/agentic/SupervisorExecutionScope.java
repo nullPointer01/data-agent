@@ -1,39 +1,36 @@
 package com.ai.agent.agentic;
 
-import com.ai.agent.capability.AgentDelegationGuard.DelegationRejectedException;
-
 import java.util.function.Supplier;
 
-/** 标记整个 Supervisor 调用栈，阻止递归创建管理者和不完整的审批 Checkpoint。 */
+/** 传播 Supervisor 节点现场，阻止递归管理者，并在审批前校验完整恢复边界。 */
 public final class SupervisorExecutionScope {
-    private static final ThreadLocal<Boolean> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<SupervisorCheckpointState> CURRENT = new ThreadLocal<>();
 
     private SupervisorExecutionScope() { }
 
-    public static boolean active() { return Boolean.TRUE.equals(ACTIVE.get()); }
+    public static boolean active() { return CURRENT.get() != null; }
+
+    /** 捕获的是本次串行执行现场引用，不能跨 Run 使用。 */
+    public static SupervisorCheckpointState current() { return CURRENT.get(); }
 
     /** 异步任务由 TaskContextSnapshot 捕获并恢复此标记，不能污染下一次请求。 */
-    public static <T> T call(boolean active, Supplier<T> action) {
-        boolean previous = active();
+    public static <T> T call(SupervisorCheckpointState state, Supplier<T> action) {
+        var previous = CURRENT.get();
         try {
-            restore(active);
+            restore(state);
             return action.get();
         } finally {
             restore(previous);
         }
     }
 
-    private static void restore(boolean active) {
-        if (active) ACTIVE.set(true);
-        else ACTIVE.remove();
+    private static void restore(SupervisorCheckpointState state) {
+        if (state != null) CURRENT.set(state);
+        else CURRENT.remove();
     }
 
-    /** 尚未持久化整个 Supervisor 图，因此禁止生成只能恢复叶节点的审批现场。 */
-    public static void requireApprovalContinuationSupported() {
-        if (active()) {
-            throw new DelegationRejectedException("SUPERVISOR_APPROVAL_UNSUPPORTED",
-                    "Supervisor 暂不支持跨专家审批恢复；本次审批动作未执行，"
-                    + "请切换 TOOL_CALLING 并由主助手直接执行审批工具");
-        }
+    /** 普通工具审批没有协作现场；Supervisor 审批必须同时保存直接节点与父决策事实。 */
+    public static SupervisorCheckpoint capture(String executorId) {
+        return active() ? CURRENT.get().capture(executorId) : null;
     }
 }

@@ -1,7 +1,6 @@
 package com.ai.modelconfig.dto;
 
 import com.ai.mcp.ModelProviderCatalog;
-import com.ai.model.ModelConfig;
 
 /**
  * 个人 Agent 使用的最小模型选项，不包含连接配置和凭据。
@@ -19,14 +18,12 @@ public record PersonalModelOptionResponse(
         String provider,
         boolean isDefault) {
 
-    public static PersonalModelOptionResponse from(ModelConfig config) {
+    /** 统一旧厂商别名，SQL 投影始终不含凭据。 */
+    public PersonalModelOptionResponse normalized() {
         return new PersonalModelOptionResponse(
-                config.getModelId(),
-                config.getName(),
-                config.getModelName(),
-                ModelProviderCatalog.resolve(config.getProvider())
+                modelId, displayName, modelName,
+                ModelProviderCatalog.resolve(provider)
                         .map(ModelProviderCatalog::key)
-                        .orElse(config.getProvider()),
-                config.isDefault());
+                        .orElse(provider), isDefault);
     }
 }

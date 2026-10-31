@@ -50,6 +50,16 @@ public class SemanticMemoryExtractor {
      * @return 通过类型、证据、范围和安全校验的记忆候选
      */
     public List<SemanticMemoryCandidate> extract(String userMessage, String assistantReply, String modelId) {
+        return extract(userMessage, assistantReply, modelId, false);
+    }
+
+    /** 显式工具的额外模型调用必须计入当前 Run 的模型和 Token 预算。 */
+    public List<SemanticMemoryCandidate> extractExplicit(String userMessage, String modelId) {
+        return extract(userMessage, "", modelId, true);
+    }
+
+    private List<SemanticMemoryCandidate> extract(String userMessage, String assistantReply, String modelId,
+            boolean governRun) {
         String user = normalize(userMessage);
         if (!memoryProperties.isSemanticExtractionEnabled() || !StringUtils.hasText(user)
                 || user.length() > MAX_INPUT_LENGTH || containsSensitiveInformation(user)) {
@@ -61,9 +71,9 @@ public class SemanticMemoryExtractor {
                     "assistantReply", limit(normalize(assistantReply), 1000)));
             // 后台提取不消耗已经结束的 Run 预算，但模型调用仍受用户配额与记账约束。
             Extraction extraction = assistantFactory.create(MemoryAssistant.class, Extraction.class,
-                    modelId, false, true).extract(buildPrompt(payload));
+                    modelId, governRun, true).extract(buildPrompt(payload));
             if (extraction == null || extraction.memories().size() > MAX_CANDIDATES) {
-                return List.of();
+                throw new IllegalArgumentException("记忆候选数量不符合合同");
             }
             return extraction.memories().stream()
                     .filter(candidate -> admissible(candidate, user))
@@ -74,7 +84,7 @@ public class SemanticMemoryExtractor {
         } catch (Exception exception) {
             // 不从损坏 JSON 中截取片段补救，也不输出用户记忆正文或模型原始响应。
             LOGGER.warn("语义记忆提取未通过校验: exception={}", exception.getClass().getSimpleName());
-            return List.of();
+            throw new IllegalStateException("语义记忆模型提取失败", exception);
         }
     }
 

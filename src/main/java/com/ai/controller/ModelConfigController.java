@@ -1,9 +1,11 @@
 package com.ai.controller;
 
+import org.springframework.web.bind.annotation.RequestParam;
+import com.ai.api.ListPageResponse;
+import com.ai.modelconfig.dto.ModelConfigResponse;
 import com.ai.modelconfig.dto.AvailableModelsRequest;
 import com.ai.modelconfig.dto.AvailableModelsResponse;
 import com.ai.modelconfig.dto.ModelConfigDetailResponse;
-import com.ai.modelconfig.dto.ModelConfigListResponse;
 import com.ai.modelconfig.dto.ModelConfigMutationResponse;
 import com.ai.modelconfig.dto.ModelConfigRequest;
 import com.ai.modelconfig.dto.ModelProbeRequest;
@@ -95,8 +97,9 @@ public class ModelConfigController {
      * @return 模型配置列表
      */
     @GetMapping("/list")
-    public ModelConfigListResponse listModels() {
-        return modelConfigService.listModels();
+    public ListPageResponse<ModelConfigResponse> listModels(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String query) {
+        return modelConfigService.listModels(page, size, query);
     }
 
     /**

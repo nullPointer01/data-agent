@@ -1,15 +1,5 @@
 package com.ai.agent.eval;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import jakarta.persistence.Version;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -18,56 +8,36 @@ import java.util.UUID;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_eval_dataset", indexes = {
-        @Index(name = "idx_agent_eval_dataset_tenant_status", columnList = "tenant_id,status,updated_at")
-}, uniqueConstraints = {
-        @UniqueConstraint(name = "uk_agent_eval_dataset_name_version", columnNames = {"tenant_id", "name", "dataset_version"})
-})
 public class AgentEvalDatasetEntity {
 
-    @Id
-    @Column(name = "dataset_id", nullable = false, length = 64)
     private String datasetId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;
 
-    @Column(nullable = false, length = 128)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(name = "dataset_version", nullable = false)
     private int datasetVersion;
 
-    @Column(nullable = false, length = 32)
     private String status = "DRAFT";
 
-    @Column(name = "created_by", nullable = false, length = 64)
     private String createdBy;
 
-    @Version
-    @Column(name = "row_version", nullable = false)
     private long rowVersion;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         Instant now = Instant.now();
         datasetId = datasetId == null ? UUID.randomUUID().toString() : datasetId;
         createdAt = createdAt == null ? now : createdAt;
         updatedAt = now;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = Instant.now();
     }
 
@@ -89,4 +59,5 @@ public class AgentEvalDatasetEntity {
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public void setRowVersion(long rowVersion) { this.rowVersion = rowVersion; }
 }

@@ -2,6 +2,7 @@ package com.ai.agent.runtime.planning;
 
 import com.ai.agent.runtime.AgentExecutionMode;
 import com.ai.agent.tool.AgentTools;
+import com.ai.memory.MemoryCaptureMode;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -19,6 +20,8 @@ import java.util.Set;
  * @param mode 执行模式
  * @param modelRequired 是否需要调用模型
  * @param contextPlan 上下文来源的三态使用计划
+ * @param memoryCapture 回答完成后的长期记忆提取调度
+ * @param memoryRevision 请求开始时的服务端记忆修订快照
  * @param planningEvidence 请求规划阶段的安全观测证据
  * @param candidateTools 规划器建议暴露的候选工具
  * @param initialToolChoice 首轮模型调用的工具选择约束
@@ -34,6 +37,8 @@ public record RequestExecutionPlan(
         AgentExecutionMode mode,
         boolean modelRequired,
         RequestContextPlan contextPlan,
+        MemoryCaptureMode memoryCapture,
+        long memoryRevision,
         RequestPlanningEvidence planningEvidence,
         Set<String> candidateTools,
         AgentToolChoice initialToolChoice,
@@ -42,13 +47,15 @@ public record RequestExecutionPlan(
         String reason,
         String localResponse) {
 
-    public static final String CURRENT_VERSION = "request-planner-v7";
+    public static final String CURRENT_VERSION = "request-planner-v9";
 
     public RequestExecutionPlan {
         plannerVersion = textOrDefault(plannerVersion, CURRENT_VERSION);
         intent = intent == null ? RequestIntent.GENERAL_CONVERSATION : intent;
         mode = mode == null ? AgentExecutionMode.CHAT : mode;
         contextPlan = contextPlan == null ? RequestContextPlan.none() : contextPlan;
+        memoryCapture = memoryCapture == null ? MemoryCaptureMode.SKIP : memoryCapture;
+        if (memoryRevision < 0) throw new IllegalArgumentException("记忆修订号不能为负");
         planningEvidence = planningEvidence == null
                 ? RequestPlanningEvidence.deterministic() : planningEvidence;
         candidateTools = immutableSet(candidateTools);
@@ -104,6 +111,7 @@ public record RequestExecutionPlan(
         evidence.put("mode", mode.name());
         evidence.put("modelRequired", modelRequired);
         evidence.put("contextPlan", contextPlan.toEvidence());
+        evidence.put("memoryCapture", memoryCapture.name());
         evidence.put("planning", planningEvidence.toEvidence());
         evidence.put("candidateTools", candidateTools);
         evidence.put("candidateToolCount", candidateTools.size());
@@ -123,6 +131,7 @@ public record RequestExecutionPlan(
                 + "，语义记忆=" + contextPlan.semanticMemory().name()
                 + "，用户画像=" + contextPlan.userProfile().name()
                 + "，会话历史=" + contextPlan.conversationHistory().name()
+                + "，记忆提取=" + memoryCapture.name()
                 + "，候选工具=" + candidateTools.size() + " 个"
                 + "，首轮工具选择=" + initialToolChoice.name();
         return intent.name() + " -> " + mode.name() + "；" + resourceSummary + "；原因：" + reason;

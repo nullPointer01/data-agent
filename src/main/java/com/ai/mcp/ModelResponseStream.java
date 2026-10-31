@@ -21,7 +21,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
 
 /**
- * SDK 流的异步完成句柄；共享定时器检查预算/取消，终态后忽略迟到回调并释放传输句柄。
+ * SDK 流的异步完成句柄；共享定时器检查预算/取消，终态后仅接收迟到用量校正。
  */
 final class ModelResponseStream implements StreamingChatResponseHandler, AutoCloseable {
 
@@ -29,18 +29,23 @@ final class ModelResponseStream implements StreamingChatResponseHandler, AutoClo
     private static final long TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(300);
     private final Consumer<String> consumer;
     private final AgentRunControl control;
+    private final Consumer<ChatResponse> lateResponse;
     private final CompletableFuture<ChatResponse> completion = new CompletableFuture<>();
-    private final StringBuilder receivedText = new StringBuilder();
     private final long deadline = System.nanoTime() + TIMEOUT_NANOS;
     private StreamingHandle handle;
     private boolean closed;
     private ScheduledFuture<?> deadlineTask;
 
-    ModelResponseStream(Consumer<String> consumer, AgentRunControl control, ScheduledExecutorService scheduler) {
+    ModelResponseStream(Consumer<String> consumer, AgentRunControl control, ScheduledExecutorService scheduler,
+            Consumer<ChatResponse> lateResponse) {
         this.consumer = consumer;
         this.control = control;
-        deadlineTask = scheduler.scheduleAtFixedRate(this::checkActive, 0, 250, TimeUnit.MILLISECONDS);
-        completion.whenComplete((response, error) -> close());
+        this.lateResponse = lateResponse;
+        synchronized (this) {
+            // 首次检查可立即结束已取消的 Run；先持有锁，避免 close 早于定时器赋值导致泄漏。
+            deadlineTask = scheduler.scheduleAtFixedRate(this::checkActive, 0, 250, TimeUnit.MILLISECONDS);
+            completion.whenComplete((response, error) -> close());
+        }
     }
 
     @Override
@@ -49,7 +54,6 @@ final class ModelResponseStream implements StreamingChatResponseHandler, AutoClo
             return;
         }
         try {
-            receivedText.append(token);
             if (control != null) {
                 control.ensureActive();
             }
@@ -79,6 +83,9 @@ final class ModelResponseStream implements StreamingChatResponseHandler, AutoClo
     public synchronized void onCompleteResponse(ChatResponse response) {
         if (!closed) {
             completion.complete(response);
+        } else if (completion.isCompletedExceptionally()) {
+            // 取消传输不能保证厂商停止；迟到用量只校正账本，绝不重新发布回答或执行工具。
+            lateResponse.accept(response);
         }
     }
 
@@ -107,8 +114,9 @@ final class ModelResponseStream implements StreamingChatResponseHandler, AutoClo
 
     CompletableFuture<ChatResponse> completion() { return completion; }
 
-    synchronized String partialText() {
-        return receivedText.toString();
+    /** 预占数据库等待期间也可能被取消；发送前重验，不能让已关闭的流继续发起请求。 */
+    synchronized void ensureOpen() {
+        if (closed || completion.isDone()) throw new java.util.concurrent.CancellationException("模型流已经关闭");
     }
 
     private void rememberHandle(StreamingHandle streamingHandle) {

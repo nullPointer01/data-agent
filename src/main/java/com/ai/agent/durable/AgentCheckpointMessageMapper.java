@@ -86,7 +86,9 @@ public class AgentCheckpointMessageMapper {
                 case ASSISTANT -> restored.add(AiMessage.from(message.content()));
                 case TOOL -> {
                     ToolExecutionRequest request = toToolRequest(message);
-                    restored.add(ToolExecutionResultMessage.from(request, message.content()));
+                    restored.add(ToolExecutionResultMessage.builder().id(request.id()).toolName(request.name())
+                            .text(message.content()).attributes(message.activatedSkill() == null ? java.util.Map.of()
+                                    : java.util.Map.of(com.ai.skill.SkillCatalog.ACTIVATED_ATTRIBUTE, message.activatedSkill())).build());
                 }
             }
         }
@@ -130,7 +132,10 @@ public class AgentCheckpointMessageMapper {
                     toolResult.text(),
                     toolResult.id(),
                     toolResult.toolName(),
-                    null));
+                    null,
+                    com.ai.skill.SkillCatalog.ACTIVATE_TOOL.equals(toolResult.toolName())
+                            && toolResult.attributes().get(com.ai.skill.SkillCatalog.ACTIVATED_ATTRIBUTE) instanceof String id
+                                    ? id : null));
         }
     }
 

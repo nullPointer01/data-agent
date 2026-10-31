@@ -1,16 +1,4 @@
 package com.ai.security.rbac;
-import com.ai.security.rbac.SysPermission;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -21,46 +9,30 @@ import java.util.Set;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "sys_role")
 public class SysRole {
 
-    @Id
-    @Column(name = "role_code", length = 64)
     private String roleCode;
 
-    @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(nullable = false)
     private boolean systemRole = true;
 
-    @Column(nullable = false)
     private boolean enabled = true;
 
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "sys_role_permission",
-            joinColumns = @JoinColumn(name = "role_code"),
-            inverseJoinColumns = @JoinColumn(name = "permission_code"))
     private Set<SysPermission> permissions = new HashSet<>();
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = createdAt;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 

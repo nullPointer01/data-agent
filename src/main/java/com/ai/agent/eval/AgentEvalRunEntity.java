@@ -1,14 +1,5 @@
 package com.ai.agent.eval;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -17,78 +8,49 @@ import java.util.UUID;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_eval_run", indexes = {
-        @Index(name = "idx_agent_eval_run_tenant_started", columnList = "tenant_id,started_at"),
-        @Index(name = "idx_agent_eval_run_dataset", columnList = "tenant_id,dataset_id,dataset_version")
-})
 public class AgentEvalRunEntity {
 
-    @Id
-    @Column(name = "eval_run_id", nullable = false, length = 64)
     private String evalRunId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;
 
-    @Column(name = "dataset_id", nullable = false, length = 64)
     private String datasetId;
 
-    @Column(name = "dataset_version", nullable = false)
     private int datasetVersion;
 
-    @Column(name = "agent_id", nullable = false, length = 64)
     private String agentId;
 
-    @Column(name = "agent_profile_version", nullable = false, length = 64)
     private String agentProfileVersion;
 
-    @Column(name = "model_id", length = 64)
     private String modelId;
 
-    @Column(name = "harness_config_identity", nullable = false, length = 128)
     private String harnessConfigIdentity;
 
-    @Column(nullable = false, length = 32)
     private String status = "PENDING";
 
-    @Column(name = "total_samples", nullable = false)
     private int totalSamples;
 
-    @Column(name = "completed_samples", nullable = false)
     private int completedSamples;
 
-    @Column(name = "passed_samples", nullable = false)
     private int passedSamples;
 
-    @Column(name = "failed_samples", nullable = false)
     private int failedSamples;
 
-    @Column(name = "not_evaluated_samples", nullable = false)
     private int notEvaluatedSamples;
 
-    @Lob
-    @Column(name = "metrics_json", columnDefinition = "LONGTEXT")
     private String metricsJson;
 
-    @Column(name = "error_summary", length = 1024)
     private String errorSummary;
 
-    @Column(name = "created_by", nullable = false, length = 64)
     private String createdBy;
 
-    @Version
-    @Column(name = "row_version", nullable = false)
     private long rowVersion;
 
-    @Column(name = "started_at", nullable = false)
     private Instant startedAt;
 
-    @Column(name = "completed_at")
     private Instant completedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         evalRunId = evalRunId == null ? UUID.randomUUID().toString() : evalRunId;
         startedAt = startedAt == null ? Instant.now() : startedAt;
     }
@@ -132,4 +94,5 @@ public class AgentEvalRunEntity {
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
     public Instant getCompletedAt() { return completedAt; }
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
+    public void setRowVersion(long rowVersion) { this.rowVersion = rowVersion; }
 }

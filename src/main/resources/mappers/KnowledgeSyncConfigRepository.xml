@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.KnowledgeSyncConfigRepository">
+    <!-- knowledge_sync_config：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO knowledge_sync_config (knowledge_id,
+            sync_type,
+            source_url,
+            cron_expression,
+            enabled,
+            last_sync_at,
+            last_sync_status,
+            tenant_id,
+            created_at)
+        VALUES (#{knowledgeId}, #{syncType}, #{sourceUrl}, #{cronExpression}, #{enabled}, #{lastSyncAt}, #{lastSyncStatus}, #{tenantId}, #{createdAt})
+    </insert>
+    <update id="update">
+        UPDATE knowledge_sync_config SET knowledge_id = #{knowledgeId},
+            sync_type = #{syncType},
+            source_url = #{sourceUrl},
+            cron_expression = #{cronExpression},
+            enabled = #{enabled},
+            last_sync_at = #{lastSyncAt},
+            last_sync_status = #{lastSyncStatus},
+            tenant_id = #{tenantId},
+            created_at = #{createdAt}
+        WHERE id = #{id}
+    </update>
+    <select id="findById" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config WHERE id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM knowledge_sync_config WHERE id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config
+    </select>
+    <select id="findAllById" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM knowledge_sync_config WHERE id = #{id}
+    </delete>
+    <select id="findByEnabledTrue" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config WHERE enabled = true
+    </select>
+    <select id="findByKnowledgeIdAndTenantId" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config WHERE knowledge_id = #{knowledgeId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findByTenantId" resultType="com.ai.model.KnowledgeSyncConfig">
+        SELECT * FROM knowledge_sync_config WHERE tenant_id = #{tenantId}
+    </select>
+</mapper>

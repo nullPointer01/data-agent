@@ -1,6 +1,7 @@
 package com.ai.config;
 
 import com.ai.agent.agentic.SupervisorExecutionScope;
+import com.ai.agent.agentic.SupervisorCheckpointState;
 import com.ai.agent.capability.AgentCapabilityBindingSnapshot;
 import com.ai.agent.capability.AgentCapabilityScope;
 import com.ai.agent.runtime.AgentRunContext;
@@ -15,13 +16,13 @@ import java.util.function.Supplier;
 
 /** 捕获发起方身份、日志和 Run，异步回调执行后恢复原线程，不能借用 SDK 线程的身份。 */
 public record TaskContextSnapshot(Map<String, String> mdc, Authentication authentication,
-        AgentRunContext run, AgentCapabilityBindingSnapshot capabilities, boolean supervisor) {
+        AgentRunContext run, AgentCapabilityBindingSnapshot capabilities, SupervisorCheckpointState supervisor) {
 
     public static TaskContextSnapshot capture() {
         return new TaskContextSnapshot(MDC.getCopyOfContextMap(),
                 SecurityContextHolder.getContext().getAuthentication(),
                 AgentRunScope.current().orElse(null), AgentCapabilityScope.current().orElse(null),
-                SupervisorExecutionScope.active());
+                SupervisorExecutionScope.current());
     }
 
     public Runnable wrap(Runnable action) {

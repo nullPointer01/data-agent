@@ -17,9 +17,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
+import com.ai.security.dto.UserListResponse;
 
 /**
  * 用户管理管理员 API。
@@ -40,11 +43,22 @@ public class UserAdminController {
     /**
      * 查询平台中的用户及其当前角色。
      *
+     * @param page 零起始页码
+     * @param size 每页数量
+     * @param query 用户名、昵称、邮箱或租户搜索内容
      * @return 用户列表
      */
     @GetMapping
-    public ResponseEntity<Map<String, Object>> listUsers() {
-        return ResponseEntity.ok(ApiResponse.success(userAdminService.listUsers()));
+    public UserListResponse listUsers(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String query) {
+        return userAdminService.listUsers(page, size, query);
+    }
+
+    /** 批量解析已知资源归属，仍受同一管理员权限保护。 */
+    @GetMapping("/identities")
+    public Map<String, Object> identities(@RequestParam List<String> ids) {
+        return ApiResponse.success(userAdminService.userIdentities(ids));
     }
 
     /**

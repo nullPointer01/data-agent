@@ -1,6 +1,7 @@
 package com.ai.agent.agentic;
 
 import com.ai.agent.runtime.AgentRunScope;
+import com.ai.agent.tool.ai.AgentToolSuspendedException;
 import com.ai.agent.runtime.event.AgentEvent;
 import com.ai.agent.runtime.event.AgentEventType;
 import com.ai.logging.StructuredLogger;
@@ -48,7 +49,8 @@ public final class AgentLifecycleListener implements AgentListener {
 
     @Override
     public void onAgentInvocationError(AgentInvocationError error) {
-        record(error.agentName(), "FAILED", error.error().getClass().getSimpleName());
+        record(error.agentName(), AgentToolSuspendedException.find(error.error()) == null ? "FAILED" : "WAITING_APPROVAL",
+                error.error().getClass().getSimpleName());
     }
 
     @Override

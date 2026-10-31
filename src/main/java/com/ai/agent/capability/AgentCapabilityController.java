@@ -1,5 +1,6 @@
 package com.ai.agent.capability;
 
+import com.ai.api.CursorPageResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,8 +28,10 @@ public class AgentCapabilityController {
      * @return 当前用户能力目录
      */
     @GetMapping
-    public AgentCapabilityService.CapabilityDirectory list(
-            @RequestParam(required = false) String agentId) {
-        return capabilityService.currentUserDirectory(agentId);
+    public CursorPageResponse<AgentCapabilityDescriptor> list(
+            @RequestParam(required = false) String agentId, @RequestParam AgentCapabilityType type,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String after,
+            @RequestParam(required = false) String query) {
+        return capabilityService.currentUserDirectory(agentId, type, size, after, query);
     }
 }

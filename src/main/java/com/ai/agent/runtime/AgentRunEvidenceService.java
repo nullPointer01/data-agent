@@ -2,6 +2,7 @@ package com.ai.agent.runtime;
 
 import com.ai.agent.durable.AgentDurableRunStore;
 import com.ai.agent.durable.AgentRunStateEntity;
+import com.ai.agent.approval.AgentToolApprovalRepository;
 import com.ai.agent.outcome.AgentOutcomeEvaluation;
 import com.ai.agent.runtime.dto.AgentRunEvidenceResponse;
 import com.ai.agent.runtime.dto.AgentRunEvidenceResponse.RunEvent;
@@ -9,6 +10,7 @@ import com.ai.agent.runtime.dto.AgentRunEvidenceResponse.RunUsage;
 import com.ai.model.AgentExecutionTrace;
 import com.ai.repository.AgentExecutionTraceRepository;
 import com.ai.security.SecurityContextHelper;
+import com.ai.conversation.ConversationAccessGuard;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -33,15 +35,22 @@ public class AgentRunEvidenceService {
     private final AgentExecutionTraceRepository traceRepository;
     private final SecurityContextHelper securityContextHelper;
     private final ObjectMapper objectMapper;
+    private final ConversationAccessGuard conversationAccess;
+    private final AgentToolApprovalRepository approvals;
+    private final com.ai.agent.backgroundrun.BackgroundRunMapper backgroundRuns;
 
     public AgentRunEvidenceService(AgentDurableRunStore durableRunStore,
             AgentExecutionTraceRepository traceRepository,
             SecurityContextHelper securityContextHelper,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, ConversationAccessGuard conversationAccess, AgentToolApprovalRepository approvals,
+            com.ai.agent.backgroundrun.BackgroundRunMapper backgroundRuns) {
         this.durableRunStore = durableRunStore;
         this.traceRepository = traceRepository;
         this.securityContextHelper = securityContextHelper;
         this.objectMapper = objectMapper;
+        this.conversationAccess = conversationAccess;
+        this.approvals = approvals;
+        this.backgroundRuns = backgroundRuns;
     }
 
     /**
@@ -62,6 +71,11 @@ public class AgentRunEvidenceService {
                 .filter(item -> userId.equals(item.getUserId()));
         if (durable.isEmpty() && trace.isEmpty()) {
             throw new IllegalArgumentException(NOT_FOUND_OR_DENIED);
+        }
+        String sessionId = durable.map(AgentRunStateEntity::getSessionId)
+                .orElseGet(() -> trace.map(AgentExecutionTrace::getSessionId).orElse(null));
+        if (StringUtils.hasText(sessionId)) {
+            conversationAccess.requireReadable(sessionId, tenantId, userId);
         }
         return buildResponse(runId, durable.orElse(null), trace.orElse(null));
     }
@@ -113,6 +127,8 @@ public class AgentRunEvidenceService {
                 terminationReason,
                 durable == null ? statusDetail(status) : safeDetail(durable.getErrorSummary(), status),
                 durable == null ? null : durable.getApprovalId(),
+                durable == null || durable.getApprovalId() == null ? null : approvals.findExecutionStatus(
+                        durable.getApprovalId(), durable.getTenantId(), durable.getUserId()).map(Enum::name).orElse(null),
                 durable == null ? null : durable.getApprovalExpiresAt(),
                 iterations,
                 modelCalls,
@@ -129,6 +145,7 @@ public class AgentRunEvidenceService {
                 completedAt,
                 evidenceSource(durable, trace),
                 false,
+                backgroundRuns.find(runId).isPresent(),
                 shared.path("taskContract").path("present").asBoolean(false),
                 outcomeEvaluation,
                 events);
@@ -141,8 +158,9 @@ public class AgentRunEvidenceService {
             String status,
             String terminationReason) {
         List<RunEvent> events = new ArrayList<>();
-        events.add(new RunEvent("run_started", startedAt, "RUNNING", "Run 开始",
-                "Harness 已创建运行并固化执行边界", null, null));
+        boolean queued = "CREATED".equals(status);
+        events.add(new RunEvent("run_started", startedAt, queued ? "CREATED" : "RUNNING", queued ? "任务已提交" : "Run 开始",
+                queued ? "等待后台执行，不会因页面关闭丢失" : "Harness 已创建运行并固化执行边界", null, null));
         JsonNode plan = readJson(trace == null ? null : trace.getPlanJson()).path("requestPlan");
         appendRequestPlanEvent(events, plan, startedAt);
         JsonNode shared = readJson(trace == null ? null : trace.getSharedContextJson());
@@ -243,8 +261,12 @@ public class AgentRunEvidenceService {
                 case "REJECTED" -> "上下文被拒绝";
                 default -> "上下文未压缩";
             };
+            JsonNode taskSummary = item.path("summary");
+            int summaryCount = integer(taskSummary, "summaryCount", 0);
             String summary = "Token " + before + " -> " + after
-                    + "，保留 " + retained + "/" + original + " 条消息";
+                    + "，送模 " + retained + "/" + original + " 条消息"
+                    + (summaryCount > 0 ? "，" + summaryCount + " 段摘要覆盖 "
+                        + integer(taskSummary, "coveredMessageCount", 0) + " 条旧消息" : "");
             Map<String, Object> details = new java.util.LinkedHashMap<>();
             details.put("decision", decision);
             details.put("reason", text(item, "reason", "WITHIN_BUDGET"));
@@ -258,6 +280,12 @@ public class AgentRunEvidenceService {
             details.put("runRemainingTokens", number(item, "runRemainingTokens", 0L));
             details.put("inputTokenLimit", number(item, "inputTokenLimit", 0L));
             details.put("tokenEstimateUsed", bool(item, "tokenEstimateUsed", true));
+            if (taskSummary.isObject()) {
+                details.put("summary", Map.of("outcome", text(taskSummary, "outcome", "DISABLED"),
+                        "summaryCount", summaryCount,
+                        "coveredMessageCount", integer(taskSummary, "coveredMessageCount", 0),
+                        "summaryTokens", number(taskSummary, "summaryTokens", 0L)));
+            }
             events.add(new RunEvent("context_governed", instant(item, "occurredAt"), decision,
                     title, summary, null, details));
         }

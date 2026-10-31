@@ -1,7 +1,9 @@
 package com.ai.service;
 
-import com.ai.indexing.IndexTask;
-import com.ai.indexing.IndexTaskStore;
+import com.ai.memory.ConversationMemoryCaptureService;
+import com.ai.memory.MemoryCaptureMode;
+import com.ai.conversation.ConversationAccessGuard;
+import com.ai.conversation.dto.SessionMessagesResponse;
 
 import com.ai.model.ConversationMessage;
 import com.ai.model.ConversationSession;
@@ -40,7 +42,6 @@ public class SessionManager {
     private static final int MANUAL_TITLE_MAX_LENGTH = 80;
     private static final String REDIS_KEY_PREFIX = "session:";
     private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String STATUS_CLOSED = "CLOSED";
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
     private static final String SENTENCE_END_MARKS = "。！？!?；;";
@@ -53,18 +54,23 @@ public class SessionManager {
     private final ConversationMessageRepository messageRepository;
     private final SecurityContextHelper securityContextHelper;
     private final RedisTemplate<String, ConversationSession> sessionRedisTemplate;
-    private final IndexTaskStore indexTasks;
+    private final ConversationMemoryCaptureService memoryCapture;
+    private final ConversationAccessGuard accessGuard;
+    private final com.ai.agent.backgroundrun.BackgroundRunMapper backgroundRuns;
 
     public SessionManager(ConversationSessionRepository sessionRepository,
             ConversationMessageRepository messageRepository,
             SecurityContextHelper securityContextHelper,
             RedisTemplate<String, ConversationSession> sessionRedisTemplate,
-            IndexTaskStore indexTasks) {
+            ConversationMemoryCaptureService memoryCapture, ConversationAccessGuard accessGuard,
+            com.ai.agent.backgroundrun.BackgroundRunMapper backgroundRuns) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.securityContextHelper = securityContextHelper;
         this.sessionRedisTemplate = sessionRedisTemplate;
-        this.indexTasks = indexTasks;
+        this.memoryCapture = memoryCapture;
+        this.accessGuard = accessGuard;
+        this.backgroundRuns = backgroundRuns;
     }
 
     private String redisKey(String sessionId) {
@@ -111,7 +117,7 @@ public class SessionManager {
         }
 
         ConversationSessionEntity entity = entityOptional.get();
-        if (STATUS_CLOSED.equals(entity.getStatus())) {
+        if (!STATUS_ACTIVE.equals(entity.getStatus())) {
             return null;
         }
 
@@ -135,24 +141,6 @@ public class SessionManager {
     }
 
     /**
-     * 销毁当前用户的一个会话。
-     *
-     * @param sessionId 会话编号
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public void destroySession(String sessionId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return;
-        }
-        sessionRedisTemplate.delete(redisKey(sessionId));
-        findCurrentUserSession(sessionId).ifPresent(entity -> {
-            entity.setStatus(STATUS_CLOSED);
-            sessionRepository.save(entity);
-        });
-        LOGGER.debug("Session destroyed: {}", sessionId);
-    }
-
-    /**
      * 修改当前用户拥有的会话标题。
      *
      * @param sessionId 会话编号
@@ -167,8 +155,12 @@ public class SessionManager {
         if (normalizedTitle.length() > MANUAL_TITLE_MAX_LENGTH) {
             throw new IllegalArgumentException("会话标题不能超过80个字符");
         }
-        ConversationSessionEntity entity = findCurrentUserSession(sessionId)
+        ConversationSessionEntity entity = sessionRepository.findOwnedForUpdate(sessionId,
+                        securityContextHelper.getCurrentUserId(), securityContextHelper.getCurrentTenantId())
                 .orElseThrow(() -> new IllegalArgumentException("会话不存在或无权限"));
+        if (!STATUS_ACTIVE.equals(entity.getStatus()) && !"ARCHIVED".equals(entity.getStatus())) {
+            throw new IllegalArgumentException("会话已删除，不能重命名");
+        }
         entity.setTitle(normalizedTitle);
         sessionRepository.save(entity);
     }
@@ -194,29 +186,54 @@ public class SessionManager {
             String modelUsed,
             long userTokens,
             long assistantTokens,
-            String runId, boolean indexConversation) {
+            String runId, MemoryCaptureMode captureMode, long memoryRevision) {
         Optional<ConversationSessionEntity> entityOptional = sessionRepository.findOwnedForUpdate(sessionId,
                 securityContextHelper.getCurrentUserId(), securityContextHelper.getCurrentTenantId());
         if (entityOptional.isEmpty()) {
             throw new IllegalStateException("会话不存在或无权限，回答未保存");
         }
-        if (StringUtils.hasText(runId) && findRunAssistantMessage(sessionId, runId).isPresent()) {
-            return false;
-        }
-
         ConversationSessionEntity entity = entityOptional.get();
+        if (!STATUS_ACTIVE.equals(entity.getStatus())) {
+            throw new IllegalStateException("会话已删除或归档，回答未保存");
+        }
+        if (StringUtils.hasText(runId) && findRunAssistantMessage(sessionId, runId).isPresent()) {
+            var current = com.ai.agent.runtime.AgentRunScope.current().orElse(null);
+            boolean background = backgroundRuns.find(runId).isPresent();
+            if (!background) return false;
+            String status = backgroundRuns.lockRun(runId).orElseThrow();
+            // 正常完成必须仍拥有 RUNNING 租约；审批挂起的更新与原审批事务共享 Run 锁。
+            if (current == null || (!"RUNNING".equals(status) && !"WAITING_APPROVAL".equals(status))) {
+                throw new IllegalStateException("Run 已不可写入回答");
+            }
+            if ("RUNNING".equals(status)) current.control().ensureActiveForWrite();
+            updateRunAssistantMessage(sessionId, entity.getTenantId(), entity.getUserId(), runId,
+                    assistantContent, skillUsed, modelUsed, assistantTokens);
+            var source = messageRepository.findFirstBySessionIdAndRunIdAndRoleOrderByCreatedAtAsc(sessionId, runId, ROLE_USER)
+                    .orElseThrow(() -> new IllegalStateException("后台任务用户消息缺失"));
+            long previousUserTokens = source.getTokens();
+            source.setTokens(userTokens);
+            messageRepository.save(source);
+            var updatedSession = sessionRepository.findOwnedForUpdate(sessionId, entity.getUserId(), entity.getTenantId()).orElseThrow();
+            updatedSession.setTotalTokens(Math.max(0, updatedSession.getTotalTokens() - previousUserTokens + userTokens));
+            sessionRepository.save(updatedSession);
+            memoryCapture.captureCompletedConversation(sessionId, userContent, assistantContent, modelUsed,
+                    captureMode, source.getId(), memoryRevision);
+            return true;
+        }
         ConversationMessage userMessage = buildMessage(
-                sessionId, ROLE_USER, userContent, null, null, userTokens, null);
+                sessionId, ROLE_USER, userContent, null, null, userTokens, runId);
         ConversationMessage assistantMessage = buildMessage(
                 sessionId, ROLE_ASSISTANT, assistantContent, skillUsed, modelUsed, assistantTokens, runId);
         messageRepository.save(userMessage);
         messageRepository.save(assistantMessage);
         updateSessionMetadata(entity, ROLE_USER, userContent, null, null, userTokens);
         updateSessionMetadata(entity, ROLE_ASSISTANT, assistantContent, skillUsed, modelUsed, assistantTokens);
-        if (indexConversation) {
-            if (!StringUtils.hasText(runId)) throw new IllegalArgumentException("对话索引缺少 Run 身份");
-            indexTasks.enqueue(IndexTask.Kind.CONVERSATION,entity.getTenantId(),entity.getUserId(),runId,
-                    new IndexTask.Conversation(sessionId,userContent,assistantContent));
+        // 用户消息 ID 与提取任务同事务落库，进程退出不会丢失已提交的后台工作。
+        // 持久提交只是排队占位，不能把“等待执行”提炼为会话摘要或长期事实。
+        if (!StringUtils.hasText(runId) || backgroundRuns.find(runId).isEmpty()
+                || com.ai.agent.runtime.AgentRunScope.current().isPresent()) {
+            memoryCapture.captureCompletedConversation(sessionId, userContent, assistantContent, modelUsed,
+                    captureMode, userMessage.getId(), memoryRevision);
         }
         invalidateCacheAfterCommit(sessionId);
         return true;
@@ -245,7 +262,7 @@ public class SessionManager {
             String content,
             String skillUsed,
             String modelUsed,
-            long tokens, String questionForIndex) {
+            long tokens) {
         if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(tenantId)
                 || !StringUtils.hasText(userId) || !StringUtils.hasText(runId)) {
             return false;
@@ -259,6 +276,9 @@ public class SessionManager {
         }
 
         ConversationSessionEntity entity = entityOptional.get();
+        if (!STATUS_ACTIVE.equals(entity.getStatus())) {
+            return false;
+        }
         ConversationMessage message = messageOptional.get();
         long previousTokens = message.getTokens();
         message.setContent(content);
@@ -279,10 +299,6 @@ public class SessionManager {
             entity.setModelId(modelUsed);
         }
         sessionRepository.save(entity);
-        if (StringUtils.hasText(questionForIndex)) {
-            indexTasks.enqueue(IndexTask.Kind.CONVERSATION, tenantId, userId, runId,
-                    new IndexTask.Conversation(sessionId, questionForIndex, content));
-        }
         invalidateCacheAfterCommit(sessionId);
         return true;
     }
@@ -298,19 +314,22 @@ public class SessionManager {
                 });
     }
 
-    public List<ConversationSessionEntity> getUserSessions(String userId) {
-        return sessionRepository.findByUserIdAndStatusOrderByLastAccessAtDesc(userId, STATUS_ACTIVE);
-    }
-
+    /** 用户历史使用 ID 游标加载，与模型最近 50 条上下文窗口独立。 */
     @Transactional(readOnly = true)
-    public List<ConversationMessage> getSessionMessages(String sessionId) {
-        if (findCurrentUserSession(sessionId).isEmpty()) {
-            return List.of();
+    public SessionMessagesResponse getSessionMessages(String sessionId, Long beforeId, int limit) {
+        var session = accessGuard.requireReadable(sessionId, securityContextHelper.getCurrentTenantId(),
+                securityContextHelper.getCurrentUserId());
+        if (beforeId != null && beforeId <= 0) {
+            throw new IllegalArgumentException("消息游标无效");
         }
-        List<ConversationMessage> messages = messageRepository.findRecentBySessionId(sessionId,
-                PageRequest.of(0, MAX_HISTORY_MESSAGES));
+        int size = Math.max(1, Math.min(100, limit));
+        List<ConversationMessage> messages = new java.util.ArrayList<>(
+                messageRepository.findHistoryPage(sessionId, beforeId, size + 1));
+        boolean more = messages.size() > size;
+        if (more) messages.remove(messages.size() - 1);
+        Long next = more ? messages.get(messages.size() - 1).getId() : null;
         Collections.reverse(messages);
-        return messages;
+        return SessionMessagesResponse.ok(messages, next, session.getStatus());
     }
 
 

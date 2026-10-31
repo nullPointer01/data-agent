@@ -1,29 +1,18 @@
 import { RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Badge, DataTable, EmptyState, Metric, PageHeader } from '../../components/ui.jsx';
+import { useState } from 'react';
+import { Badge, DataTable, EmptyState, ListLoadError, Metric, PageHeader, ToolbarSearch } from '../../components/ui.jsx';
+import { useDebouncedValue, useServerList } from '../../hooks/useServerList.js';
 import { formatTime } from '../../utils/format.js';
 
-/** RBAC 只读概览页：展示角色、权限及当前绑定关系。 */
+/** RBAC 只读概览：两张表独立搜索/分页，指标来自全部匹配结果。 */
 export function RolesPage({ api }) {
-  const [roles, setRoles] = useState([]);
-  const [permissions, setPermissions] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [roleRes, permissionRes] = await Promise.all([
-        api.get('/api/v1/admin/rbac/roles'),
-        api.get('/api/v1/admin/rbac/permissions')
-      ]);
-      setRoles(roleRes.roles || []);
-      setPermissions(permissionRes.permissions || []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
+  const [roleQuery, setRoleQuery] = useState('');
+  const [permissionQuery, setPermissionQuery] = useState('');
+  const roleKeyword = useDebouncedValue(roleQuery.trim());
+  const permissionKeyword = useDebouncedValue(permissionQuery.trim());
+  const roles = useServerList({ api, url: '/api/v1/admin/rbac/roles', mode: 'offset', filters: { query: roleKeyword } });
+  const permissions = useServerList({ api, url: '/api/v1/admin/rbac/permissions', mode: 'offset', filters: { query: permissionKeyword } });
+  const load = () => Promise.all([roles.refresh(), permissions.refresh()]);
 
   return (
     <>
@@ -33,16 +22,18 @@ export function RolesPage({ api }) {
         actions={<button className="btn" onClick={load}><RefreshCw size={16} />刷新</button>}
       />
       <div className="grid grid-4">
-        <Metric label="角色总数" value={roles.length} />
-        <Metric label="启用角色" value={roles.filter((item) => item.enabled).length} />
-        <Metric label="权限点" value={permissions.length} />
-        <Metric label="系统角色" value={roles.filter((item) => item.systemRole).length} />
+        <Metric label="匹配角色" value={roles.response?.total ?? '-'} hint="全部角色搜索结果" />
+        <Metric label="启用角色" value={roles.response?.enabledCount ?? '-'} hint="全部角色搜索结果" />
+        <Metric label="匹配权限点" value={permissions.response?.total ?? '-'} hint="全部权限搜索结果" />
+        <Metric label="系统角色" value={roles.response?.systemCount ?? '-'} hint="全部角色搜索结果" />
       </div>
       <section className="card panel-card" style={{ marginTop: 16 }}>
-        <div className="section-title">角色</div>
-        <DataTable
-          loading={loading}
-          empty={<EmptyState title="暂无角色" desc="系统启动后会初始化默认角色。" />}
+        <div className="panel-title"><span>角色</span><ToolbarSearch value={roleQuery} onChange={setRoleQuery} placeholder="搜索角色编码、名称、说明" /></div>
+        <ListLoadError error={roles.error} onRetry={roles.refresh} />
+        {!roles.error && <DataTable
+          loading={roles.loading}
+          serverPagination={roles.pagination}
+          empty={<EmptyState title="暂无匹配角色" desc="调整搜索条件后重试。" />}
           columns={[
             { key: 'roleCode', title: '角色编码', render: (item) => <Badge tone="blue">{item.roleCode}</Badge> },
             { key: 'name', title: '角色名称' },
@@ -51,15 +42,17 @@ export function RolesPage({ api }) {
             { key: 'enabled', title: '状态', render: (item) => <Badge tone={item.enabled ? 'green' : 'gray'}>{item.enabled ? '启用' : '禁用'}</Badge> },
             { key: 'updatedAt', title: '更新时间', render: (item) => formatTime(item.updatedAt) }
           ]}
-          rows={roles}
+          rows={roles.items}
           rowKey="roleCode"
-        />
+        />}
       </section>
       <section className="card panel-card" style={{ marginTop: 16 }}>
-        <div className="section-title">权限点</div>
-        <DataTable
-          loading={loading}
-          empty={<EmptyState title="暂无权限" desc="系统启动后会初始化默认权限点。" />}
+        <div className="panel-title"><span>权限点</span><ToolbarSearch value={permissionQuery} onChange={setPermissionQuery} placeholder="搜索权限编码、名称、资源、动作" /></div>
+        <ListLoadError error={permissions.error} onRetry={permissions.refresh} />
+        {!permissions.error && <DataTable
+          loading={permissions.loading}
+          serverPagination={permissions.pagination}
+          empty={<EmptyState title="暂无匹配权限" desc="调整搜索条件后重试。" />}
           columns={[
             { key: 'permissionCode', title: '权限编码', render: (item) => <Badge tone="gray">{item.permissionCode}</Badge> },
             { key: 'name', title: '权限名称' },
@@ -68,9 +61,9 @@ export function RolesPage({ api }) {
             { key: 'description', title: '说明' },
             { key: 'enabled', title: '状态', render: (item) => <Badge tone={item.enabled ? 'green' : 'gray'}>{item.enabled ? '启用' : '禁用'}</Badge> }
           ]}
-          rows={permissions}
+          rows={permissions.items}
           rowKey="permissionCode"
-        />
+        />}
       </section>
     </>
   );

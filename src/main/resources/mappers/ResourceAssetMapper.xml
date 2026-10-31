@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.resource.ResourceAssetMapper">
+    <!-- 两个分支各自强制租户边界；不将正文传回应用再合并。 -->
+    <sql id="assets">
+        SELECT file_id AS id, filename AS name, 'FILE' AS resource_type, 'upload' AS source_type,
+            COALESCE(processing_status, '') AS status, NULL AS description, NULL AS source_filename,
+            content_type, size, 0 AS content_length, 0 AS chunk_count,
+            uploaded_at AS created_at, processed_at AS updated_at, processing_error AS error_message
+        FROM file_metadata WHERE tenant_id = #{tenantId}
+        UNION ALL
+        SELECT knowledge_id AS id, name, 'KNOWLEDGE' AS resource_type, source_type, 'INDEXED' AS status,
+            description, source_filename, NULL AS content_type, 0 AS size, content_length, chunk_count,
+            created_at, updated_at, NULL AS error_message
+        FROM knowledge_entry WHERE tenant_id = #{tenantId}
+    </sql>
+    <sql id="filter">
+        <where>
+            <if test="query != ''">
+                (LOCATE(LOWER(#{query}), LOWER(COALESCE(name, ''))) > 0
+                    OR LOCATE(LOWER(#{query}), LOWER(COALESCE(description, ''))) > 0
+                    OR LOCATE(LOWER(#{query}), LOWER(COALESCE(source_filename, ''))) > 0
+                    OR LOCATE(LOWER(#{query}), LOWER(COALESCE(content_type, ''))) > 0)
+            </if>
+            <if test="type != ''">AND resource_type = #{type}</if>
+            <if test="status != ''">AND status = #{status}</if>
+        </where>
+    </sql>
+    <select id="list" resultType="com.ai.resource.dto.ResourceAssetResponse">
+        SELECT page.id, page.name, page.resource_type, page.source_type, page.status,
+            page.description, page.source_filename, page.content_type, page.size,
+            CASE WHEN page.resource_type = 'FILE' THEN CHAR_LENGTH(COALESCE(f.content, ''))
+                ELSE page.content_length END AS content_length,
+            page.chunk_count, page.created_at, page.updated_at, page.error_message
+        FROM (
+            SELECT * FROM (<include refid="assets"/>) assets <include refid="filter"/>
+            ORDER BY created_at DESC, resource_type DESC, id DESC
+            LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+        ) page
+        LEFT JOIN file_metadata f ON page.resource_type = 'FILE' AND f.file_id = page.id AND f.tenant_id = #{tenantId}
+        ORDER BY page.created_at DESC, page.resource_type DESC, page.id DESC
+    </select>
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="assets"/>) assets <include refid="filter"/>
+    </select>
+    <!-- 汇总独立于分页/搜索，保持租户全量统计，且不读取任何正文。 -->
+    <select id="summary" resultType="com.ai.resource.dto.ResourceSummaryResponse">
+        SELECT SUM(file_count + knowledge_count) AS total_assets, SUM(file_count) AS file_count,
+            SUM(knowledge_count) AS knowledge_count, SUM(chunks) AS indexed_chunk_count,
+            SUM(storage_bytes) AS total_storage_bytes, SUM(failed_count) AS failed_file_count
+        FROM (
+            SELECT COUNT(*) AS file_count, 0 AS knowledge_count, 0 AS chunks,
+                COALESCE(SUM(size), 0) AS storage_bytes,
+                COALESCE(SUM(processing_status = 'FAILED'), 0) AS failed_count
+            FROM file_metadata WHERE tenant_id = #{tenantId}
+            UNION ALL
+            SELECT 0 AS file_count, COUNT(*) AS knowledge_count, COALESCE(SUM(chunk_count), 0) AS chunks,
+                COALESCE(SUM(content_length), 0) AS storage_bytes, 0 AS failed_count
+            FROM knowledge_entry WHERE tenant_id = #{tenantId}
+        ) totals
+    </select>
+</mapper>

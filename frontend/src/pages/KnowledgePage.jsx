@@ -1,6 +1,7 @@
+import { useDebouncedValue, useServerList } from '../hooks/useServerList.js';
 import { Eye, Plus, RefreshCw, Save, Search, Trash2, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, ConfirmDialog, DataTable, EmptyState, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
+import { useEffect, useState } from 'react';
+import { Badge, ConfirmDialog, DataTable, EmptyState, ListLoadError, Field, Metric, Modal, PageHeader, ToolbarSearch } from '../components/ui.jsx';
 import { formatBytes, formatTime, truncate } from '../utils/format.js';
 
 function renderCitationLocation(item) {
@@ -18,9 +19,7 @@ function structureTags(item) {
 
 /** 个人知识页：管理文本/文档知识、同步配置和实时检索验证。 */
 export function KnowledgePage({ api, toast }) {
-  const [items, setItems] = useState([]);
   const [stats, setStats] = useState({});
-  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [textModal, setTextModal] = useState(false);
   const [searchModal, setSearchModal] = useState(false);
@@ -29,38 +28,30 @@ export function KnowledgePage({ api, toast }) {
   const [form, setForm] = useState({ name: '', description: '', content: '' });
   const [probe, setProbe] = useState({ query: '', topK: 5, results: [] });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [list, stat] = await Promise.all([api.get('/api/v1/knowledge/list'), api.get('/api/v1/knowledge/stats')]);
-      setItems(list.knowledge || []);
-      setStats(stat || {});
-    } finally {
-      setLoading(false);
-    }
+  const keyword = useDebouncedValue(query);
+  const { items, response, loading, error, refresh, pagination } = useServerList({
+    api, url: '/api/v1/knowledge/list', mode: 'offset', filters: { query: keyword }
+  });
+  const loadStats = async () => {
+    try { setStats(await api.get('/api/v1/knowledge/stats')); }
+    catch (failure) { toast(failure.message || '知识统计加载失败', 'error'); }
   };
+  const load = () => Promise.all([refresh(), loadStats()]);
+  useEffect(() => { loadStats(); }, [api]);
 
-  useEffect(() => { load(); }, []);
-
-  // 仅在当前列表有未完成任务时刷新状态，完成后停止轮询；卸载后不再更新页面。
+  // 仅当前页存在进行中的索引时刷新本页；不再全量读取用户所有索引任务。
   const hasPendingIndex = items.some((item) => ['PENDING', 'RUNNING', 'RETRY'].includes(item.indexing?.state));
   useEffect(() => {
-    if (!hasPendingIndex) return;
+    if (!hasPendingIndex) return undefined;
     let active = true;
     let timer;
-    const refresh = async () => {
-      try {
-        const states = await api.get('/api/v1/knowledge/index-tasks');
-        if (active) setItems((current) => current.map((item) => ({ ...item, indexing: states[item.knowledgeId] || item.indexing })));
-      } catch {
-        // 临时网络故障保留最近一次状态，下一周期重试。
-      } finally {
-        if (active) timer = setTimeout(refresh, 3000);
-      }
+    const poll = async () => {
+      await Promise.all([refresh(), loadStats()]);
+      if (active) timer = window.setTimeout(poll, 3000);
     };
-    timer = setTimeout(refresh, 3000);
-    return () => { active = false; clearTimeout(timer); };
-  }, [hasPendingIndex, api]);
+    timer = window.setTimeout(poll, 3000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [hasPendingIndex, refresh]);
 
   const retryIndex = async (item) => {
     const response = await api.post(`/api/v1/knowledge/${item.knowledgeId}/index-retry`, {});
@@ -68,13 +59,6 @@ export function KnowledgePage({ api, toast }) {
     load();
   };
 
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return items;
-    }
-    return items.filter((item) => JSON.stringify(item).toLowerCase().includes(keyword));
-  }, [items, query]);
 
   const upload = async (event) => {
     const file = event.target.files?.[0];
@@ -108,10 +92,15 @@ export function KnowledgePage({ api, toast }) {
     setDetail(res.knowledge || item);
   };
 
-  const editDetail = (item) => {
-    setDetail(item);
-    setForm({ name: item.name || '', description: item.description || '', content: item.content || '' });
-    setTextModal(true);
+  const editDetail = async (item) => {
+    try {
+      const response = await api.get(`/api/v1/knowledge/${item.knowledgeId}`);
+      if (response.success === false || !response.knowledge) throw new Error(response.message || '知识详情加载失败');
+      const knowledge = response.knowledge;
+      setDetail(knowledge);
+      setForm({ name: knowledge.name || '', description: knowledge.description || '', content: knowledge.content || '' });
+      setTextModal(true);
+    } catch (failure) { toast(failure.message, 'error'); }
   };
 
   const runSearch = async () => {
@@ -127,12 +116,13 @@ export function KnowledgePage({ api, toast }) {
         actions={<><ToolbarSearch value={query} onChange={setQuery} placeholder="搜索知识名称、描述、来源" /><button className="btn" onClick={() => setSearchModal(true)}><Search size={16} />检索测试</button><label className="btn"><Upload size={16} />上传<input type="file" hidden onChange={upload} /></label><button className="btn primary" onClick={() => { setDetail(null); setForm({ name: '', description: '', content: '' }); setTextModal(true); }}><Plus size={16} />添加文本</button></>}
       />
       <div className="grid grid-4">
-        <Metric label="知识文档" value={stats.knowledgeCount || items.length || 0} />
+        <Metric label="知识文档" value={stats.knowledgeCount ?? 0} />
         <Metric label="预计知识片段" value={stats.vectorStoreCount || 0} />
         <Metric label="存储后端" value={stats.usingMilvus ? 'Milvus' : '内存'} />
-        <Metric label="筛选结果" value={filtered.length} />
+        <Metric label="匹配文档" value={response?.total || 0} />
       </div>
-      <DataTable columns={[
+      <ListLoadError error={error} onRetry={refresh} />
+      <DataTable serverPagination={pagination} columns={[
         { key: 'name', title: '名称', render: (item) => <><strong>{item.name}</strong><div className="muted">{truncate(item.description, 90)}</div></> },
         { key: 'sourceType', title: '来源', render: (item) => <Badge tone="gray">{item.sourceType || 'TEXT'}</Badge> },
         { key: 'chunkCount', title: '片段' },
@@ -140,7 +130,7 @@ export function KnowledgePage({ api, toast }) {
         { key: 'contentLength', title: '大小', render: (item) => formatBytes(item.contentLength) },
         { key: 'createdAt', title: '创建时间', render: (item) => formatTime(item.createdAt) },
         { key: 'actions', title: '操作', render: (item) => <div className="toolbar">{['FAILED', 'UNKNOWN'].includes(item.indexing?.state) && <button className="btn" onClick={() => retryIndex(item)}><RefreshCw size={16} />{item.indexing?.state === 'UNKNOWN' ? '建立索引' : '重试索引'}</button>}<button className="btn" onClick={() => openDetail(item)}><Eye size={16} />详情</button><button className="btn" onClick={() => editDetail(item)}>编辑</button><button className="btn danger" onClick={() => setConfirm(item)}><Trash2 size={16} /></button></div> }
-      ]} rows={filtered} rowKey="knowledgeId" loading={loading} empty={<EmptyState title="暂无知识" desc="上传文件或添加文本后，这里会显示知识条目。" />} />
+      ]} rows={items} rowKey="knowledgeId" loading={loading} empty={<EmptyState title="暂无知识" desc="上传文件或添加文本后，这里会显示知识条目。" />} />
       {textModal && <Modal title={detail?.knowledgeId ? '编辑知识' : '添加文本知识'} onClose={() => setTextModal(false)} size="lg" actions={<button className="btn primary" onClick={saveText}><Save size={16} />保存</button>}>
         <div className="form-stack">
           <Field label="名称"><input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>

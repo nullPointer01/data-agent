@@ -17,6 +17,7 @@ package com.ai.agent.context;
  * @param runRemainingTokens 当前 Run 剩余 Token
  * @param inputTokenLimit 本次输入上限
  * @param tokenEstimateUsed Token 是否为估算值
+ * @param summary 摘要的安全计数与状态；没有进入压缩时为 null，不包含正文
  * @author data-agent
  */
 public record AgentContextEvidence(
@@ -31,7 +32,8 @@ public record AgentContextEvidence(
         long modelWindowTokens,
         long runRemainingTokens,
         long inputTokenLimit,
-        boolean tokenEstimateUsed) {
+        boolean tokenEstimateUsed,
+        TaskContextCompactor.Evidence summary) {
 
     public AgentContextEvidence {
         if (decision == null || reason == null) {
@@ -67,6 +69,8 @@ public record AgentContextEvidence(
         RUN_TOKEN_BUDGET_LIMIT,
         COMPACTION_DISABLED,
         CONSERVATIVE_TRIM_APPLIED,
+        MODEL_SUMMARY_APPLIED,
+        MODEL_SUMMARY_REUSED,
         PROTECTED_CONTEXT_EXCEEDS_LIMIT,
         REDUCTION_INSUFFICIENT
     }

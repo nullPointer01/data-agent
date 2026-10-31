@@ -1,8 +1,10 @@
 package com.ai.agent.context;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Max;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -38,6 +40,7 @@ public class AgentContextProperties {
         modelTokenizers = values == null ? new LinkedHashMap<>() : new LinkedHashMap<>(values);
     }
 
+    @Valid
     private final Compaction compaction = new Compaction();
 
     /**
@@ -80,14 +83,10 @@ public class AgentContextProperties {
                         && hasInputCapacity(entry.getValue()));
     }
 
-    /**
-     * 第一版不开放未经评测的模型摘要，避免启用配置后发生隐式二次模型调用。
-     *
-     * @return 模型摘要是否保持关闭
-     */
-    @AssertTrue(message = "app.agent.context.compaction.model-summary-enabled 当前必须为 false")
+    /** 模型摘要只允许在完整上下文治理开启时运行。 */
+    @AssertTrue(message = "启用模型摘要必须同时开启 app.agent.context.compaction.enabled")
     public boolean isModelSummarySwitchValid() {
-        return !compaction.isModelSummaryEnabled();
+        return !compaction.isModelSummaryEnabled() || compaction.isEnabled();
     }
 
     private boolean hasInputCapacity(int windowTokens) {
@@ -141,13 +140,30 @@ public class AgentContextProperties {
     }
 
     /**
-     * 上下文裁剪开关。应用配置开启完整轮次裁剪，模型摘要保持关闭。
+     * 超限才生成有证据的任务摘录，失败时仍保留协议组裁剪。
      */
     public static class Compaction {
 
         private boolean enabled = false;
 
         private boolean modelSummaryEnabled = false;
+        @Min(1024) @Max(16384)
+        private int summaryInputTokens = 8192;
+        @Min(128) @Max(2048)
+        private int summaryOutputTokens = 768;
+        @Min(256) @Max(8192)
+        private int minimumSavingsTokens = 1024;
+        @Min(1) @Max(4)
+        private int maxSummariesPerRun = 2;
+
+        public int getSummaryInputTokens() { return summaryInputTokens; }
+        public void setSummaryInputTokens(int value) { summaryInputTokens = value; }
+        public int getSummaryOutputTokens() { return summaryOutputTokens; }
+        public void setSummaryOutputTokens(int value) { summaryOutputTokens = value; }
+        public int getMinimumSavingsTokens() { return minimumSavingsTokens; }
+        public void setMinimumSavingsTokens(int value) { minimumSavingsTokens = value; }
+        public int getMaxSummariesPerRun() { return maxSummariesPerRun; }
+        public void setMaxSummariesPerRun(int value) { maxSummariesPerRun = value; }
 
         public boolean isEnabled() {
             return enabled;

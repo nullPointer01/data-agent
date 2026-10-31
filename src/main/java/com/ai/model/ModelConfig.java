@@ -1,16 +1,8 @@
 package com.ai.model;
 
-import com.ai.util.EncryptedStringConverter;
+import java.util.UUID;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
@@ -19,60 +11,45 @@ import java.time.LocalDateTime;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "model_config")
 public class ModelConfig {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String modelId;
 
-    @Column(nullable = false, length = 64)
     private String name;
 
-    @Column(length = 32)
     private String provider;
 
-    @Column(name = "api_key", length = 512)
-    @Convert(converter = EncryptedStringConverter.class)
     private String apiKey;
 
-    @Column(name = "base_url", length = 256)
     private String baseUrl;
 
-    @Column(name = "model_name", length = 128)
     private String modelName;
 
     private Double temperature;
 
-    @Column(name = "max_tokens")
     private Integer maxTokens;
 
     private boolean enabled = true;
 
-    @Column(name = "is_default")
     private boolean isDefault = false;
 
-    @Column(name = "tenant_id", length = 64)
     private String tenantId;
 
-    @Column(name = "created_by", length = 64)
     private String createdBy;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
+        if (modelId == null) {
+            modelId = UUID.randomUUID().toString();
+        }
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
 
-    @PreUpdate
-    protected void onUpdate() {
+    public void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 

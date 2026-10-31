@@ -5,7 +5,7 @@
 --
 -- 说明:
 -- 1. 本脚本不会 DROP DATABASE，适合本地和已有开发库反复执行。
--- 2. 表结构以当前 JPA 实体为准，生产环境建议使用迁移工具接管后续变更。
+-- 2. 表结构由 src/main/resources/db/migration 下的 Flyway 脚本维护；此脚本用于手工初始化。
 -- 3. 密钥、模型 API Key、管理员密码不写入脚本，由环境变量或接口初始化。
 -- ============================================================
 
@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS file_metadata (
     size BIGINT NOT NULL COMMENT '文件大小',
     path VARCHAR(512) DEFAULT NULL COMMENT '存储路径',
     content MEDIUMTEXT DEFAULT NULL COMMENT '文件解析内容',
+    content_hash VARCHAR(64) DEFAULT NULL COMMENT '文件内容哈希，用于去重',
     processing_status VARCHAR(32) DEFAULT 'QUEUED' COMMENT '处理状态',
     processing_error VARCHAR(1024) DEFAULT NULL COMMENT '处理失败原因',
     processed_at DATETIME(6) DEFAULT NULL COMMENT '处理完成时间',

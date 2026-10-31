@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.SkillConfigRepository">
+    <!-- skill_config：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <insert id="insert">
+        INSERT INTO skill_config (skill_id,
+            name,
+            description,
+            version,
+            api_url,
+            api_method,
+            api_headers,
+            prompt_template,
+            steps,
+            tool_dependencies, private_skill, review_status, source_run_id, evidence,
+            source,
+            enabled,
+            tenant_id,
+            created_by,
+            created_at,
+            updated_at)
+        VALUES (#{skillId},
+            #{name},
+            #{description},
+            #{version},
+            #{apiUrl},
+            #{apiMethod},
+            #{apiHeaders},
+            #{promptTemplate},
+            #{steps},
+            #{toolDependencies}, #{privateSkill}, #{reviewStatus}, #{sourceRunId}, #{evidence},
+            #{source},
+            #{enabled},
+            #{tenantId},
+            #{createdBy},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE skill_config SET name = #{name},
+            description = #{description},
+            version = #{version},
+            api_url = #{apiUrl},
+            api_method = #{apiMethod},
+            api_headers = #{apiHeaders},
+            prompt_template = #{promptTemplate},
+            steps = #{steps},
+            tool_dependencies = #{toolDependencies}, private_skill = #{privateSkill},
+            review_status = #{reviewStatus}, source_run_id = #{sourceRunId}, evidence = #{evidence},
+            source = #{source},
+            enabled = #{enabled},
+            tenant_id = #{tenantId},
+            created_by = #{createdBy},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE skill_id = #{skillId}
+    </update>
+    <select id="findById" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE skill_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM skill_config WHERE skill_id = #{id})
+    </select>
+    <select id="findAll" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config
+    </select>
+    <select id="findAllById" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                skill_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM skill_config WHERE skill_id = #{id}
+    </delete>
+    <select id="findByTenantId" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE tenant_id = #{tenantId}
+    </select>
+    <select id="findBySkillIdAndTenantId" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE skill_id = #{skillId} AND tenant_id = #{tenantId}
+    </select>
+    <select id="findOwnedForUpdate" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE skill_id = #{skillId} AND tenant_id = #{tenantId}
+            AND created_by = #{userId} AND private_skill = TRUE FOR UPDATE
+    </select>
+    <select id="findByLearningRun" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE tenant_id = #{tenantId} AND created_by = #{userId}
+            AND source_run_id = #{runId} AND private_skill = TRUE
+    </select>
+    <sql id="listFilter">
+        (tenant_id = #{filter.tenantId}<if test="filter.includeShared"> OR tenant_id = 'default'</if>)
+        AND (private_skill = FALSE OR created_by = #{viewerId})
+        <if test="filter.ownerId != null and filter.ownerId != ''">AND created_by = #{filter.ownerId}</if>
+        <if test="filter.enabledOnly">AND enabled = true</if>
+        <if test="filter.query != ''">
+            AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(description, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(source, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findListPage" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE <include refid="listFilter"/>
+        ORDER BY created_at DESC, skill_id DESC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="findOwnedPage" resultType="com.ai.model.SkillConfig">
+        SELECT * FROM skill_config WHERE tenant_id = #{tenantId} AND created_by = #{userId} AND private_skill = TRUE
+        ORDER BY created_at DESC, skill_id DESC LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countOwned" resultType="long">
+        SELECT COUNT(*) FROM skill_config WHERE tenant_id = #{tenantId} AND created_by = #{userId} AND private_skill = TRUE
+    </select>
+    <select id="countPending" resultType="long">
+        SELECT COUNT(*) FROM skill_config WHERE tenant_id = #{tenantId} AND created_by = #{userId}
+            AND private_skill = TRUE AND review_status = 'PENDING'
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM skill_config WHERE <include refid="listFilter"/>
+    </select>
+    <select id="findCapabilityCandidates" resultType="com.ai.model.SkillConfig">
+        SELECT skill_id, name, description, version, tenant_id, created_by, enabled,
+            api_url, api_headers, prompt_template, steps, tool_dependencies, private_skill, review_status
+        FROM skill_config WHERE (tenant_id = #{tenantId} OR tenant_id = 'default')
+        <if test="after != ''">AND skill_id > #{after}</if>
+        <if test="query != ''">
+            AND (LOCATE(LOWER(#{query}), LOWER(COALESCE(name, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(COALESCE(description, ''))) > 0
+                OR LOCATE(LOWER(#{query}), LOWER(CONCAT('skill:', skill_id))) > 0)
+        </if>
+        ORDER BY skill_id ASC LIMIT #{limit}
+    </select>
+</mapper>

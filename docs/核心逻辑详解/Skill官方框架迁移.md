@@ -23,7 +23,7 @@ flowchart TD
 
 1. `SkillCatalog`：将数据库配置映射到官方 `Skill` 和 `SkillResource`，调用 `Skills.builder`、`formatAvailableSkills`、`toolProvider`。
 2. `AgentToolRegistry`：官方工具规格和执行器注册为 LOW、只读、幂等、无自动重试的受治理工具，没有复制 SDK Schema/解析器。
-3. `AgentToolCandidateSelector` / `ModelSemanticRequestRouter`：选择激活/资源工具，需要执行时同时选择业务工具；候选白名单没有扩大。
+3. `AgentToolCandidateSelector` / `ModelSemanticRequestRouter`：选择激活/资源工具；声明的业务依赖在激活后由官方动态 Provider 按已授权池开放，不必全部预先列入初始候选。
 4. `ConfigurableAgentExecutor.boundSkillInstructions`：系统消息只放本次可用技能的简短目录。
 5. `AgentChatService` / `GovernedToolSession`：通过 `AiServices.toolProvider` 提供受治理执行器，框架负责同步/Flux 的工具结果回填和多轮调用。
 
@@ -45,9 +45,9 @@ Skills 提供指令/资源类型、XML 目录、工具 Schema 和工具执行器
 
 框架的 Skill ToolExecutor 必须调用 `executeWithContext`，其旧 `execute` 方法会抛异常；本轮临时实际执行检查发现并修正了这一点。工具结果继续经过原脱敏、长度限制和预算，真实调用费用由当前 Agent 的模型治理统计。激活没有独立模型费用，新执行不再产生旧 Skill 单独调用的 Token 归属记录，历史技能消耗仍可查询。
 
-本轮不配置 Skill 自带的 `toolProviders` 自动增发工具。官方 `activated_skill` 元数据的主要用途是控制技能范围工具的动态暴露；当前没有这条授权路径，因此安全工具文本足以保留操作指引。审批 Checkpoint 保存该文本，恢复重建原工具白名单，`DurableToolContinuation` 继续推理，不重新激活已读技能或重放已批准动作；后续仍可读取当前可用资源。
+2026-10-14 已配置 Skill 自带的 `toolProviders`：官方 `activated_skill` 属性经治理结果保留，只有激活后的声明依赖与本次已授权池取交集才开放。Checkpoint v4 保存激活属性、初始工具与潜在池，恢复仍重验当前权限，不能扩大旧授权；不重放已批准动作。并新增个人程序性记忆的提炼、候选确认与版本管理，详见 [Skill 程序性记忆与工具依赖](./Skill程序性记忆与工具依赖.md)。
 
-Supervisor 整图持久化尚未实现的既有限制不变。审批学习验收请选择 TOOL_CALLING 引擎、由主助手直接申请审批。
+Supervisor 的主助手节点和直接专家现已支持审批现场续跑，更深层嵌套审批仍拒绝。Skill 不扩展这个恢复范围，详见 [Supervisor 检查点与审批续跑](./Supervisor检查点与审批续跑.md)。
 
 ## 如何验收
 
@@ -57,6 +57,7 @@ Supervisor 整图持久化尚未实现的既有限制不变。审批学习验收
 - 描述：进行数值计算并复核结果。
 - 技能指令：`先阅读 references/steps.md。对当前问题使用已授权 calculate 工具计算，核对结果后简洁回答；无数据时要求补充，禁止编造。`
 - 步骤资料：`1. 确认算式。2. 调用 calculate。3. 复核并给出结果。`
+- 工具依赖：`calculate`。
 
 在个人 Agent 设置中同时绑定该 Skill 和 `calculate`，选自主决策或 ReAct，发新请求：`请用计算复核技能算一下 (120 + 80) * 0.9，并复核结果。`
 

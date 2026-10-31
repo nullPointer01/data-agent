@@ -1,9 +1,11 @@
 package com.ai.controller;
 
-import com.ai.modelconfig.dto.PersonalModelOptionsResponse;
+import com.ai.api.ListPageResponse;
+import com.ai.modelconfig.dto.PersonalModelOptionResponse;
 import com.ai.service.ModelConfigService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -27,7 +29,8 @@ public class PersonalModelController {
      * @return 脱敏模型目录
      */
     @GetMapping
-    public PersonalModelOptionsResponse listModels() {
-        return modelConfigService.listPersonalModelOptions();
+    public ListPageResponse<PersonalModelOptionResponse> listModels(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String query) {
+        return modelConfigService.listPersonalModelOptions(page, size, query);
     }
 }

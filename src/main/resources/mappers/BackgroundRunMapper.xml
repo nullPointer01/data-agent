@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.agent.backgroundrun.BackgroundRunMapper">
+    <sql id="fields">run_id,tenant_id,user_id,request_key,fingerprint,payload,started,lease_owner,lease_until,event_count,event_bytes</sql>
+    <select id="find" resultType="com.ai.agent.backgroundrun.RunSubmission">
+        SELECT <include refid="fields"/> FROM agent_run_submission WHERE run_id=#{runId}
+    </select>
+    <select id="findKey" resultType="com.ai.agent.backgroundrun.RunSubmission">
+        SELECT <include refid="fields"/> FROM agent_run_submission
+        WHERE tenant_id=#{tenantId} AND user_id=#{userId} AND request_key=#{requestKey}
+    </select>
+    <insert id="insert">
+        INSERT INTO agent_run_submission (run_id,tenant_id,user_id,request_key,fingerprint,payload)
+        VALUES (#{runId},#{tenantId},#{userId},#{requestKey},#{fingerprint},#{payload})
+    </insert>
+    <!-- 先持有会话锁、Run 锁，再领取提交行；不接管已开始的普通执行。 -->
+    <update id="claim">
+        UPDATE agent_run_submission SET started=TRUE,lease_owner=#{owner},
+            lease_until=TIMESTAMPADD(MICROSECOND,#{leaseMicros},CURRENT_TIMESTAMP(6))
+        WHERE run_id=#{runId} AND started=FALSE
+    </update>
+    <update id="renew">
+        UPDATE agent_run_submission SET lease_until=TIMESTAMPADD(MICROSECOND,#{leaseMicros},CURRENT_TIMESTAMP(6))
+        WHERE run_id=#{runId} AND lease_owner=#{owner} AND lease_until &gt; CURRENT_TIMESTAMP(6)
+            AND EXISTS(SELECT 1 FROM agent_run_state r WHERE r.run_id=#{runId} AND r.status='RUNNING')
+    </update>
+    <select id="validLease" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_run_submission s JOIN agent_run_state r ON r.run_id=s.run_id
+            WHERE s.run_id=#{runId} AND s.lease_owner=#{owner} AND s.lease_until &gt; CURRENT_TIMESTAMP(6)
+                AND r.status='RUNNING')
+    </select>
+    <select id="lockRun" resultType="string">SELECT status FROM agent_run_state WHERE run_id=#{runId} FOR UPDATE</select>
+    <select id="validEventLease" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_run_submission WHERE run_id=#{runId}
+            AND lease_owner=#{owner} AND lease_until &gt; CURRENT_TIMESTAMP(6))
+    </select>
+    <select id="expiredLease" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM agent_run_submission WHERE run_id=#{runId} AND lease_until &lt; CURRENT_TIMESTAMP(6))
+    </select>
+    <select id="lockSubmission" resultType="com.ai.agent.backgroundrun.RunSubmission">
+        SELECT <include refid="fields"/> FROM agent_run_submission WHERE run_id=#{runId} FOR UPDATE
+    </select>
+    <update id="chargeEvent">
+        UPDATE agent_run_submission SET event_count=event_count+1,event_bytes=event_bytes+#{bytes}
+        WHERE run_id=#{runId} AND event_count &lt; 8192 AND event_bytes+#{bytes} &lt;= 2097152
+    </update>
+    <insert id="append">INSERT INTO agent_run_event(run_id,payload) VALUES(#{runId},#{payload})</insert>
+    <select id="events" resultType="com.ai.agent.backgroundrun.RunEventRow">
+        SELECT id,payload FROM agent_run_event WHERE run_id=#{runId} AND id &gt; #{after} ORDER BY id LIMIT 128
+    </select>
+    <select id="queued" resultType="string">
+        SELECT s.run_id FROM agent_run_submission s JOIN agent_run_state r ON r.run_id=s.run_id
+        WHERE s.started=FALSE AND r.status='CREATED' ORDER BY s.created_at,s.run_id LIMIT 50
+    </select>
+    <select id="expired" resultType="string">
+        SELECT run_id FROM agent_run_submission WHERE lease_until &lt; CURRENT_TIMESTAMP(6)
+        ORDER BY lease_until,run_id LIMIT 50
+    </select>
+    <update id="release">
+        UPDATE agent_run_submission SET lease_owner=NULL,lease_until=NULL,payload='',
+            events_expires_at=TIMESTAMPADD(DAY,#{retentionDays},CURRENT_TIMESTAMP(6))
+        WHERE run_id=#{runId} AND lease_owner=#{owner}
+    </update>
+    <select id="expiredLogs" resultType="string">
+        SELECT run_id FROM agent_run_submission WHERE events_expires_at &lt; CURRENT_TIMESTAMP(6)
+        ORDER BY events_expires_at,run_id LIMIT 10
+    </select>
+    <delete id="purgeEvents">DELETE FROM agent_run_event WHERE run_id=#{runId} LIMIT #{limit}</delete>
+    <update id="clearLogExpiry">
+        UPDATE agent_run_submission SET events_expires_at=NULL WHERE run_id=#{runId}
+            AND NOT EXISTS(SELECT 1 FROM agent_run_event WHERE run_id=#{runId})
+    </update>
+</mapper>

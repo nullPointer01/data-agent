@@ -79,14 +79,15 @@ public class ModelClientRegistry {
      * @param modelId 模型编号，空值表示默认模型
      * @return 聊天模型
      */
-    public ChatModel getChatModel(String modelId) {
+    public ChatClient chatClient(String modelId) {
         ModelConfig config = resolveEffectiveConfig(modelId);
         if (config == null) {
-            return defaultModel;
+            return new ChatClient(defaultModel, null, "默认模型");
         }
         // 缓存键带租户，防止其他租户凭 modelId 直接命中缓存、复用他人 API Key 构建的客户端
-        return modelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
+        ChatModel model = modelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
                 key -> buildChatModel(config));
+        return new ChatClient(model, config.getModelId(), config.getName());
     }
 
     /**
@@ -95,14 +96,19 @@ public class ModelClientRegistry {
      * @param modelId 模型编号，空值表示默认模型
      * @return 流式聊天模型
      */
-    public StreamingChatModel getStreamingChatModel(String modelId) {
+    public StreamingClient streamingClient(String modelId) {
         ModelConfig config = resolveEffectiveConfig(modelId);
         if (config == null) {
-            return defaultStreamingModel;
+            return new StreamingClient(defaultStreamingModel, null, "默认模型");
         }
-        return streamingModelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
+        StreamingChatModel model = streamingModelCache.computeIfAbsent(tenantCacheKey(config.getModelId()),
                 key -> buildStreamingChatModel(config));
+        return new StreamingClient(model, config.getModelId(), config.getName());
     }
+
+    /** 客户端和最终模型身份一起解析，记账不再用空 modelId 或回调时重新选择默认模型。 */
+    public record ChatClient(ChatModel model, String modelId, String modelName) { }
+    public record StreamingClient(StreamingChatModel model, String modelId, String modelName) { }
 
     /**
      * 移除一个模型在所有租户下的缓存客户端（同步与流式）。

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.indexing.IndexTaskMapper">
+    <!-- 不可变 record 的参数包含 task_id→id、desired_version→version 等异名，显式绑定构造器。 -->
+    <resultMap id="task" type="com.ai.indexing.IndexTask">
+        <constructor>
+            <idArg column="task_id" javaType="java.lang.String"/>
+            <arg column="kind" javaType="com.ai.indexing.IndexTask$Kind"/>
+            <arg column="tenant_id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="source_id" javaType="java.lang.String"/>
+            <arg column="desired_version" javaType="_long"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="lease_owner" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="state" type="com.ai.indexing.IndexTaskMapper$StateRow">
+        <constructor>
+            <idArg column="task_id" javaType="java.lang.String"/>
+            <arg column="source_id" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="desired_version" javaType="_long"/>
+            <arg column="completed_version" javaType="_long"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="last_error" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <insert id="enqueue">
+        INSERT INTO index_task(task_id,kind,tenant_id,user_id,source_id,desired_version,
+            completed_version,status,attempts,next_attempt_at,updated_at)
+        VALUES(#{id},#{kind},#{tenant},#{user},#{source},1,0,'PENDING',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE desired_version=desired_version+1,
+            status=CASE WHEN lease_owner IS NULL THEN 'PENDING' ELSE status END, attempts=0,
+            next_attempt_at=CURRENT_TIMESTAMP, last_error=NULL, updated_at=CURRENT_TIMESTAMP
+    </insert>
+    <sql id="readyCondition">
+        kind IN ('KNOWLEDGE','FILE','MEMORY') AND (
+            (status IN ('PENDING','RETRY') AND next_attempt_at &lt;= CURRENT_TIMESTAMP)
+            OR (status='RUNNING' AND lease_until &lt; CURRENT_TIMESTAMP))
+    </sql>
+    <select id="ready" resultMap="task">
+        SELECT * FROM index_task WHERE <include refid="readyCondition"/>
+        ORDER BY next_attempt_at LIMIT #{limit}
+    </select>
+    <select id="findReady" resultMap="task">
+        SELECT * FROM index_task WHERE task_id=#{id} AND <include refid="readyCondition"/>
+    </select>
+    <update id="claim">
+        UPDATE index_task SET status='RUNNING',lease_owner=#{owner},lease_until=#{deadline},attempts=attempts+1,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE task_id=#{task.id} AND desired_version=#{task.version} AND
+            ((status IN ('PENDING','RETRY') AND next_attempt_at &lt;= CURRENT_TIMESTAMP)
+              OR (status='RUNNING' AND lease_until &lt; CURRENT_TIMESTAMP))
+    </update>
+    <update id="renew">
+        UPDATE index_task SET lease_until=#{deadline} WHERE task_id=#{task.id} AND lease_owner=#{task.owner}
+            AND status='RUNNING' AND lease_until &gt;= CURRENT_TIMESTAMP
+    </update>
+    <update id="finish">
+        UPDATE index_task SET status=CASE WHEN desired_version=#{task.version} THEN #{state} ELSE 'PENDING' END,
+            completed_version=CASE WHEN #{state}='SUCCEEDED' THEN #{task.version} ELSE completed_version END,
+            attempts=CASE WHEN desired_version=#{task.version} THEN #{attempts} ELSE 0 END,
+            next_attempt_at=CASE WHEN desired_version=#{task.version} THEN #{nextAttempt} ELSE CURRENT_TIMESTAMP END,
+            last_error=CASE WHEN desired_version=#{task.version} THEN #{error} ELSE NULL END,
+            lease_owner=NULL,lease_until=NULL,updated_at=CURRENT_TIMESTAMP
+        WHERE task_id=#{task.id} AND lease_owner=#{task.owner} AND lease_until &gt;= CURRENT_TIMESTAMP
+    </update>
+    <select id="failedVersion" resultType="boolean">
+        SELECT COUNT(*) &gt; 0 FROM index_task WHERE task_id=#{task.id}
+            AND status='FAILED' AND desired_version=#{task.version}
+    </select>
+    <update id="markDirty">
+        UPDATE index_task SET desired_version=desired_version+1,
+            status=CASE WHEN lease_owner IS NULL THEN 'PENDING' ELSE status END,next_attempt_at=CURRENT_TIMESTAMP
+        WHERE task_id=#{id}
+    </update>
+    <select id="knowledgeStatuses" resultMap="state">
+        SELECT task_id,source_id,status,desired_version,completed_version,attempts,last_error FROM index_task
+        WHERE kind='KNOWLEDGE' AND tenant_id=#{tenant} AND user_id=#{user} AND source_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <select id="memoryStatuses" resultMap="state">
+        SELECT task_id,source_id,status,desired_version,completed_version,attempts,last_error FROM index_task
+        WHERE kind='MEMORY' AND tenant_id=#{tenant} AND user_id=#{user} AND source_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <update id="retry">
+        UPDATE index_task SET status='PENDING',attempts=0,next_attempt_at=CURRENT_TIMESTAMP
+        WHERE task_id=#{id} AND tenant_id=#{tenant} AND user_id=#{user} AND status='FAILED'
+    </update>
+
+    <!-- 枚举分支固定表/列名，禁止把用户输入拼到标识符中。非法类型 fail closed。 -->
+    <sql id="sourceTable">
+        <choose>
+            <when test="kind != null and kind.name() == 'KNOWLEDGE'">knowledge_entry</when>
+            <when test="kind != null and kind.name() == 'FILE'">file_metadata</when>
+            <when test="kind != null and kind.name() == 'MEMORY'">memory_entry</when>
+            <otherwise>(SELECT NULL AS source_id, NULL AS tenant_id, NULL AS user_id WHERE 1=0) invalid_source</otherwise>
+        </choose>
+    </sql>
+    <sql id="sourceId">
+        <choose>
+            <when test="kind != null and kind.name() == 'KNOWLEDGE'">knowledge_id</when>
+            <when test="kind != null and kind.name() == 'FILE'">file_id</when>
+            <when test="kind != null and kind.name() == 'MEMORY'">memory_id</when>
+            <otherwise>source_id</otherwise>
+        </choose>
+    </sql>
+    <sql id="sourceScope">
+        tenant_id=#{tenant} AND
+        <choose>
+            <when test="kind != null and kind.name() == 'KNOWLEDGE'">created_by=#{user}</when>
+            <when test="kind != null and kind.name() == 'FILE'">uploaded_by=#{user}</when>
+            <when test="kind != null and kind.name() == 'MEMORY'">
+                user_id=#{user} AND tier='LONG_TERM' AND (expires_at IS NULL OR expires_at &gt; CURRENT_TIMESTAMP)
+            </when>
+            <otherwise>1=0</otherwise>
+        </choose>
+    </sql>
+    <select id="sources" resultType="com.ai.indexing.IndexRebuildService$Source">
+        SELECT <include refid="sourceId"/> AS source_id,
+        <choose>
+            <when test="kind != null and kind.name() == 'KNOWLEDGE'">name</when>
+            <when test="kind != null and kind.name() == 'FILE'">filename</when>
+            <when test="kind != null and kind.name() == 'MEMORY'">type</when>
+            <otherwise>NULL</otherwise>
+        </choose> AS title
+        FROM <include refid="sourceTable"/> WHERE <include refid="sourceScope"/>
+        AND <include refid="sourceId"/> &gt; #{after}
+        ORDER BY <include refid="sourceId"/> LIMIT #{limit}
+    </select>
+    <select id="taskPage" resultMap="state">
+        SELECT task_id,source_id,status,desired_version,completed_version,attempts,last_error
+        FROM index_task WHERE kind=#{kind} AND tenant_id=#{tenant} AND user_id=#{user} AND task_id &gt; #{after}
+        ORDER BY task_id LIMIT #{limit}
+    </select>
+    <select id="lockSource" resultType="string">
+        SELECT <include refid="sourceId"/> FROM <include refid="sourceTable"/>
+        WHERE <include refid="sourceId"/>=#{id} AND <include refid="sourceScope"/> FOR UPDATE
+    </select>
+</mapper>

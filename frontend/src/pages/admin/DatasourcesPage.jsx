@@ -26,7 +26,6 @@ export function DatasourcesPage({ api, toast }) {
         title="数据源管理"
         desc="配置数据库、HTTP JSON/CSV/Text 等外部数据连接器"
         listUrl="/api/v1/datasources/list"
-        listKey="datasources"
         idKey="datasourceId"
         createUrl="/api/v1/datasources/add"
         updateUrl={(id) => `/api/v1/datasources/update/${id}`}

@@ -1,8 +1,8 @@
 package com.ai.controller;
 
-import com.ai.agent.dto.AgentProfileListResponse;
-import com.ai.agent.dto.AgentProfileMutationResponse;
+import com.ai.api.ListPageResponse;
 import com.ai.agent.dto.AgentProfileResponse;
+import com.ai.agent.dto.AgentProfileMutationResponse;
 import com.ai.service.AgentProfileService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,8 +33,11 @@ public class AgentProfileController {
      * @return Agent 配置列表
      */
     @GetMapping
-    public AgentProfileListResponse list(@RequestParam(defaultValue = "false") boolean enabledOnly) {
-        return agentProfileService.listAgents(enabledOnly);
+    public ListPageResponse<AgentProfileResponse> list(@RequestParam(defaultValue = "false") boolean enabledOnly,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String query, @RequestParam(required = false) String ownerId,
+            @RequestParam(required = false) String role) {
+        return agentProfileService.listAgents(enabledOnly, page, size, query, ownerId, role);
     }
 
     /**

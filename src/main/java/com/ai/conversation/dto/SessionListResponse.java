@@ -9,7 +9,8 @@ import java.util.List;
  *
  * @param success 查询是否成功
  * @param sessions 会话列表
+ * @param nextCursor 下一批游标，为空表示已加载完毕
  * @author data-agent
  */
-public record SessionListResponse(boolean success, List<ConversationSessionEntity> sessions) {
+public record SessionListResponse(boolean success, List<ConversationSessionEntity> sessions, String nextCursor) {
 }

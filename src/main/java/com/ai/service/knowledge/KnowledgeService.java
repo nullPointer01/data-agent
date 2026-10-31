@@ -1,18 +1,18 @@
 package com.ai.service.knowledge;
 
+import com.ai.api.ListPageResponse;
+import com.ai.api.ListPaging;
+import com.ai.api.CatalogListFilter;
 import com.ai.indexing.IndexTask;
 import com.ai.indexing.IndexTaskStore;
 
 import com.ai.service.file.FileParserService;
-
-import com.ai.service.VectorMemoryService;
 
 import com.ai.knowledge.dto.KnowledgeBatchItemResponse;
 import com.ai.knowledge.dto.KnowledgeBatchUploadResponse;
 import com.ai.knowledge.dto.KnowledgeDetailEnvelope;
 import com.ai.knowledge.dto.KnowledgeDetailResponse;
 import com.ai.knowledge.dto.KnowledgeItemResponse;
-import com.ai.knowledge.dto.KnowledgeListResponse;
 import com.ai.knowledge.dto.KnowledgeMutationResponse;
 import com.ai.knowledge.dto.KnowledgeSearchResponse;
 import com.ai.knowledge.dto.KnowledgeSearchResult;
@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * 知识文档管理和向量索引服务。
@@ -167,41 +166,39 @@ public class KnowledgeService {
     /** 每个文件独立提交主数据和任务；异常先回滚，再转换为用户可读结果。 */
     private void saveAndSchedule(KnowledgeEntry entry) {
         transactions.executeWithoutResult(status -> {
-            knowledgeRepository.saveAndFlush(entry);
+            knowledgeRepository.save(entry);
             knowledgeIndexScheduler.schedule(entry);
         });
     }
 
-    public KnowledgeListResponse listKnowledge() {
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ListPageResponse<KnowledgeItemResponse> listKnowledge(int page, int size, String query) {
+        ListPaging.page(page, size);
         String tenantId = securityContextHelper.getCurrentTenantId();
         String userId = securityContextHelper.getCurrentUserId();
-        List<KnowledgeEntry> entries = knowledgeRepository
-                .findByTenantIdAndCreatedByOrderByCreatedAtDesc(tenantId, userId);
-        var statuses = indexTasks.statuses(tenantId,userId);
-        List<KnowledgeItemResponse> list = entries.stream()
-                .map(entry -> KnowledgeItemResponse.from(entry, statuses.getOrDefault(entry.getKnowledgeId(),
-                        IndexTask.Status.unknown())))
-                .collect(Collectors.toList());
-
-        return new KnowledgeListResponse(true, list, list.size());
-    }
-
-    public Map<String, IndexTask.Status> indexTaskStatuses() {
-        return indexTasks.statuses(securityContextHelper.getCurrentTenantId(),securityContextHelper.getCurrentUserId());
+        var filter = new CatalogListFilter(tenantId, userId, false, false, null, query);
+        var entries = ListPageResponse.fetch(page, size, knowledgeRepository.countList(filter),
+                pageable -> knowledgeRepository.findListPage(filter, pageable));
+        var statuses = indexTasks.knowledgeStatuses(tenantId, userId,
+                entries.items().stream().map(KnowledgeEntry::getKnowledgeId).toList());
+        return entries.map(entry -> KnowledgeItemResponse.from(entry,
+                statuses.getOrDefault(entry.getKnowledgeId(), IndexTask.Status.unknown())));
     }
 
     @org.springframework.transaction.annotation.Transactional
     public KnowledgeMutationResponse retryIndex(String knowledgeId) {
         String tenant = securityContextHelper.getCurrentTenantId();
         String user = securityContextHelper.getCurrentUserId();
-        if (!indexTasks.statuses(tenant, user).containsKey(knowledgeId)) {
+        if (!indexTasks.knowledgeStatuses(tenant, user, List.of(knowledgeId)).containsKey(knowledgeId)) {
             var entry = findCurrentTenantKnowledge(knowledgeId);
-            if (entry.isEmpty()) return KnowledgeMutationResponse.failure("知识条目不存在");
+            if (entry.isEmpty()) {
+                return KnowledgeMutationResponse.failure("知识条目不存在");
+            }
             knowledgeIndexScheduler.schedule(entry.get());
             return KnowledgeMutationResponse.success("历史知识索引任务已提交");
         }
-        boolean queued=indexTasks.retryKnowledge(securityContextHelper.getCurrentTenantId(),
-                securityContextHelper.getCurrentUserId(),knowledgeId);
+        boolean queued = indexTasks.retryKnowledge(securityContextHelper.getCurrentTenantId(),
+                securityContextHelper.getCurrentUserId(), knowledgeId);
         return queued ? KnowledgeMutationResponse.success("索引重试已提交")
                 : KnowledgeMutationResponse.failure("没有可重试的索引任务");
     }
@@ -227,17 +224,11 @@ public class KnowledgeService {
     }
 
     public KnowledgeStatsResponse getStats() {
-        String tenantId = securityContextHelper.getCurrentTenantId();
-        String userId = securityContextHelper.getCurrentUserId();
-        List<KnowledgeEntry> entries = knowledgeRepository
-                .findByTenantIdAndCreatedByOrderByCreatedAtDesc(tenantId, userId);
-
-        long totalChunks = entries.stream().mapToInt(KnowledgeEntry::getChunkCount).sum();
-        long totalChars = entries.stream().mapToLong(KnowledgeEntry::getContentLength).sum();
-        int vectorCount = (int) Math.min(Integer.MAX_VALUE, totalChunks);
-        Map<String, Long> byType = Map.of(VectorDocumentTypes.KNOWLEDGE, totalChunks);
-
-        return new KnowledgeStatsResponse(true, entries.size(), totalChunks, totalChars, vectorCount, byType,
+        var totals = knowledgeRepository.totals(securityContextHelper.getCurrentTenantId(),
+                securityContextHelper.getCurrentUserId());
+        int vectorCount = (int) Math.min(Integer.MAX_VALUE, totals.chunks());
+        return new KnowledgeStatsResponse(true, totals.count(), totals.chunks(), totals.characters(),
+                vectorCount, Map.of(VectorDocumentTypes.KNOWLEDGE, totals.chunks()),
                 knowledgeVectorIndexService.isUsingMilvus());
     }
 

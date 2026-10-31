@@ -1,8 +1,9 @@
 package com.ai.controller;
 
+import com.ai.api.ListPageResponse;
+import com.ai.knowledge.dto.KnowledgeItemResponse;
 import com.ai.knowledge.dto.KnowledgeBatchUploadResponse;
 import com.ai.knowledge.dto.KnowledgeDetailEnvelope;
-import com.ai.knowledge.dto.KnowledgeListResponse;
 import com.ai.knowledge.dto.KnowledgeMutationResponse;
 import com.ai.knowledge.dto.KnowledgeSearchRequest;
 import com.ai.knowledge.dto.KnowledgeSearchResponse;
@@ -35,12 +36,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/knowledge")
 public class KnowledgeController {
-
-    /** 包含删除后的残留清理任务，按当前租户和用户过滤。 */
-    @GetMapping("/index-tasks")
-    public java.util.Map<String, com.ai.indexing.IndexTask.Status> indexTasks() {
-        return knowledgeService.indexTaskStatuses();
-    }
 
     @PostMapping("/{knowledgeId}/index-retry")
     public KnowledgeMutationResponse retryIndex(@PathVariable String knowledgeId) {
@@ -112,8 +107,9 @@ public class KnowledgeController {
      * @return 知识列表
      */
     @GetMapping("/list")
-    public KnowledgeListResponse listKnowledge() {
-        return knowledgeService.listKnowledge();
+    public ListPageResponse<KnowledgeItemResponse> listKnowledge(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String query) {
+        return knowledgeService.listKnowledge(page, size, query);
     }
 
     /**

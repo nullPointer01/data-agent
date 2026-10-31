@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.repository.DataSourceConfigRepository">
+    <!-- datasource_config：普通字段使用驼峰自动映射，租户条件由各查询保留。 -->
+    <!-- 仅连接密码需要解密处理器，其余字段由 MyBatis 自动映射。 -->
+    <resultMap id="entity" type="com.ai.model.DataSourceConfig" autoMapping="true">
+        <result column="password" property="password" typeHandler="com.ai.persistence.EncryptedStringTypeHandler"/>
+    </resultMap>
+    <insert id="insert">
+        INSERT INTO datasource_config (datasource_id,
+            name,
+            type,
+            host,
+            port,
+            db_name,
+            username,
+            password,
+            description,
+            enabled,
+            tenant_id,
+            user_id,
+            created_at,
+            updated_at)
+        VALUES (#{datasourceId},
+            #{name},
+            #{type},
+            #{host},
+            #{port},
+            #{dbName},
+            #{username},
+            #{password,typeHandler=com.ai.persistence.EncryptedStringTypeHandler},
+            #{description},
+            #{enabled},
+            #{tenantId},
+            #{userId},
+            #{createdAt},
+            #{updatedAt})
+    </insert>
+    <update id="update">
+        UPDATE datasource_config SET name = #{name},
+            type = #{type},
+            host = #{host},
+            port = #{port},
+            db_name = #{dbName},
+            username = #{username},
+            password = #{password,typeHandler=com.ai.persistence.EncryptedStringTypeHandler},
+            description = #{description},
+            enabled = #{enabled},
+            tenant_id = #{tenantId},
+            user_id = #{userId},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE datasource_id = #{datasourceId}
+    </update>
+    <select id="findById" resultMap="entity">
+        SELECT * FROM datasource_config WHERE datasource_id = #{id}
+    </select>
+    <select id="existsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM datasource_config WHERE datasource_id = #{id})
+    </select>
+    <select id="findAll" resultMap="entity">
+        SELECT * FROM datasource_config
+    </select>
+    <select id="findAllById" resultMap="entity">
+        SELECT * FROM datasource_config WHERE
+        <choose>
+            <when test="ids != null and !ids.isEmpty()">
+                datasource_id IN
+                <foreach collection="ids" item="id" open="(" close=")" separator=",">
+                    #{id}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </select>
+    <delete id="deleteById">
+        DELETE FROM datasource_config WHERE datasource_id = #{id}
+    </delete>
+    <select id="findByTenantIdAndEnabledTrue" resultMap="entity">
+        SELECT * FROM datasource_config WHERE tenant_id = #{tenantId} AND enabled = true
+    </select>
+    <select id="findByDatasourceIdAndTenantId" resultMap="entity">
+        SELECT * FROM datasource_config WHERE datasource_id = #{datasourceId} AND tenant_id = #{tenantId}
+    </select>
+    <sql id="listFilter">
+        (tenant_id = #{filter.tenantId}<if test="filter.includeShared"> OR tenant_id = 'default'</if>)
+        <if test="filter.enabledOnly">AND enabled = true</if>
+        <if test="filter.query != ''">
+            AND (LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(name, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(description, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(type, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(host, ''))) > 0 OR LOCATE(LOWER(#{filter.query}), LOWER(COALESCE(db_name, ''))) > 0)
+        </if>
+    </sql>
+    <select id="findListPage" resultMap="entity">
+        SELECT * FROM datasource_config WHERE <include refid="listFilter"/>
+        ORDER BY created_at DESC, datasource_id DESC
+        LIMIT #{pageable.pageSize} OFFSET #{pageable.offset}
+    </select>
+    <select id="countList" resultType="long">
+        SELECT COUNT(*) FROM datasource_config WHERE <include refid="listFilter"/>
+    </select>
+</mapper>

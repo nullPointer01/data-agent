@@ -24,23 +24,20 @@ public class AsyncConfig {
         return new ContextPropagatingTaskDecorator();
     }
 
-    @Bean(name = "indexTaskExecutor")
-    public Executor indexTaskExecutor(TaskDecorator taskDecorator) {
-        return buildExecutor(2, 2, 10, "index-task-", taskDecorator);
+    /** 事务提交后只发送任务引用；正文和授权不通过线程上下文传给消费者。 */
+    @Bean(name = "backgroundSignalExecutor")
+    public Executor backgroundSignalExecutor() {
+        return buildExecutor(1, 1, 256, "task-signal-", runnable -> runnable);
     }
 
-    @Bean(name = "sseExecutor")
-    public AsyncTaskExecutor sseExecutor(
-            @Value("${app.sse.core-pool-size:2}") int corePoolSize,
-            @Value("${app.sse.max-pool-size:8}") int maxPoolSize,
-            @Value("${app.sse.queue-capacity:100}") int queueCapacity,
+    /** 后台普通 Run 占用独立有界池；HTTP SSE 仅负责订阅和写出。 */
+    @Bean(name = "agentRunExecutor")
+    public AsyncTaskExecutor agentRunExecutor(
+            @Value("${app.agent.background.core-pool-size:2}") int corePoolSize,
+            @Value("${app.agent.background.max-pool-size:8}") int maxPoolSize,
+            @Value("${app.agent.background.queue-capacity:100}") int queueCapacity,
             TaskDecorator taskDecorator) {
-        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "sse-", taskDecorator);
-    }
-
-    @Bean(name = "memoryExtractionExecutor")
-    public Executor memoryExtractionExecutor(TaskDecorator taskDecorator) {
-        return buildExecutor(1, 2, 100, "memory-extraction-", taskDecorator);
+        return buildExecutor(corePoolSize, maxPoolSize, queueCapacity, "agent-run-", taskDecorator);
     }
 
     /** MVC 订阅 Flux 后的 Servlet 写入仍可能阻塞，使用独立有界池，避免占用模型或 Run 启动池。 */

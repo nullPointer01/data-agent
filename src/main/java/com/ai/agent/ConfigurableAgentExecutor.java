@@ -279,6 +279,10 @@ public class ConfigurableAgentExecutor {
                 .orElseThrow(() -> new IllegalStateException("Agent 能力作用域未建立"));
         Set<String> allowedTools = new LinkedHashSet<>(snapshot.callableToolNames());
         allowedTools.retainAll(requestPlan.candidateTools());
+        Set<String> initialTools = Set.copyOf(allowedTools);
+        if (initialTools.contains(SkillCatalog.ACTIVATE_TOOL)) {
+            skills.dependencies().stream().filter(snapshot.callableToolNames()::contains).forEach(allowedTools::add);
+        }
         // 执行边界再次检查上下文合同，历史兼容字段或候选错误不能恢复已关闭的检索能力。
         if (!requestPlan.contextPlan().allowsSemanticMemoryTool()) {
             allowedTools.remove(AgentToolCandidateSelector.SEARCH_MEMORY_TOOL);
@@ -286,7 +290,9 @@ public class ConfigurableAgentExecutor {
         if (!requestPlan.contextPlan().allowsKnowledgeTool()) {
             allowedTools.remove(AgentToolCandidateSelector.SEARCH_KNOWLEDGE_TOOL);
         }
-        return toolInvoker.buildExactToolSpecifications(allowedTools);
+        return toolInvoker.buildExactToolSpecifications(allowedTools).stream()
+                .map(spec -> initialTools.contains(spec.name()) ? spec : spec.toBuilder()
+                        .addMetadata(com.ai.skill.SkillToolDependencies.SCOPED_ONLY, true).build()).toList();
     }
 
     private void logCapabilitySnapshot(AgentProfile profile, AgentCapabilityBindingSnapshot snapshot) {

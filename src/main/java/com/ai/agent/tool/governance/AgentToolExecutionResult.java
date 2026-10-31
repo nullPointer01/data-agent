@@ -13,7 +13,8 @@ public record AgentToolExecutionResult(
         int attempts,
         long durationMs,
         AgentToolSafePayload payload,
-        AgentToolApprovalContext approvalContext) {
+        AgentToolApprovalContext approvalContext,
+        java.util.Map<String, Object> attributes) {
 
     public AgentToolExecutionResult {
         toolCallId = toolCallId == null ? "" : toolCallId;
@@ -22,6 +23,19 @@ public record AgentToolExecutionResult(
             throw new IllegalArgumentException("工具执行状态不能为空");
         }
         payload = payload == null ? new AgentToolSafePayload("", false, false, 0) : payload;
+        attributes = attributes == null ? java.util.Map.of() : java.util.Map.copyOf(attributes);
+    }
+
+    public AgentToolExecutionResult(String toolCallId, String toolName, AgentToolExecutionStatus status,
+            boolean retriable, int attempts, long durationMs, AgentToolSafePayload payload,
+            AgentToolApprovalContext approvalContext) {
+        this(toolCallId, toolName, status, retriable, attempts, durationMs, payload, approvalContext, java.util.Map.of());
+    }
+
+    /** 属性仅由服务端执行器产生，不从模型输出文本推测技能激活状态。 */
+    public AgentToolExecutionResult withAttributes(java.util.Map<String, Object> metadata) {
+        return new AgentToolExecutionResult(toolCallId, toolName, status, retriable, attempts, durationMs,
+                payload, approvalContext, metadata);
     }
 
     public AgentToolExecutionResult(String toolCallId,

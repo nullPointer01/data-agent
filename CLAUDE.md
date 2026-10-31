@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## 项目定位
 
-Data Agent 是一个通用个人 Agent 与受控专家协作的 Java Agent Harness，后端基于 Spring Boot 3.2、Spring Security、JPA、LangChain4j、Milvus，前端基于 React + Vite。数据分析是可选能力，系统包含：
+Data Agent 是一个通用个人 Agent 与受控专家协作的 Java Agent Harness，后端基于 Spring Boot 3.2、Spring Security、MyBatis、Flyway、LangChain4j、Milvus，前端基于 React + Vite。数据分析是可选能力，系统包含：
 
 - 智能对话与 SSE 输出
 - ReAct 工具调用
@@ -55,12 +55,16 @@ docker-compose up -d
 local profile 默认配置在 `src/main/resources/application-local.yml`。`application.yml`、`application-local.yml` 和 `application-prod.yml` 均使用显式字面值，不依赖 IDEA Environment variables 或部署变量。
 
 - MySQL 是业务主库，默认连接 `jdbc:mysql://localhost:3306/data_agent`，用户名 `root`。
+- 主库持久化统一使用 MyBatis Mapper + `src/main/resources/mappers/*.xml`；Repository 是仓储命名，不再继承 JpaRepository。事务由 Spring JDBC 事务管理器统一管理。
+- 启动时 Flyway 执行 `src/main/resources/db/migration`：新库建表，已有非空库按版本 0 建立基线并执行增量 SQL。改表需新增版本脚本，不能依赖实体自动建表或修改已执行脚本。学习入口：[MyBatis 主库持久化](docs/核心逻辑详解/MyBatis主库持久化.md)。
 - Milvus 是强依赖，默认 `localhost:19530`，collection 为 `data_agent_vectors`。应用启动会校验 Milvus 可达；向量写入/检索使用懒加载的 embedding store，避免启动阶段被 collection load 卡住。
+- local Embedding 使用 macOS 原生 Ollama 的 `bge-m3:latest`，地址 `http://localhost:11434/v1`，1024 维；先启动 Ollama。local 关闭云端 Cross-Encoder，使用现有规则排序。prod 保留硅基流动 Embedding/精排。
 - Redis 依赖存在，但 local profile 关闭 Redis repository 扫描；当前主链路不要求 Redis 必须先启动。
 - Elasticsearch 是 RAG 唯一的 BM25/全文检索实现，默认地址 `localhost:9200`。不可用时健康检查明确失败，不回退到 SQL LIKE。
+- RabbitMQ 用于索引、后台记忆提取及批准动作唤醒，Spring AMQP 监听容器负责消费；本地 `docker compose up -d rabbitmq`。完整问答不再向量化。MySQL 任务表是恢复依据，事务提交后发任务 ID，每分钟补偿，索引/提取五次失败进入死信；审批恢复复用原有界池/CAS/租约并每分钟补偿。审批页面通知另走每实例临时队列广播。显式记忆工具需要绑定。详见 [记忆与后台任务技术方案](docs/核心逻辑详解/记忆与后台任务技术方案.md) 和 [审批事件与状态订阅](docs/核心逻辑详解/审批事件与状态订阅.md)。
 - 模型 API 需要在后台模型配置中配置。Profile 里的默认 key 是占位值，只能用于启动，不能保证真实模型调用成功。
 
-本地 MySQL 初始化：
+本地 MySQL 只需预先创建目标数据库。正常启动由 Flyway 初始化表；下面是可选的历史手工初始化入口：
 
 ```bash
 mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
@@ -68,10 +72,14 @@ mysql -uroot -pzym190457 -hlocalhost data_agent < sql/init.sql
 
 ## Profile 约定
 
-- `local`：默认 profile，本地 MySQL + Milvus。适合 IDE 直接启动。
-- `prod`：线上 profile，当前与 local 使用相同的固定连接、密钥和功能开关。
+- `local`：默认 profile，本地 MySQL + Milvus + Ollama Embedding。适合 IDE 直接启动。
+- `prod`：线上 profile，保留固定配置及云端 Embedding/精排，与 local 的向量服务配置不同。
 
 ## 前端
+
+服务端分页已完成三批：用户、角色/权限、Agent/专家、模型（含个人最小选项）、Skill/历史、数据源、知识/资料中心、审批、评测运行/样本和 Token 明细使用 page/size；审计、追踪、个人记忆使用 size/after。统一返回 items；useServerList 与 DataTable.serverPagination 不二次切片，搜索与筛选在 SQL 执行。Flyway V5/V6 增加分页索引，尚未执行，第三批无新增迁移。Agent 归属按本页 ID 批量解析，筛选按需分页搜索账号；角色/模型等配置通过 loadListOptions 逐页读取，能力目录通过 type+游标读取，全部成功才允许保存，不能把首个候选页当成完整授权。知识/资源统计使用 SQL 聚合，评测摘要和 samples 分离；运行时完整能力目录与页面查询分开，保留原授权实现，其全量快照成本仍待优化。接口协议、查询边界和人工验收见 [列表分页与查询边界](docs/核心逻辑详解/列表分页与查询边界.md)。仅完成静态检查，尚未执行本轮编译/运行验收。
+
+会话生命周期由 `com.ai.conversation` 管理：归档可读、恢复后可继续对话；删除后拒绝消息/Run 证据访问与写回并取消关联未完成任务。Flyway V4 增加生命周期字段/索引和旧 CLOSED 迁移，默认 30 天后按小时有限批清理。正常/归档会话及个人长期记忆不自动删除。侧栏和消息历史均按游标加载，模型仍只预填最近 50 条。详见 [会话归档删除与保留](docs/核心逻辑详解/会话归档删除与保留.md)。
 
 前端源码在 `frontend/src`，Vite 构建产物输出到 `src/main/resources/static`，由 Spring Boot 托管。
 
@@ -141,7 +149,7 @@ HTTP 认证只把 JWT subject 当作用户查询键。每个受保护请求都�
 
 - `/api/v1/resources/**`、租户级 Token 统计/明细/重置、RAG 设置/健康/评估/benchmark 属于管理控制面，要求 `ADMIN`。
 - `/api/v1/rag/retrieve`、个人 Token 汇总/剩余额度和 `/api/v1/my/**` 保持普通登录用户可用。
-- `/api/v1/my/models` 是个人 Agent 的模型选择目录，只返回模型标识、展示名、模型名、厂商和默认标记，不返回 API Key 或 Base URL。
+- `/api/v1/my/models` 是个人 Agent 的分页模型选项（page/size/query，返回 items），SQL 只读模型标识、展示名、模型名、厂商和默认标记，不读取 API Key 或 Base URL。`/api/v1/my/capabilities` 必填 type=TOOL/SKILL/SUB_AGENT，以 size/after 返回游标候选页；空页仍需判断 hasMore，运行时目录不得使用页面分页结果。
 - 普通注册由 `app.security.registration.enabled` 控制，租户固定读取 `app.security.registration.tenant-id`；客户端传入的 tenantId 不生效。基础配置默认关闭，local 显式开启。
 - 个人知识同步的读取、保存、删除和手动触发必须同时匹配 `knowledgeId + tenantId + createdBy`。
 
@@ -160,19 +168,22 @@ HTTP 认证只把 JWT subject 当作用户查询键。每个受保护请求都�
 - Factory 使用 LangChain4j 1.20.2 构建 OpenAI-compatible 同步和 Streaming 客户端；同步 SDK 重试固定关闭，由 `ModelRetryExecutor` 管理业务重试。同步客户端启用 strictJsonSchema，只对实际携带 Schema 的请求生效。
 - 聊天和正常工具对话通过 `AgentChatService` 的 AiServices、`@SystemMessage`、事件 Flux 与独立 ChatMemory 执行；窗口只预填历史并启用系统消息置顶。工具以受治理的 ToolExecutor Map 注册，禁止直接 `.tools(agentTools)`。`GovernedToolSession` 对完整响应整批准入，过滤提前执行工具的流事件，有审批则同组零工具执行并暂停。HTTP 用 MVC 的 `Flux<ServerSentEvent<String>>`，有界缓冲、取消和绝对时限；不等于全系统 WebFlux。模型调用仍经过 `McpModelService`，窗口不另行持久化。见 [框架集成与消息生命周期](docs/核心逻辑详解/框架集成与消息生命周期.md)。
 - Router/语义记忆提取使用 `StructuredAssistantFactory` 的类型化 AiServices 与严格 OutputGuardrail，必填字段由注解生成 Schema，业务授权与原文证据校验不可删除。
-- 专家委派经 `AgentDelegationToolService -> AgenticDelegationWorkflow` 使用官方 agentic 顺序工作流（规划→执行）；节点复用原治理服务，AgenticScope 为单次临时状态。绑定/租户/启用校验和防环路/深度检查在进入工作流前执行，预算/取消类型不能被框架异常包装吞掉。`app.agent.orchestration.engine` 可切换 TOOL_CALLING / SUPERVISOR（local 默认后者）；Supervisor 仅用于本次已授权委派的 ORCHESTRATED，嵌套专家仍走原路径。框架负责选节点，所有专家经原 Tool Pipeline；每次决策计入根 Run 迭代，不使用框架次数耗尽后返回最后结果的隐式成功。`SupervisorExecutionScope` 随 `TaskContextSnapshot` 传播；整图恢复未实现时在审批暂停前明确拒绝，不能持久化只有叶节点的现场。同步协作后以 AiServices Flux 进行一次流式汇总。默认通用角色与公共规则统一在 `AgentSystemPrompts`，保留自定义专家角色。
+- 专家委派经 `AgentDelegationToolService -> AgenticDelegationWorkflow` 使用官方 agentic 顺序工作流（规划→执行）；节点复用原治理服务。绑定/租户/启用校验和防环路/深度检查在进入工作流前执行，预算/取消类型不能被框架异常包装吞掉。`app.agent.orchestration.engine` 可切换 TOOL_CALLING / SUPERVISOR（local 默认后者）；Supervisor 仅用于本次已授权委派的 ORCHESTRATED，嵌套专家仍走原路径。框架负责选节点，所有专家经原 Tool Pipeline；每次决策计入根 Run 迭代，不使用框架次数耗尽后返回最后结果的隐式成功。`SupervisorCheckpointState` 随 `TaskContextSnapshot` 传播，通过官方 Scope 序列化保存完成事实、父决策消息和待处理节点，与叶原生工具现场一起进入 v3 加密 Checkpoint。批准后先续跑直接叶节点，再以 beforeCall 导入应用事实进入官方 Supervisor 新决策段，不复制 Planner 循环、不依赖私有游标。重验原节点目录/归属/当前权限并收窄能力，新绑定不扩权；相同节点/任务复用结果，不承诺语义去重。直接节点可二次暂停，更深层嵌套审批仍拒绝，不能保存不完整父现场。暂停信号须跨委派 Pipeline 透传，不转成失败或普通结果。同步协作后以 AiServices Flux 进行一次流式汇总。默认通用角色与公共规则统一在 `AgentSystemPrompts`，保留自定义专家角色。详见 [Supervisor检查点与审批续跑](docs/核心逻辑详解/Supervisor检查点与审批续跑.md)，尚未编译/运行验收。
 - 模型、Embedding、Reranker 的重试/熔断由 Resilience4j `ExternalCallPolicy` 管理。CHAT 和工具流的 Future 贯通至 SSE，完成回调通过独立有界池和 `TaskContextSnapshot` 恢复身份、Run 与能力。审批后的原生消息仅由 `DurableToolContinuation` 续跑，与助手共用治理 Session，不伪造用户消息恢复。
 - `ModelHttpClient` 只负责可选的 `GET /models`。发现失败不阻止手动填写模型 ID，也不作为保存门禁。
-- `POST /api/v1/models/probe` 会真实执行一次最多 32 输出 token 的 Chat 请求，临时客户端不缓存、不重试、不保存提示词或回复；每次探测可能产生少量厂商费用。
+- `POST /api/v1/models/probe` 会真实执行一次最多 32 输出 token 的 Chat 请求，临时客户端不缓存、不重试、不保存提示词或回复；接入日配额预占/结算，记为“连接探测”，每次探测可能产生少量厂商费用。
 
 OpenAI-compatible 只表示当前项目复用 Chat 基线协议，不代表各厂商的 Tool Calling、JSON Schema、多模态或推理参数完全一致，也不覆盖 Claude Native、Bedrock、Vertex AI、盘古等专有协议。Custom 可连接 OpenAI 官方、GPT 代理网关或其他兼容端点，并允许无鉴权的自托管服务不填 API Key；公网目录厂商按目录要求必须提供。私网端点仍受 SSRF 防护控制，仅在受控环境显式设置 `app.security.outbound.allow-private-network=true`。
 
 ## Agent 执行链路
 
+2026-10-14 Skill 程序性记忆：MySQL 保留技能权威存储，V9 新增工具依赖、个人私有归属、候选审核与来源证据，尚未执行。官方 Skills 动态 ToolProvider 按激活属性开放依赖，初始工具与潜在授权池分开，仍取 Agent 权限/上下文交集并经过原 Pipeline；不得因依赖声明自动授权。Checkpoint v4（读取 v1～v3）保存初始工具和激活属性，Supervisor 父工具同样保留隐藏标记。proposeSkill 必须显式绑定，只提议本人原文方法；聊天完成后可提炼经验。候选未启用、未共享，用户在上下文编辑确认后发布并另行绑定。管理员生成只返回草稿，旧生成即启用/手工 JSON 截取已删除。无每轮学习调用或新定时扫描，尚未编译/运行验收。见 [Skill 程序性记忆与工具依赖](docs/核心逻辑详解/Skill程序性记忆与工具依赖.md)。
+
 主入口：
 
 - `POST /api/v1/analysis/analyze`
-- `POST /api/v1/analysis/analyze/stream`
+- `POST /api/v1/agent-runs`，请求 `{requestKey,request}`，返回 Run ID。
+- `GET /api/v1/agent-runs/{runId}/events?after=...`，订阅持久 SSE 日志。
 
 `AgentRuntimeService` 是薄入口，核心治理在 `AgentRunCoordinator`。每个有效请求先由 `AgentRunRouteResolver`
 选择显式 `agentId` 或当前用户默认 Agent，再创建唯一 `runId` 和 `AgentRunContext`，统一进入
@@ -187,11 +198,15 @@ Agent 配置不提供独立试运行入口。保存并设为默认配置后，�
 `AgentProfile` 没有固定业务类型。模型、System Prompt、Capability 绑定和 execution mode 是权威配置；
 “知识 Agent”“数据 Agent”“报告 Agent”只描述用户如何组合和使用能力，不能在代码中引入互斥类型分支。
 
-同步和流式共享路线与生命周期。Run 使用 timeout、iteration、model-call、tool-call、Token 五类服务端预算；深层模型/工具通过 `AgentRunScope` 准入。SSE 由 `AnalysisStreamService` 协调，通过类型化 `AgentEventSink` 保留旧事件协议，并在断开、超时或显式停止时协作式取消节点内 Run。`runId` 同时作为现有 Trace 的 `traceId`。
+同步和后台 Run 共用 Coordinator 与五类预算。产品聊天先持久提交、再按 SSE id 订阅；断连/超时只关闭连接，显式停止先写主库，模型/工具和结果写回验证执行租约。Run、加密请求、幂等键与占位消息同事务提交，MQ 唤醒独立 agentRunExecutor，当前用户/会话/Agent 重新鉴权后只首次领取执行。复用提交时 Run ID/预算，排队不计活动耗时。事件按文本块合并、加密保存，每 Run 8192 条/2MiB、单条 128KiB；引用广播复用审批通道，心跳不查库，最长 60 秒重连补偿。已开始普通 Run 失租后 INTERRUPTED，不重放写工具；审批沿用原 Checkpoint/恢复租约。执行段结束清空请求，日志默认 7 天由小时清理器分批回收，幂等键保留到会话清理。新增 V8 未执行；删除 AnalysisStreamService、旧 POST SSE 解析器和无人调用流式门面。审批恢复段全量事件日志仍未实现，eventHistoryComplete 仍 false；Supervisor 只支持直接节点审批边界续跑。详见 [后台Run与事件续读](docs/核心逻辑详解/后台Run与事件续读.md)，尚未编译或运行验收。`runId` 同时作为 Trace 的 `traceId`。
+
+每日 Token 配额独立于根 Run：`TokenQuotaGuard -> TokenQuotaService` 以租户/用户/固定时区日账本行锁原子预占，每次实际尝试单独结算，网络等待在事务外。官方 ChatRequest Builder 收窄输出上限；完整响应按厂商用量或估算记账，发送后无法确认的用量按整个预占额记 UNKNOWN，迟到完整响应可校正日余额但不重启 Run。日账本、预占终态与明细同事务写入，禁止旁路 CRUD；记账故障不重试模型。连接探测同样受配额限制。本人调用/查余额时限量恢复最多 25 个过期单，无新增全库定时扫描。Flyway V7 新增两表与明细字段，尚未执行；统计须区分真实、估算、预扣和历史。输入估算及厂商上限不能保证数学硬限额，UNKNOWN 无账单 API/人工核销。详见 [每日Token配额与结算](docs/核心逻辑详解/每日Token配额与结算.md)。本轮尚未编译或运行验收。
+
+上下文超限才启用有原文依据的任务摘录：历史聊天整轮分组，当前任务按完整工具请求/结果分组，系统/目标/最近证据/未完成协议及 Skill 指令受保护。`TaskContextCompactor` 通过回调使用官方 AiServices、原生 Schema 和统一严格 Guardrail；摘录须匹配源位置与连续原文，普通 AiMessage 不升级为系统指令。无工具/无摘要递归；模型调用计入日配额与根 Run，生成后重新核算剩余预算。根控制器内按源指纹复用，默认两次逻辑生成且同批不反复尝试，失败按协议组裁剪，取消/配额/账务异常继续终止。local/prod 均开启；新摘要只在活动 Run 内存，不改聊天原文/审批 Checkpoint，不新建表；跨进程可重新生成且仍受持久预算约束。Trace/SSE/个人 Run 只记录安全计数，原文匹配不保证语义完整或完全防注入。详见 [长任务上下文摘要](docs/核心逻辑详解/长任务上下文摘要.md)，尚未运行验收。
 
 每个 Run 创建时还会根据持久化用户、租户和启用 RBAC 权限固化工具授权快照，并创建有界 Tool Journal。模型提出的工具名和参数一律视为不可信；实际执行必须通过 Registry、Run 权限、当前 Agent 精确白名单和风险策略的交集。
 
-`app.agent.durable` 在 local/prod 中均显式开启持久化审批和隔离沙箱工具。开启后，ReAct 审批工具可以将 Run 暂停为 `WAITING_APPROVAL`，把版本化消息和剩余预算使用 AES-GCM 加密写入 MySQL；批准后由数据库租约 worker 领取为 `RESUMING`，重读当前双方 RBAC、Tool Registry、allowlist 与风险策略，再通过原 Tool Pipeline 执行并继续循环。人工等待不消耗 active timeout，审批 TTL 独立计算；旧 SSE 不回放，客户端通过 Run 查询接口获取恢复结果。
+`app.agent.durable` 在 local/prod 中均显式开启持久化审批和隔离沙箱工具。开启后，ReAct 审批工具可以将 Run 暂停为 `WAITING_APPROVAL`，把版本化消息和剩余预算使用 AES-GCM 加密写入 MySQL，并同事务保存等待消息；批准后 MQ 唤醒原数据库租约 worker，领取为 `RESUMING`，重读当前双方 RBAC、Tool Registry、allowlist 与风险策略，再通过原 Tool Pipeline 执行并继续循环。人工等待不消耗 active timeout，审批 TTL 独立计算；审批恢复段的 SSE 不回放，页面接收独立审批刷新通知再查询 Run。recovery-interval=PT1M 补偿恢复/过期，scan-interval=PT15S 只续租本机活动工作。用户/审批人订阅分别复核本人会话/租户权限，有界缓冲、断线清理和一分钟重连状态同步；审批通知没有 Outbox；普通后台 Run 已接入持久事件续读，审批恢复段尚未合并。本轮仅静态检查，未运行验收。详见 [审批事件与状态订阅](docs/核心逻辑详解/审批事件与状态订阅.md)。
 
 `updateHotelPrice` 是 local/prod 默认启用的隔离演示工具，只写 `hotel_rate_sandbox`。它用 `approvalId + toolCallId` 唯一键防止重复写入，不代表真实酒店改价，也不证明跨系统 exactly-once。`app.encryption.key` 变化会让旧 Checkpoint 无法解密，密钥轮换必须使用后续的多版本密钥方案。
 
@@ -273,7 +288,7 @@ RAG 相关代码在 `com.ai.rag`。全文召回固定使用 Elasticsearch BM25�
 
 记忆有 working、short-term、long-term 等层级，支持压缩、衰减、保留策略和用户画像刷新。短期摘要不参与画像；长期 `PREFERENCE / ENTITY / CONCLUSION` 使用稳定 `semanticKey` 幂等写入。C004 将显式/隐式提取统一为一次 JSON 模型理解及严格准入：只有 CROSS_SESSION 的用户陈述/真实保存请求且有原文证据才能写入，不能凭“记住/偏好”等词直接入库。明确“请记住：”格式同步等待，其他对话异步提取，二者共用开关和校验；元数据版本 semantic-v2。`user_profile` 只是 `PREFERENCE / ENTITY` 的可重建投影，用户修正或删除语义记忆后必须完整重建。详细链路见 `docs/核心逻辑详解/用户语义记忆.md`。
 
-模型压缩默认关闭，语义提取默认开启：`app.memory.model-compression-enabled=false`、`app.memory.semantic-extraction-enabled=true`。
+记忆条目模型压缩默认关闭，语义提取默认开启：`app.memory.model-compression-enabled=false`、`app.memory.semantic-extraction-enabled=true`；这与超限才触发的活动 Run 任务摘要是不同开关。
 
 ## 向量和 Embedding
 

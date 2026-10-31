@@ -1,14 +1,5 @@
 package com.ai.agent.eval;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-
 import java.time.Instant;
 import java.util.UUID;
 
@@ -17,84 +8,51 @@ import java.util.UUID;
  *
  * @author data-agent
  */
-@Entity
-@Table(name = "agent_eval_result", indexes = {
-        @Index(name = "idx_agent_eval_result_run", columnList = "tenant_id,eval_run_id,created_at"),
-        @Index(name = "idx_agent_eval_result_agent_run", columnList = "tenant_id,agent_run_id")
-}, uniqueConstraints = {
-        @UniqueConstraint(name = "uk_agent_eval_result_sample", columnNames = {"eval_run_id", "sample_id"})
-})
 public class AgentEvalResultEntity {
 
-    @Id
-    @Column(name = "result_id", nullable = false, length = 64)
     private String resultId;
 
-    @Column(name = "tenant_id", nullable = false, length = 64)
     private String tenantId;
 
-    @Column(name = "eval_run_id", nullable = false, length = 64)
     private String evalRunId;
 
-    @Column(name = "sample_id", nullable = false, length = 64)
     private String sampleId;
 
-    @Column(name = "sample_key", nullable = false, length = 64)
     private String sampleKey;
 
-    @Column(name = "agent_run_id", length = 64)
     private String agentRunId;
 
-    @Column(name = "trace_id", length = 64)
     private String traceId;
 
-    @Column(name = "observed_intent", length = 64)
     private String observedIntent;
 
-    @Column(name = "observed_mode", length = 32)
     private String observedMode;
 
-    @Lob
-    @Column(name = "observed_context_plan_json", columnDefinition = "TEXT")
     private String observedContextPlanJson;
 
-    @Column(name = "outcome_status", nullable = false, length = 32)
     private String outcomeStatus;
 
-    @Column(name = "reason_code", length = 128)
     private String reasonCode;
 
-    @Lob
-    @Column(name = "outcome_evaluation_json", columnDefinition = "LONGTEXT")
     private String outcomeEvaluationJson;
 
-    @Lob
-    @Column(name = "observed_tools_json", columnDefinition = "TEXT")
     private String observedToolsJson;
 
-    @Column(name = "approval_observed")
     private Boolean approvalObserved;
 
-    @Column(name = "invalid_loop_observed")
     private Boolean invalidLoopObserved;
 
-    @Column(name = "duration_ms", nullable = false)
     private long durationMs;
 
-    @Column(name = "token_usage", nullable = false)
     private long tokenUsage;
 
-    @Column(name = "token_usage_estimated", nullable = false)
     private boolean tokenUsageEstimated;
 
-    @Column(name = "error_summary", length = 1024)
     private String errorSummary;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @PrePersist
-    protected void onCreate() {
+    public void onCreate() {
         resultId = resultId == null ? UUID.randomUUID().toString() : resultId;
         createdAt = createdAt == null ? Instant.now() : createdAt;
     }

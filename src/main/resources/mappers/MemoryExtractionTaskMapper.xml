@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ai.memory.MemoryExtractionTaskMapper">
+    <resultMap id="task" type="com.ai.memory.MemoryExtractionTask">
+        <constructor>
+            <idArg column="task_id" javaType="java.lang.String"/>
+            <arg column="tenant_id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="session_id" javaType="java.lang.String"/>
+            <arg column="model_id" javaType="java.lang.String"/>
+            <arg column="source_message_id" javaType="_long"/>
+            <arg column="revision" javaType="_long"/>
+            <arg column="payload" javaType="java.lang.String"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="lease_owner" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <insert id="insert">
+        INSERT IGNORE INTO memory_extraction_task(task_id,tenant_id,user_id,session_id,model_id,
+            source_message_id,revision,payload)
+        VALUES(#{task.id},#{task.tenantId},#{task.userId},#{task.sessionId},#{task.modelId},
+            #{task.sourceMessageId},#{task.revision},#{task.payload})
+    </insert>
+    <sql id="readyCondition">
+        ((status IN ('PENDING','RETRY') AND next_attempt_at &lt;= CURRENT_TIMESTAMP)
+        OR (status='RUNNING' AND lease_until &lt; CURRENT_TIMESTAMP))
+    </sql>
+    <select id="ready" resultMap="task">
+        SELECT * FROM memory_extraction_task WHERE <include refid="readyCondition"/>
+        ORDER BY next_attempt_at,source_message_id LIMIT #{limit}
+    </select>
+    <select id="findReady" resultMap="task">
+        SELECT * FROM memory_extraction_task WHERE task_id=#{id} AND <include refid="readyCondition"/>
+    </select>
+    <update id="claim">
+        UPDATE memory_extraction_task SET status='RUNNING',lease_owner=#{owner},lease_until=#{deadline},
+            attempts=attempts+1,updated_at=CURRENT_TIMESTAMP
+        WHERE task_id=#{id} AND <include refid="readyCondition"/>
+    </update>
+    <update id="renew">
+        UPDATE memory_extraction_task SET lease_until=#{deadline}
+        WHERE task_id=#{task.id} AND lease_owner=#{task.owner} AND status='RUNNING'
+            AND lease_until &gt;= CURRENT_TIMESTAMP
+    </update>
+    <update id="finish">
+        UPDATE memory_extraction_task SET status=#{status},attempts=#{attempts},next_attempt_at=#{next},
+            last_error=#{error},lease_owner=NULL,lease_until=NULL,updated_at=CURRENT_TIMESTAMP,
+            payload=CASE WHEN #{status}='SUCCEEDED' THEN NULL ELSE payload END
+        WHERE task_id=#{task.id} AND lease_owner=#{task.owner} AND lease_until &gt;= CURRENT_TIMESTAMP
+    </update>
+    <select id="lockOwned" resultType="string">
+        SELECT task_id FROM memory_extraction_task
+        WHERE task_id=#{task.id} AND status='RUNNING' AND lease_owner=#{task.owner}
+          AND lease_until &gt;= CURRENT_TIMESTAMP FOR UPDATE
+    </select>
+    <delete id="purge">
+        DELETE FROM memory_extraction_task WHERE status='SUCCEEDED' AND updated_at &lt; #{before} LIMIT 100
+    </delete>
+</mapper>

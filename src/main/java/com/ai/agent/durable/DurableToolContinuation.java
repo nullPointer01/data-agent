@@ -36,7 +36,7 @@ public class DurableToolContinuation {
         if (restored.isEmpty() || !(restored.get(restored.size() - 1) instanceof ToolExecutionResultMessage)) {
             throw new IllegalArgumentException("审批续跑必须从已执行动作的原生结果开始");
         }
-        var session = tools.open(specs, new ArrayList<>(), null, invocation, AgentToolChoice.AUTO);
+        var session = tools.open(specs, new ArrayList<>(), null, invocation, AgentToolChoice.AUTO, modelId);
         var model = session.chatModel(models.chatModel(modelId));
         List<ChatMessage> messages = new ArrayList<>(restored);
         try {
@@ -51,7 +51,9 @@ public class DurableToolContinuation {
                 }
                 messages.add(message);
                 for (var request : message.toolExecutionRequests()) {
-                    messages.add(ToolExecutionResultMessage.from(request, session.execute(request)));
+                    var result = session.executeResult(request);
+                    messages.add(ToolExecutionResultMessage.builder().id(request.id()).toolName(request.name())
+                            .text(result.resultText()).attributes(result.attributes()).build());
                 }
             }
         } catch (RuntimeException error) {

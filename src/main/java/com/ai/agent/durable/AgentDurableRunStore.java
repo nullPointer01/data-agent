@@ -5,6 +5,8 @@ import com.ai.agent.runtime.AgentRunLimits;
 import com.ai.agent.runtime.AgentRunSnapshot;
 import com.ai.agent.runtime.AgentRunStatus;
 import com.ai.agent.runtime.AgentRunTerminationReason;
+import com.ai.conversation.ConversationAccessGuard;
+import com.ai.agent.approval.ApprovalEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,11 +23,16 @@ public class AgentDurableRunStore {
 
     private final AgentRunStateRepository repository;
     private final AgentDurableRuntimeProperties properties;
+    private final ConversationAccessGuard conversationAccess;
+    private final ApprovalEventPublisher approvalEvents;
 
     public AgentDurableRunStore(AgentRunStateRepository repository,
-            AgentDurableRuntimeProperties properties) {
+            AgentDurableRuntimeProperties properties, ConversationAccessGuard conversationAccess,
+            ApprovalEventPublisher approvalEvents) {
         this.repository = repository;
         this.properties = properties;
+        this.conversationAccess = conversationAccess;
+        this.approvalEvents = approvalEvents;
     }
 
     public boolean isEnabled() {
@@ -42,6 +49,7 @@ public class AgentDurableRunStore {
         if (!isEnabled()) {
             throw new IllegalStateException("持久化 Agent Runtime 未启用");
         }
+        conversationAccess.lockActive(context.sessionId(), context.tenantId(), context.userId());
         AgentRunLimits limits = context.control().getLimits();
         AgentRunStateEntity entity = new AgentRunStateEntity();
         entity.setRunId(context.runId());
@@ -58,7 +66,7 @@ public class AgentDurableRunStore {
         entity.setMaxToolCalls(limits.maxToolCalls());
         entity.setMaxTokens(limits.maxTokens());
         entity.setRemainingActiveTimeoutMs(limits.timeout().toMillis());
-        return repository.saveAndFlush(entity);
+        return repository.save(entity);
     }
 
     @Transactional
@@ -77,6 +85,7 @@ public class AgentDurableRunStore {
                 transition.targetStatus().isTerminal() ? now : null,
                 now,
                 current.getVersion());
+        if (changed == 1) approvalEvents.changed(current);
         return changed == 1;
     }
 
@@ -112,6 +121,7 @@ public class AgentDurableRunStore {
                 now,
                 now,
                 current.getVersion());
+        if (changed == 1) approvalEvents.changed(current);
         return changed == 1;
     }
 
@@ -139,6 +149,7 @@ public class AgentDurableRunStore {
             return false;
         }
         AgentRunBudgetCheckpoint budget = checkpoint.budget();
+        com.ai.agent.runtime.AgentRunScope.current().ifPresent(context -> context.control().verifyExecutionFence());
         int changed = repository.suspendForApproval(
                 runId,
                 expectedStatus,
@@ -154,6 +165,10 @@ public class AgentDurableRunStore {
                 approvalExpiresAt,
                 Instant.now(),
                 current.getVersion());
+        if (changed == 1) {
+            current.setApprovalId(approvalId);
+            approvalEvents.changed(current);
+        }
         return changed == 1;
     }
 
@@ -166,6 +181,10 @@ public class AgentDurableRunStore {
     public Optional<AgentRunStateEntity> find(String runId) {
         return repository.findById(runId);
     }
+
+    /** 调用方先持有会话锁，再锁 Run，取消与正常完成使用同一个顺序。 */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public AgentRunStateEntity lock(String runId) { return repository.findForUpdate(runId).orElseThrow(); }
 
     private Optional<AgentRunStateEntity> findExpected(String runId, AgentRunStatus expectedStatus) {
         return repository.findById(runId).filter(entity -> entity.getStatus() == expectedStatus);

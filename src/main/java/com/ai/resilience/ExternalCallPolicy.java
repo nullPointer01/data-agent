@@ -3,6 +3,8 @@ package com.ai.resilience;
 import com.ai.agent.context.AgentContextGovernor.ContextLimitException;
 import com.ai.agent.runtime.AgentRunTerminatedException;
 import com.ai.mcp.ModelHttpException;
+import com.ai.exception.QuotaExceededException;
+import com.ai.token.TokenAccountingException;
 import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.exception.NonRetriableException;
 import dev.langchain4j.exception.RetriableException;
@@ -66,7 +68,8 @@ public final class ExternalCallPolicy {
     public static boolean isLocalTermination(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof InterruptedException || cause instanceof CancellationException
-                    || cause instanceof AgentRunTerminatedException || cause instanceof ContextLimitException) {
+                    || cause instanceof AgentRunTerminatedException || cause instanceof ContextLimitException
+                    || cause instanceof QuotaExceededException || cause instanceof TokenAccountingException) {
                 return true;
             }
         }

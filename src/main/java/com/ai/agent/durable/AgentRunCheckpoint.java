@@ -1,6 +1,7 @@
 package com.ai.agent.durable;
 
 import com.ai.agent.outcome.AgentTaskContract;
+import com.ai.agent.agentic.SupervisorCheckpoint;
 import com.ai.agent.runtime.AgentExecutionMode;
 
 import java.time.Instant;
@@ -25,6 +26,7 @@ import java.util.Set;
  * @param taskContract 创建 Run 时固化的可选任务合同
  * @param budget 冻结预算
  * @param capturedAt 捕获时间
+ * @param supervisor 可选的父协作现场，旧版本普通工具审批为空
  * @author data-agent
  */
 public record AgentRunCheckpoint(
@@ -42,7 +44,9 @@ public record AgentRunCheckpoint(
         Set<String> allowedToolsAtRequest,
         AgentTaskContract taskContract,
         AgentRunBudgetCheckpoint budget,
-        Instant capturedAt) {
+        Instant capturedAt,
+        SupervisorCheckpoint supervisor,
+        Set<String> initialToolsAtRequest) {
 
     public AgentRunCheckpoint {
         AgentCheckpointVersion.requireSupported(schemaVersion);
@@ -57,9 +61,18 @@ public record AgentRunCheckpoint(
         if (iterationIndex < 0 || recoveryCount < 0) {
             throw new IllegalArgumentException("Checkpoint 计数不能为负数");
         }
+        if ((!"react".equals(strategyId) && !"supervisor".equals(strategyId))
+                || ("supervisor".equals(strategyId)) != (supervisor != null)
+                || (supervisor != null && (schemaVersion < 3
+                    || mode != supervisor.leafCapabilities().mode()
+                    || !executorId.equals("profile:" + supervisor.nodes().get(supervisor.pendingNode()))))) {
+            throw new IllegalArgumentException("Checkpoint 策略与 Supervisor 节点现场不一致");
+        }
         partialAnswer = partialAnswer == null ? "" : partialAnswer;
         modelId = modelId == null ? "" : modelId;
         messages = messages == null ? List.of() : List.copyOf(messages);
         allowedToolsAtRequest = allowedToolsAtRequest == null ? Set.of() : Set.copyOf(allowedToolsAtRequest);
+        initialToolsAtRequest = initialToolsAtRequest == null ? allowedToolsAtRequest : Set.copyOf(initialToolsAtRequest);
+        if (!allowedToolsAtRequest.containsAll(initialToolsAtRequest)) throw new IllegalArgumentException("初始工具超出 Checkpoint 授权池");
     }
 }

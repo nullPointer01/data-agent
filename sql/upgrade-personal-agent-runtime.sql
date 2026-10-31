@@ -1,5 +1,5 @@
 -- 已有数据库升级：个人 Agent 默认配置与 AUTO 路由所需字段。
--- application-local.yml 使用 ddl-auto=update 时会自动补列；生产环境请执行本脚本后再启动。
+-- 历史手工升级脚本；当前使用 MyBatis/Flyway，不再依赖 Hibernate 自动补列。
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS upgrade_personal_agent_runtime$$

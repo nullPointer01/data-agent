@@ -60,7 +60,8 @@ public class AgentCheckpointRestorer {
                 .filter(ownerAuthorization.serverEnabledTools()::contains)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         AgentToolInvocationContext invocationContext = new AgentToolInvocationContext(
-                checkpoint.executorId(), currentAllowedTools);
+                checkpoint.executorId(), currentAllowedTools, checkpoint.initialToolsAtRequest().stream()
+                        .filter(currentAllowedTools::contains).collect(java.util.stream.Collectors.toUnmodifiableSet()));
         AgentRunContext context = new AgentRunContext(
                 run.getRunId(),
                 run.getTenantId(),
@@ -81,8 +82,9 @@ public class AgentCheckpointRestorer {
     }
 
     private String lastUserMessage(AgentRunCheckpoint checkpoint) {
-        for (int index = checkpoint.messages().size() - 1; index >= 0; index--) {
-            AgentCheckpointMessage message = checkpoint.messages().get(index);
+        var messages = checkpoint.supervisor() == null ? checkpoint.messages() : checkpoint.supervisor().originalMessages();
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            AgentCheckpointMessage message = messages.get(index);
             if (message.role() == AgentCheckpointMessage.Role.USER) {
                 return message.content();
             }

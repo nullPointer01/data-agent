@@ -2,12 +2,15 @@ package com.ai.mcp;
 
 import com.ai.agent.context.AgentContextGovernor;
 import com.ai.agent.context.AgentContextGovernor.ContextLimitException;
+import com.ai.agent.context.TaskContextCompactor;
+import com.ai.agent.context.TaskSummary;
 import com.ai.agent.runtime.AgentRunContext;
 import com.ai.agent.runtime.AgentRunControl;
 import com.ai.agent.runtime.AgentRunScope;
+import com.ai.conversation.ConversationAccessGuard;
 import com.ai.agent.runtime.AgentRunTerminatedException;
-import com.ai.agent.runtime.event.AgentEvent;
-import com.ai.agent.runtime.event.AgentEventType;
+import com.ai.exception.QuotaExceededException;
+import com.ai.token.TokenAccountingException;
 import com.ai.event.ModelConfigChangeEvent;
 import com.ai.event.ModelConfigChangeEvent.ChangeType;
 import com.ai.config.TaskContextSnapshot;
@@ -23,20 +26,19 @@ import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
-import dev.langchain4j.model.output.TokenUsage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.concurrent.Flow;
 import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
@@ -56,7 +58,6 @@ import reactor.core.publisher.FluxSink;
 public class McpModelService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(McpModelService.class);
-    private final TokenMonitor tokenMonitor;
     private final ModelRetryExecutor retryExecutor;
     private final TokenUsageRecorder tokenUsageRecorder;
     private final ModelClientRegistry modelClientRegistry;
@@ -64,13 +65,12 @@ public class McpModelService {
     private final AgentContextGovernor contextGovernor;
     private final ModelStreamRuntime streamRuntime;
     private final ModelCallExecutor callExecutor;
+    private final ConversationAccessGuard conversationAccess;
 
-    public McpModelService(TokenMonitor tokenMonitor,
-            ModelRetryExecutor retryExecutor, TokenUsageRecorder tokenUsageRecorder,
+    public McpModelService(ModelRetryExecutor retryExecutor, TokenUsageRecorder tokenUsageRecorder,
             ModelClientRegistry modelClientRegistry, TokenQuotaGuard tokenQuotaGuard,
             AgentContextGovernor contextGovernor, ModelStreamRuntime streamRuntime,
-            ModelCallExecutor callExecutor) {
-        this.tokenMonitor = tokenMonitor;
+            ModelCallExecutor callExecutor, ConversationAccessGuard conversationAccess) {
         this.retryExecutor = retryExecutor;
         this.tokenUsageRecorder = tokenUsageRecorder;
         this.modelClientRegistry = modelClientRegistry;
@@ -78,6 +78,7 @@ public class McpModelService {
         this.contextGovernor = contextGovernor;
         this.streamRuntime = streamRuntime;
         this.callExecutor = callExecutor;
+        this.conversationAccess = conversationAccess;
     }
 
     /** 配置变更后移除旧客户端，下次按当前租户配置重建。 */
@@ -217,25 +218,69 @@ public class McpModelService {
     }
 
     private ChatResponse callRequest(ChatRequest source, String modelId, boolean governRun) {
-        checkQuota();
-        var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId);
+        return callRequest(source, modelId, governRun, true);
+    }
+
+    private ChatResponse callRequest(ChatRequest source, String modelId, boolean governRun, boolean allowSummary) {
+        var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId,
+                allowSummary ? summaryGenerator(modelId) : null);
         // 原生复制 API 保留 responseFormat、toolChoice 及厂商参数，只替换准入后的消息。
         ChatRequest request = source.toBuilder().messages(governed.messages()).build();
         AgentRunControl control = currentControl(governRun);
         String modelKey = modelClientRegistry.modelKey(modelId);
         try {
-            ChatModel model = modelClientRegistry.getChatModel(modelId);
-            ChatResponse response = callExecutor.call(() -> retryExecutor.execute(() -> {
-                if (control != null) {
-                    control.beforeModelCall();
-                }
-                return model.chat(request);
-            }, modelKey), control);
-            validateResponse(response);
-            recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, control);
-            return response;
+            var client = modelClientRegistry.chatClient(modelId);
+            // 每次重试各自预占/结算，且清理在实际执行线程完成，调用方停止等待不能丢账。
+            return callExecutor.call(() -> retryExecutor.execute(() ->
+                    callAttempt(request, client, governed.evidence().estimatedTokensAfter(), control), modelKey), control);
         } catch (Exception exception) {
             throw failure(exception, modelKey, control);
+        }
+    }
+
+    private TaskContextCompactor.Generator summaryGenerator(String modelId) {
+        return (sourceJson, outputTokens) -> {
+            // AiServices 生成原生 Schema；摘要仍走用户预占、根 Run 次数/Token、超时和取消治理。
+            // 不绑定 ChatMemory 或 ToolProvider，也不给内部请求摘要回调，杜绝工具执行和摘要递归。
+            ChatModel summaryModel = new ChatModel() {
+                @Override
+                public Set<Capability> supportedCapabilities() { return Set.of(Capability.RESPONSE_FORMAT_JSON_SCHEMA); }
+
+                @Override
+                public ChatResponse doChat(ChatRequest request) {
+                    return callRequest(request.toBuilder().maxOutputTokens(outputTokens).build(), modelId, true, false);
+                }
+            };
+            return StructuredAssistantFactory.bind(TaskSummary.Assistant.class, TaskSummary.class, summaryModel)
+                    .summarize(sourceJson);
+        };
+    }
+
+    private ChatResponse callAttempt(ChatRequest request, ModelClientRegistry.ChatClient client,
+            long estimatedInput, AgentRunControl control) {
+        var reserved = tokenQuotaGuard.reserve(request, estimatedInput,
+                client.model().defaultRequestParameters().maxOutputTokens(), client.modelId(), client.modelName());
+        try {
+            if (control != null) {
+                conversationAccess.checkCurrentRun();
+                control.beforeModelCall();
+            }
+            tokenQuotaGuard.dispatch(reserved.ticket());
+            // 数据库等待期间也可能超时或取消，发送前再次检查根 Run。
+            if (control != null) control.ensureActive();
+            ChatResponse response = client.model().chat(reserved.request());
+            tokenUsageRecorder.complete(reserved, response, control);
+            validateResponse(response);
+            if (control != null) control.ensureActive();
+            return response;
+        } catch (RuntimeException | Error error) {
+            try {
+                tokenUsageRecorder.failed(reserved, control);
+            } catch (RuntimeException accounting) {
+                accounting.addSuppressed(error);
+                throw accounting;
+            }
+            throw error;
         }
     }
 
@@ -260,42 +305,79 @@ public class McpModelService {
             Consumer<String> consumer) {
         try {
             Objects.requireNonNull(consumer, "流式输出消费者不能为空");
-            checkQuota();
-            var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId);
+            var governed = contextGovernor.govern(source.messages(), source.toolSpecifications(), modelId, summaryGenerator(modelId));
             ChatRequest request = source.toBuilder().messages(governed.messages()).build();
             AgentRunControl control = currentControl(true);
             String modelKey = modelClientRegistry.modelKey(modelId);
+            var client = modelClientRegistry.streamingClient(modelId);
             TaskContextSnapshot snapshot = TaskContextSnapshot.capture();
+            AtomicReference<TokenQuotaGuard.ReservedRequest> reservation = new AtomicReference<>();
             ModelResponseStream stream = streamRuntime.open(
                     token -> snapshot.call(() -> {
                         consumer.accept(token);
                         return null;
                     }),
-                    control);
-            var responseStage = retryExecutor.executeStream(() -> {
-                try {
-                    if (control != null) {
-                        control.beforeModelCall();
+                    control, late -> streamRuntime.callbacks(snapshot).execute(() -> {
+                        var ticket = reservation.get();
+                        if (ticket == null) return;
+                        try {
+                            tokenUsageRecorder.complete(ticket, late, control);
+                        } catch (RuntimeException accounting) {
+                            LOGGER.warn("迟到模型用量结算失败 | invocationId={} | errorType={}",
+                                    ticket.ticket().invocationId(), accounting.getClass().getSimpleName());
+                        }
+                    }));
+            java.util.concurrent.CompletionStage<ChatResponse> responseStage;
+            try {
+                responseStage = retryExecutor.executeStream(() -> {
+                    try {
+                        stream.ensureOpen();
+                        if (control != null) {
+                            conversationAccess.checkCurrentRun();
+                            control.beforeModelCall();
+                        }
+                        var reserved = tokenQuotaGuard.reserve(request, governed.evidence().estimatedTokensAfter(),
+                                client.model().defaultRequestParameters().maxOutputTokens(), client.modelId(), client.modelName());
+                        reservation.set(reserved);
+                        stream.ensureOpen();
+                        tokenQuotaGuard.dispatch(reserved.ticket());
+                        stream.ensureOpen();
+                        client.model().chat(reserved.request(), stream);
+                    } catch (Exception exception) {
+                        stream.onError(exception);
                     }
-                    modelClientRegistry.getStreamingChatModel(modelId).chat(request, stream);
-                } catch (Exception exception) {
-                    stream.onError(exception);
-                }
-                return stream.completion();
-            }, modelKey);
+                    return stream.completion();
+                }, modelKey);
+            } catch (RuntimeException failure) {
+                // 熔断器可在执行 supplier 前拒绝；仍需关闭已创建的流和定时器。
+                stream.onError(failure);
+                responseStage = stream.completion();
+            }
             CompletableFuture<ChatResponse> result = new CompletableFuture<>();
             // 调用方取消等待句柄时，仍必须对实际流执行记账与释放，不能取消完成处理本身。
             responseStage.whenCompleteAsync((response, error) -> {
+                boolean accounted = false;
                 try {
                     if (error != null) {
                         stream.onError(unwrap(error));
-                        recordPartialUsage(stream.partialText(), governed.evidence().estimatedTokensAfter(), modelId, control);
+                        tokenUsageRecorder.failed(reservation.get(), control);
+                        accounted = true;
                         throw failure(unwrap(error), modelKey, control);
                     }
+                    tokenUsageRecorder.complete(reservation.get(), response, control);
+                    accounted = true;
                     validateResponse(response);
-                    recordUsage(response, governed.evidence().estimatedTokensAfter(), modelId, control);
+                    if (control != null) control.ensureActive();
                     result.complete(response);
                 } catch (Throwable failure) {
+                    if (!accounted) {
+                        try {
+                            tokenUsageRecorder.failed(reservation.get(), control);
+                        } catch (RuntimeException accounting) {
+                            accounting.addSuppressed(failure);
+                            failure = accounting;
+                        }
+                    }
                     result.completeExceptionally(failure);
                 } finally {
                     stream.close();
@@ -319,25 +401,8 @@ public class McpModelService {
         return error;
     }
 
-    private void checkQuota() {
-        var quota = tokenQuotaGuard.checkCurrentUserQuota();
-        if (!quota.allowed()) {
-            throw new ModelInvocationException(quota.message());
-        }
-    }
-
-    private void recordPartialUsage(String partialText, long input, String modelId, AgentRunControl control) {
-        if (partialText.isEmpty()) {
-            return;
-        }
-        long output = tokenMonitor.estimateTokens(partialText, modelId);
-        tokenUsageRecorder.record(modelId, null, input, output, input + output, null);
-        if (control != null) {
-            control.afterModelCall(input + output, true);
-        }
-    }
-
     private AgentRunControl currentControl(boolean governRun) {
+        if (governRun) conversationAccess.checkCurrentRun();
         return governRun ? AgentRunScope.current().map(AgentRunContext::control).orElse(null) : null;
     }
 
@@ -356,26 +421,6 @@ public class McpModelService {
         return response.aiMessage().text();
     }
 
-    private void recordUsage(ChatResponse response, long estimatedInput, String modelId,
-            AgentRunControl control) {
-        TokenUsage usage = response.tokenUsage();
-        long input = usage != null && usage.inputTokenCount() != null ? usage.inputTokenCount() : estimatedInput;
-        String text = response.aiMessage().text() == null ? "" : response.aiMessage().text();
-        String toolArguments = response.aiMessage().hasToolExecutionRequests()
-                ? response.aiMessage().toolExecutionRequests().toString() : "";
-        long output = usage != null && usage.outputTokenCount() != null ? usage.outputTokenCount()
-                : tokenMonitor.estimateTokens(text + toolArguments, modelId);
-        long total = usage != null && usage.totalTokenCount() != null ? usage.totalTokenCount() : input + output;
-        tokenUsageRecorder.record(modelId, null, input, output, total, null);
-        if (control != null) {
-            boolean estimated = usage == null || usage.inputTokenCount() == null || usage.outputTokenCount() == null;
-            control.afterModelCall(total, estimated);
-            AgentRunScope.current().ifPresent(context -> context.eventSink().emit(
-                    AgentEvent.of(context, AgentEventType.BUDGET_UPDATED, Map.of("usage", context.snapshot()))));
-            control.ensureActive();
-        }
-    }
-
     private RuntimeException failure(Throwable exception, String modelKey, AgentRunControl control) {
         Throwable cause = unwrap(exception);
         if (cause instanceof InterruptedException) {
@@ -387,6 +432,8 @@ public class McpModelService {
         if (cause instanceof ContextLimitException limit) {
             return limit;
         }
+        if (cause instanceof QuotaExceededException quota) return quota;
+        if (cause instanceof TokenAccountingException accounting) return accounting;
         if (control != null) {
             control.ensureActive();
         }

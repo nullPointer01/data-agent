@@ -1,3 +1,5 @@
+import { subscribeServerEvents } from './serverEvents.js';
+
 // 统一处理 JSON/文本响应、JWT 失效和审批接口，页面不各自复制请求细节。
 async function parseResponse(response) {
   const text = await response.text();
@@ -38,19 +40,23 @@ export function createApiClient(token, onUnauthorized) {
   }
 
   const client = {
-    get: (url) => request('GET', url),
+    get: (url, options) => request('GET', url, undefined, options),
     post: (url, body) => request('POST', url, body),
     put: (url, body) => request('PUT', url, body),
     delete: (url) => request('DELETE', url),
     upload: (url, formData) => request('POST', url, formData, { form: true })
   };
   client.agentApprovals = {
-    list: (status) => client.get(`/api/v1/agent-approvals${status ? `?status=${encodeURIComponent(status)}` : ''}`),
-    detail: (approvalId) => client.get(`/api/v1/agent-approvals/${encodeURIComponent(approvalId)}`),
+    detail: (approvalId, options) => client.get(`/api/v1/agent-approvals/${encodeURIComponent(approvalId)}`, options),
     approve: (approvalId, comment) => client.post(
       `/api/v1/agent-approvals/${encodeURIComponent(approvalId)}/approve`, { comment }),
     reject: (approvalId, comment) => client.post(
       `/api/v1/agent-approvals/${encodeURIComponent(approvalId)}/reject`, { comment })
   };
+  client.subscribeApprovalEvents = (sessionId, callbacks) => subscribeServerEvents(
+    sessionId ? `/api/v1/my/approval-events?${new URLSearchParams({ sessionId })}` : '/api/v1/agent-approvals/events',
+    { ...callbacks, token, onUnauthorized });
+  client.subscribeRunEvents = (runId, callbacks) => subscribeServerEvents(
+    `/api/v1/agent-runs/${encodeURIComponent(runId)}/events`, { ...callbacks, token, onUnauthorized, replay: true });
   return client;
 }

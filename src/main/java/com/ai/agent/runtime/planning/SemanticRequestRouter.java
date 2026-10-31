@@ -1,5 +1,6 @@
 package com.ai.agent.runtime.planning;
 
+import com.ai.memory.MemoryCaptureMode;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
@@ -67,6 +68,7 @@ public interface SemanticRequestRouter {
      * @param intent 请求目标
      * @param semanticMemory 语义记忆要求
      * @param knowledgeBase 知识库要求
+     * @param memoryCapture 本轮长期记忆提取建议，与读取历史记忆相互独立
      * @param retrievalQuery 独立检索查询
      * @param confidence 路由置信度
      * @param reason 可展示的简短原因
@@ -76,6 +78,7 @@ public interface SemanticRequestRouter {
             @JsonProperty(required = true) RequestIntent intent,
             @JsonProperty(required = true) ContextRequirement semanticMemory,
             @JsonProperty(required = true) ContextRequirement knowledgeBase,
+            @JsonProperty(required = true) MemoryCaptureMode memoryCapture,
             @JsonProperty(required = true) String retrievalQuery,
             @JsonProperty(required = true) double confidence,
             @JsonProperty(required = true) String reason,
